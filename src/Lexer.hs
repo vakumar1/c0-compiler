@@ -15,10 +15,19 @@ lexerHelper :: [Token] -> [LexerError] -> String -> String -> Int -> Int -> ([To
 lexerHelper finishedTokens errors currToken remainingStr lineNo linePos = 
     case remainingStr of
         ""                  -> (finishedTokens, errors)
-        '/':'*':leftover    -> multilineComment finishedTokens errors remainingStr lineNo linePos lineNo linePos
-        '/':'/':leftover    -> oneLineComment finishedTokens errors remainingStr lineNo
-        '\n':_              -> lexerHelper finishedTokens errors currToken (tail remainingStr) (lineNo + 1) 0
-        _                   -> lexerHelper finishedTokens errors currToken (tail remainingStr) lineNo (linePos + 1)
+        '/':'*':leftover    -> multilineComment finishedTokens errors leftover lineNo linePos lineNo linePos
+        '/':'/':leftover    -> oneLineComment finishedTokens errors leftover lineNo
+        d:leftover
+            | elem d " \n\t\v\r\f;()[]{}-+=*/%"
+                            ->  let newLineNo = if d == '\n' then (lineNo + 1) else lineNo
+                                    newLinePos = if d == '\n' then 0 else (linePos + 1)
+                                in case (classifyToken currToken) of
+                                    Just (Left t) -> lexerHelper (finishedTokens ++ [t]) errors "" leftover newLineNo newLinePos
+                                    Just (Right ec) -> lexerHelper finishedTokens 
+                                                        (errors ++ [(LexerError lineNo (linePos - (length currToken)) ec)]) 
+                                                        "" leftover newLineNo newLinePos
+                                    Nothing -> lexerHelper finishedTokens errors "" leftover newLineNo newLinePos
+        d:leftover          -> lexerHelper finishedTokens errors (currToken ++ [d]) leftover lineNo (linePos + 1)
 
 
 oneLineComment :: [Token] -> [LexerError] -> String -> Int -> ([Token], [LexerError])
@@ -36,3 +45,9 @@ multilineComment finishedTokens errors remainingStr commentStartLineNo commentSt
         '*':'/':leftover    -> lexerHelper finishedTokens errors "" leftover lineNo (linePos + 2)
         '\n':_              -> multilineComment finishedTokens errors (tail remainingStr) commentStartLineNo commentStartLinePos (lineNo + 1) 0
         _                   -> multilineComment finishedTokens errors (tail remainingStr) commentStartLineNo commentStartLinePos lineNo (linePos + 1)
+
+classifyToken :: String -> Maybe (Either Token LexerErrorCategory)
+classifyToken s = 
+    case s of
+        "" -> Nothing
+        _ -> Just (Right InvalidTokenError)
