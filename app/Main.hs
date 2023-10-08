@@ -9,7 +9,7 @@ import System.Environment
 handleLexerResult :: ([Token], [LexerError]) -> IO ()
 handleLexerResult (tokens, errors) =
     if length errors == 0
-        then putStrLn "Lexed"
+        then putStrLn (show tokens)
         else
             error
                 ( foldl

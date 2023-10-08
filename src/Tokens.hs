@@ -43,10 +43,12 @@ data TokenCategory
     | VOID
     | CHAR
     | STRING
+    deriving (Show)
 data Token = Token
     { tokCat :: TokenCategory
     , tokValue :: Maybe String
     }
+    deriving (Show)
 
 whitespaceDelims :: String
 whitespaceDelims = " \n\t\v\r\f"
@@ -119,7 +121,7 @@ decnumTok s =
         "0" -> Just (Token DECNUM (Just s))
         f : rest
             | (f /= '0')
-                && (all C.isDigit rest) ->
+                && (all C.isDigit s) ->
                 Just (Token DECNUM (Just s))
         _ -> Nothing
 
