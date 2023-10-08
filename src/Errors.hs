@@ -1,18 +1,15 @@
 module Errors (
-    LexerError(..),
-    LexerErrorCategory(..),
+    LexerError (..),
+    LexerErrorCategory (..),
 ) where
 
 data LexerErrorCategory = InvalidTokenError | DanglingCommentError
     deriving (Show)
--- instance Show LexerErrorCategory where
---     show InvalidTokenError = "InvalidTokenError"
---     show DanglingCommentError = "DanglingCommentError"
 
-data LexerError = LexerError {
-    lineNo :: Int,
-    linePos :: Int,
-    errorCat :: LexerErrorCategory
-}
+data LexerError = LexerError
+    { lineNo :: Int
+    , linePos :: Int
+    , errorCat :: LexerErrorCategory
+    }
 instance Show LexerError where
-    show l = ((show . errorCat) l) ++ " -- lineNo=" ++ ((show . lineNo) l) ++ " linePos=" ++ ((show .linePos) l)
+    show l = ((show . errorCat) l) ++ " -- lineNo=" ++ ((show . lineNo) l) ++ " linePos=" ++ ((show . linePos) l)
