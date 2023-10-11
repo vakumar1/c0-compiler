@@ -1,5 +1,5 @@
 module Tokens (
-    Token,
+    Token (..),
     TokenData,
     isDelim,
     classifyDelim,
@@ -64,17 +64,17 @@ isDelim :: Char -> Bool
 isDelim d = elem d whitespaceDelims || elem d reservedCharDelims
 
 classifyDelim :: Char -> Maybe Char -> Maybe Token
-classifyDelim d e = 
+classifyDelim d e =
     let doubleTok = case e of
-                        Just c -> reservedDoubleTok d c
-                        Nothing -> Nothing
-    in case doubleTok of
-        Just t -> Just t
-        _ -> reservedCharTok d
+            Just c -> reservedDoubleTok d c
+            Nothing -> Nothing
+     in case doubleTok of
+            Just t -> Just t
+            _ -> reservedCharTok d
 
 reservedDoubleTok :: Char -> Char -> Maybe Token
-reservedDoubleTok d e = 
-    case d:[e] of
+reservedDoubleTok d e =
+    case d : [e] of
         "+=" -> Just PLUS_EQ
         "-=" -> Just DASH_EQ
         "*=" -> Just STAR_EQ
