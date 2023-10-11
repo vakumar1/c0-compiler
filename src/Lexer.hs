@@ -26,7 +26,8 @@ lexerHelper finishedTokens errors currToken remainingStr lineNo linePos =
                 let newLineNo = if d == '\n' then (lineNo + 1) else lineNo
                     newLinePos = if d == '\n' then linePosStart else (linePos + 1)
                     finishedToken = classifyToken currToken
-                    delimToken = reservedCharTok d
+                    delimToken = classifyDelim d (if (length leftover) == 0 then Nothing else Just (head leftover))
+                    newRemainingStr = if (length delimToken) == 2 then (tail leftover) else leftover
                     tokensAddCurr =
                         if currToken == ""
                             then finishedTokens
@@ -43,7 +44,7 @@ lexerHelper finishedTokens errors currToken remainingStr lineNo linePos =
                             else case finishedToken of
                                 Nothing -> errors ++ [(LexerError lineNo (linePos - (length currToken)) InvalidTokenError)]
                                 _ -> errors
-                 in lexerHelper newFinishedTokens newErrors "" leftover newLineNo newLinePos
+                 in lexerHelper newFinishedTokens newErrors "" newRemainingStr newLineNo newLinePos
         d : leftover -> lexerHelper finishedTokens errors (currToken ++ [d]) leftover lineNo (linePos + 1)
 
 oneLineComment :: [Token] -> [LexerError] -> String -> Int -> ([Token], [LexerError])

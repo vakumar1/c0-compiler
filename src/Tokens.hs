@@ -1,8 +1,8 @@
 module Tokens (
     Token,
-    TokenCategory,
+    TokenData,
     isDelim,
-    reservedCharTok,
+    classifyDelim,
     classifyToken,
 ) where
 
@@ -10,7 +10,7 @@ import qualified Data.Char as C
 import qualified Data.Foldable as F
 import qualified Data.Text as T
 
-data TokenCategory
+data Token
     = SEMICOLON
     | OPEN_PAREN
     | OPEN_BRACK
@@ -23,10 +23,15 @@ data TokenCategory
     | STAR
     | SLASH
     | PERC
+    | PLUS_EQ
+    | DASH_EQ
+    | STAR_EQ
+    | SLASH_EQ
+    | PERC_EQ
     | EQUAL
-    | IDENTIFIER
-    | DECNUM
-    | HEXNUM
+    | IDENTIFIER String
+    | DECNUM String
+    | HEXNUM String
     | WHILE
     | FOR
     | CONTINUE
@@ -44,9 +49,8 @@ data TokenCategory
     | CHAR
     | STRING
     deriving (Show)
-data Token = Token
-    { tokCat :: TokenCategory
-    , tokValue :: Maybe String
+data TokenData = TokenData
+    { token :: Token
     }
     deriving (Show)
 
@@ -59,22 +63,41 @@ reservedCharDelims = ";()[]{}+-*/%="
 isDelim :: Char -> Bool
 isDelim d = elem d whitespaceDelims || elem d reservedCharDelims
 
+classifyDelim :: Char -> Maybe Char -> Maybe Token
+classifyDelim d e = 
+    let doubleTok = case e of
+                        Just c -> reservedDoubleTok d c
+                        Nothing -> Nothing
+    in case doubleTok of
+        Just t -> Just t
+        _ -> reservedCharTok d
+
+reservedDoubleTok :: Char -> Char -> Maybe Token
+reservedDoubleTok d e = 
+    case d:[e] of
+        "+=" -> Just PLUS_EQ
+        "-=" -> Just DASH_EQ
+        "*=" -> Just STAR_EQ
+        "/=" -> Just SLASH_EQ
+        "%=" -> Just PERC_EQ
+        _ -> Nothing
+
 reservedCharTok :: Char -> Maybe Token
 reservedCharTok d =
     case d of
-        ';' -> Just (Token SEMICOLON Nothing)
-        '(' -> Just (Token OPEN_PAREN Nothing)
-        ')' -> Just (Token CLOSE_PAREN Nothing)
-        '[' -> Just (Token OPEN_BRACK Nothing)
-        ']' -> Just (Token CLOSE_BRACK Nothing)
-        '{' -> Just (Token OPEN_BRACE Nothing)
-        '}' -> Just (Token CLOSE_BRACE Nothing)
-        '+' -> Just (Token PLUS Nothing)
-        '-' -> Just (Token DASH Nothing)
-        '*' -> Just (Token STAR Nothing)
-        '/' -> Just (Token SLASH Nothing)
-        '%' -> Just (Token PERC Nothing)
-        '=' -> Just (Token EQUAL Nothing)
+        ';' -> Just SEMICOLON
+        '(' -> Just OPEN_PAREN
+        ')' -> Just CLOSE_PAREN
+        '[' -> Just OPEN_BRACK
+        ']' -> Just CLOSE_BRACK
+        '{' -> Just OPEN_BRACE
+        '}' -> Just CLOSE_BRACE
+        '+' -> Just PLUS
+        '-' -> Just DASH
+        '*' -> Just STAR
+        '/' -> Just SLASH
+        '%' -> Just PERC
+        '=' -> Just EQUAL
         _ -> Nothing
 
 classifyToken :: String -> Maybe Token
@@ -97,32 +120,32 @@ classifyToken s =
 reservedKeywordTok :: String -> Maybe Token
 reservedKeywordTok s =
     case s of
-        "while" -> Just (Token WHILE Nothing)
-        "for" -> Just (Token FOR Nothing)
-        "continue" -> Just (Token CONTINUE Nothing)
-        "break" -> Just (Token BREAK Nothing)
-        "return" -> Just (Token RETURN Nothing)
-        "assert" -> Just (Token ASSERT Nothing)
-        "true" -> Just (Token TRUE Nothing)
-        "false" -> Just (Token FALSE Nothing)
-        "NULL" -> Just (Token NULL Nothing)
-        "alloc" -> Just (Token ALLOC Nothing)
-        "alloc_array" -> Just (Token ALLOC_ARRAY Nothing)
-        "int" -> Just (Token INT Nothing)
-        "bool" -> Just (Token BOOL Nothing)
-        "void" -> Just (Token VOID Nothing)
-        "char" -> Just (Token CHAR Nothing)
-        "string" -> Just (Token STRING Nothing)
+        "while" -> Just WHILE
+        "for" -> Just FOR
+        "continue" -> Just CONTINUE
+        "break" -> Just BREAK
+        "return" -> Just RETURN
+        "assert" -> Just ASSERT
+        "true" -> Just TRUE
+        "false" -> Just FALSE
+        "NULL" -> Just NULL
+        "alloc" -> Just ALLOC
+        "alloc_array" -> Just ALLOC_ARRAY
+        "int" -> Just INT
+        "bool" -> Just BOOL
+        "void" -> Just VOID
+        "char" -> Just CHAR
+        "string" -> Just STRING
         _ -> Nothing
 
 decnumTok :: String -> Maybe Token
 decnumTok s =
     case s of
-        "0" -> Just (Token DECNUM (Just s))
+        "0" -> Just (DECNUM s)
         f : rest
             | (f /= '0')
                 && (all C.isDigit s) ->
-                Just (Token DECNUM (Just s))
+                Just (DECNUM s)
         _ -> Nothing
 
 hexnumTok :: String -> Maybe Token
@@ -130,8 +153,8 @@ hexnumTok s =
     case s of
         '0' : x : rest
             | (x == 'x' || x == 'X')
-                && (all (\c -> C.isDigit c || elem c "abcdefABCDEF") s) ->
-                Just (Token DECNUM (Just s))
+                && (all (\c -> C.isDigit c || elem c "abcdefABCDEF") rest) ->
+                Just (HEXNUM s)
         _ -> Nothing
 
 idenifierTok :: String -> Maybe Token
@@ -141,5 +164,5 @@ idenifierTok s =
             f : rest
                 | (alphaUnder f)
                     && (all (\c -> alphaUnder c || C.isDigit c) s) ->
-                    Just (Token IDENTIFIER (Just s))
+                    Just (IDENTIFIER s)
             _ -> Nothing
