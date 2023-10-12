@@ -8,7 +8,6 @@ module Tokens (
 
 import qualified Data.Char as C
 import qualified Data.Foldable as F
-import qualified Data.Text as T
 
 data Token
     = SEMICOLON
@@ -48,7 +47,8 @@ data Token
     | VOID
     | CHAR
     | STRING
-    deriving (Show)
+    | EOF
+    deriving (Eq, Show)
 data TokenData = TokenData
     { token :: Token
     }
@@ -142,7 +142,7 @@ decnumTok :: String -> Maybe Token
 decnumTok s =
     case s of
         "0" -> Just (DECNUM s)
-        f : rest
+        f : _
             | (f /= '0')
                 && (all C.isDigit s) ->
                 Just (DECNUM s)
@@ -161,7 +161,7 @@ idenifierTok :: String -> Maybe Token
 idenifierTok s =
     let alphaUnder = \c -> C.isLetter c || c == '_'
      in case s of
-            f : rest
+            f : _
                 | (alphaUnder f)
                     && (all (\c -> alphaUnder c || C.isDigit c) s) ->
                     Just (IDENTIFIER s)

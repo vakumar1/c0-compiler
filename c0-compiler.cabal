@@ -28,6 +28,7 @@ library
       Ast
       Errors
       Lexer
+      Parser
       Tokens
   other-modules:
       Paths_c0_compiler

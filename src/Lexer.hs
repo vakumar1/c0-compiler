@@ -5,8 +5,6 @@ module Lexer (
 import Errors
 import Tokens
 
-import Data.Char
-
 lineNoStart :: Int
 lineNoStart = 1
 linePosStart :: Int
@@ -18,7 +16,7 @@ lexer code = lexerHelper [] [] "" (code ++ ['\n']) lineNoStart linePosStart
 lexerHelper :: [Token] -> [LexerError] -> String -> String -> Int -> Int -> ([Token], [LexerError])
 lexerHelper finishedTokens errors currToken remainingStr lineNo linePos =
     case remainingStr of
-        "" -> (finishedTokens, errors)
+        "" -> (finishedTokens ++ [EOF], errors)
         '/' : '*' : leftover -> multilineComment finishedTokens errors leftover lineNo linePos lineNo linePos
         '/' : '/' : leftover -> oneLineComment finishedTokens errors leftover lineNo
         d : leftover

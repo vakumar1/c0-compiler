@@ -1,4 +1,5 @@
 module Ast (
+    Node (..),
     Program,
     Block,
     BlockElem (..),
@@ -7,11 +8,14 @@ module Ast (
     Simp,
     Lval,
     Exp (..),
-    Unop,
-    Binop,
+    Unop (..),
+    Binop (..),
 ) where
 
 import Tokens
+
+-- TODO: include all types into AST node
+data Node = TOKEN_NODE Token | EXP_NODE Exp
 
 type Program = Block
 
