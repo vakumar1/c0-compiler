@@ -1,6 +1,7 @@
 module Tokens (
     Token (..),
-    TokenData,
+    TokenCategory (..),
+    TokenData (..),
     isDelim,
     classifyDelim,
     classifyToken,
@@ -9,7 +10,12 @@ module Tokens (
 import qualified Data.Char as C
 import qualified Data.Foldable as F
 
-data Token
+data Token = Token
+    { tokenCat :: TokenCategory
+    , tokenData :: TokenData
+    }
+    deriving (Show)
+data TokenCategory
     = SEMICOLON
     | OPEN_PAREN
     | OPEN_BRACK
@@ -50,7 +56,8 @@ data Token
     | EOF
     deriving (Eq, Show)
 data TokenData = TokenData
-    { token :: Token
+    { tokenLineNo :: Int
+    , tokenLinePos :: Int
     }
     deriving (Show)
 
@@ -63,44 +70,46 @@ reservedCharDelims = ";()[]{}+-*/%="
 isDelim :: Char -> Bool
 isDelim d = elem d whitespaceDelims || elem d reservedCharDelims
 
-classifyDelim :: Char -> Maybe Char -> Maybe Token
-classifyDelim d e =
-    let doubleTok = case e of
-            Just c -> reservedDoubleTok d c
-            Nothing -> Nothing
-     in case doubleTok of
-            Just t -> Just t
-            _ -> reservedCharTok d
+classifyDelim :: String -> Maybe (TokenCategory, Int)
+classifyDelim remainingStr =
+    F.asum
+        [ case reservedDoubleTok remainingStr of
+            Just t -> Just (t, 2)
+            _ -> Nothing
+        , case reservedCharTok remainingStr of
+            Just t -> Just (t, 1)
+            _ -> Nothing
+        ]
 
-reservedDoubleTok :: Char -> Char -> Maybe Token
-reservedDoubleTok d e =
-    case d : [e] of
-        "+=" -> Just PLUS_EQ
-        "-=" -> Just DASH_EQ
-        "*=" -> Just STAR_EQ
-        "/=" -> Just SLASH_EQ
-        "%=" -> Just PERC_EQ
+reservedDoubleTok :: String -> Maybe TokenCategory
+reservedDoubleTok s =
+    case s of
+        '+' : '=' : _ -> Just PLUS_EQ
+        '-' : '=' : _ -> Just DASH_EQ
+        '*' : '=' : _ -> Just STAR_EQ
+        '/' : '=' : _ -> Just SLASH_EQ
+        '%' : '=' : _ -> Just PERC_EQ
         _ -> Nothing
 
-reservedCharTok :: Char -> Maybe Token
-reservedCharTok d =
-    case d of
-        ';' -> Just SEMICOLON
-        '(' -> Just OPEN_PAREN
-        ')' -> Just CLOSE_PAREN
-        '[' -> Just OPEN_BRACK
-        ']' -> Just CLOSE_BRACK
-        '{' -> Just OPEN_BRACE
-        '}' -> Just CLOSE_BRACE
-        '+' -> Just PLUS
-        '-' -> Just DASH
-        '*' -> Just STAR
-        '/' -> Just SLASH
-        '%' -> Just PERC
-        '=' -> Just EQUAL
+reservedCharTok :: String -> Maybe TokenCategory
+reservedCharTok s =
+    case s of
+        ';' : _ -> Just SEMICOLON
+        '(' : _ -> Just OPEN_PAREN
+        ')' : _ -> Just CLOSE_PAREN
+        '[' : _ -> Just OPEN_BRACK
+        ']' : _ -> Just CLOSE_BRACK
+        '{' : _ -> Just OPEN_BRACE
+        '}' : _ -> Just CLOSE_BRACE
+        '+' : _ -> Just PLUS
+        '-' : _ -> Just DASH
+        '*' : _ -> Just STAR
+        '/' : _ -> Just SLASH
+        '%' : _ -> Just PERC
+        '=' : _ -> Just EQUAL
         _ -> Nothing
 
-classifyToken :: String -> Maybe Token
+classifyToken :: String -> Maybe TokenCategory
 classifyToken s =
     F.asum
         [ case reservedKeywordTok s of
@@ -117,7 +126,7 @@ classifyToken s =
             _ -> Nothing
         ]
 
-reservedKeywordTok :: String -> Maybe Token
+reservedKeywordTok :: String -> Maybe TokenCategory
 reservedKeywordTok s =
     case s of
         "while" -> Just WHILE
@@ -138,7 +147,7 @@ reservedKeywordTok s =
         "string" -> Just STRING
         _ -> Nothing
 
-decnumTok :: String -> Maybe Token
+decnumTok :: String -> Maybe TokenCategory
 decnumTok s =
     case s of
         "0" -> Just (DECNUM s)
@@ -148,7 +157,7 @@ decnumTok s =
                 Just (DECNUM s)
         _ -> Nothing
 
-hexnumTok :: String -> Maybe Token
+hexnumTok :: String -> Maybe TokenCategory
 hexnumTok s =
     case s of
         '0' : x : rest
@@ -157,7 +166,7 @@ hexnumTok s =
                 Just (HEXNUM s)
         _ -> Nothing
 
-idenifierTok :: String -> Maybe Token
+idenifierTok :: String -> Maybe TokenCategory
 idenifierTok s =
     let alphaUnder = \c -> C.isLetter c || c == '_'
      in case s of

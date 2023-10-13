@@ -16,6 +16,7 @@ import Tokens
 
 -- TODO: include all types into AST node
 data Node = TOKEN_NODE Token | EXP_NODE Exp
+    deriving (Show)
 
 type Program = Block
 
@@ -39,6 +40,7 @@ data Simp = Simp
 type Lval = Token
 
 data Exp = INTCONST_EXP Intconst | IDENTIFIER_EXP Token | BINOP_EXP Binop | UNOP_EXP Unop
+    deriving (Show)
 
 type Intconst = Token
 
@@ -46,9 +48,11 @@ data Unop = Unop
     { unop :: Token
     , unopExpression :: Exp
     }
+    deriving (Show)
 
 data Binop = Binop
     { binop :: Token
     , binopLeftExpression :: Exp
     , binopRightExpression :: Exp
     }
+    deriving (Show)

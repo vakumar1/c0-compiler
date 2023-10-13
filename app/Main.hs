@@ -8,35 +8,33 @@ import Tokens
 
 import System.Environment
 
-handleLexerErrors :: [LexerError] -> IO ()
+handleLexerErrors :: [LexerError] -> String
 handleLexerErrors errors =
-    putStrLn
-        ( foldl
-            ( \s e ->
-                s ++ (show e) ++ "\n"
-            )
-            "Lexer Error(s) occured: "
-            errors
+    ( foldl
+        ( \s e ->
+            s ++ (show e) ++ "\n"
         )
+        "Lexer Error(s) occurred: "
+        errors
+    )
 
-handleParserErrors :: [ParserError] -> IO ()
+handleParserErrors :: [ParserError] -> String
 handleParserErrors errors =
-    putStrLn
-        ( foldl
-            ( \s e ->
-                s ++ (show e) ++ "\n"
-            )
-            "Parser Error(s) occured: "
-            errors
+    ( foldl
+        ( \s e ->
+            s ++ (show e) ++ "\n"
         )
+        "Parser Error(s) occurred: \n"
+        errors
+    )
 
 compiler :: String -> IO ()
 compiler code =
     let (tokens, lexerErrors) = lexer code
-        (exp, parserErrors) = parser tokens
+        (programExp, parserErrors) = parser tokens
      in if (length lexerErrors) /= 0
-            then handleLexerErrors lexerErrors
-            else handleParserErrors parserErrors
+            then putStrLn ((handleLexerErrors lexerErrors) ++ "\n\n" ++ (show tokens))
+            else putStrLn ((handleParserErrors parserErrors) ++ "\n\n" ++ (show programExp))
 
 main :: IO ()
 main = do

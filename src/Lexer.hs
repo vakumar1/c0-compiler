@@ -16,30 +16,32 @@ lexer code = lexerHelper [] [] "" (code ++ ['\n']) lineNoStart linePosStart
 lexerHelper :: [Token] -> [LexerError] -> String -> String -> Int -> Int -> ([Token], [LexerError])
 lexerHelper finishedTokens errors currToken remainingStr lineNo linePos =
     case remainingStr of
-        "" -> (finishedTokens ++ [EOF], errors)
+        "" -> (finishedTokens ++ [Token EOF (TokenData lineNo linePos)], errors)
         '/' : '*' : leftover -> multilineComment finishedTokens errors leftover lineNo linePos lineNo linePos
         '/' : '/' : leftover -> oneLineComment finishedTokens errors leftover lineNo
         d : leftover
             | isDelim d ->
-                let newLineNo = if d == '\n' then (lineNo + 1) else lineNo
-                    newLinePos = if d == '\n' then linePosStart else (linePos + 1)
-                    finishedToken = classifyToken currToken
-                    delimToken = classifyDelim d (if (length leftover) == 0 then Nothing else Just (head leftover))
-                    newRemainingStr = if (length delimToken) == 2 then (tail leftover) else leftover
+                let (delimTokenCat, delimTokenLength) = case (classifyDelim remainingStr) of
+                        Just (c, l) -> (Just c, l)
+                        Nothing -> (Nothing, 1)
+                    newLineNo = if d == '\n' then (lineNo + 1) else lineNo
+                    newLinePos = if d == '\n' then linePosStart else (linePos + delimTokenLength)
+                    newRemainingStr = drop delimTokenLength remainingStr
+                    finishedTokenCat = classifyToken currToken
                     tokensAddCurr =
                         if currToken == ""
                             then finishedTokens
-                            else case finishedToken of
-                                Just t -> finishedTokens ++ [t]
+                            else case finishedTokenCat of
+                                Just t -> finishedTokens ++ [Token t (TokenData lineNo (linePos - (length currToken)))]
                                 _ -> finishedTokens
                     newFinishedTokens =
-                        case delimToken of
-                            Just t -> tokensAddCurr ++ [t]
-                            _ -> tokensAddCurr
+                        case delimTokenCat of
+                            Just c -> tokensAddCurr ++ [Token c (TokenData lineNo linePos)]
+                            Nothing -> tokensAddCurr
                     newErrors =
                         if currToken == ""
                             then errors
-                            else case finishedToken of
+                            else case finishedTokenCat of
                                 Nothing -> errors ++ [(LexerError lineNo (linePos - (length currToken)) InvalidTokenError)]
                                 _ -> errors
                  in lexerHelper newFinishedTokens newErrors "" newRemainingStr newLineNo newLinePos
