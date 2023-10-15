@@ -30,6 +30,7 @@ data ParserErrorCategory
     | DanglingBinaryOp
     | ExpectedExpression
     | UnexpectedExpression
+    | ExpectedSemicolon
     deriving (Show)
 
 data ParserError = ParserError

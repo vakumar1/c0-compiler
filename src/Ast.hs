@@ -1,8 +1,9 @@
 module Ast (
     Node (..),
-    Program,
-    Block,
-    BlockElem (..),
+    -- Program,
+    -- Block,
+    -- BlockElem (..),
+    Statements,
     Statement (..),
     Decl,
     Simp,
@@ -15,16 +16,18 @@ module Ast (
 import Tokens
 
 -- TODO: include all types into AST node
-data Node = TOKEN_NODE Token | EXP_NODE Exp
+data Node = TOKEN_NODE Token | EXP_NODE Exp | STMT_NODE Statement | STMTS_NODE Statements
     deriving (Show)
 
-type Program = Block
+-- type Program = Block
 
-type Block = [BlockElem]
+-- type Block = Statements
 
-data BlockElem = BLOCK Block | STATEMENT Statement
+type Statements = [Statement]
 
-data Statement = DECL Decl | SIMP Simp | RET Exp
+-- data Statement = DECL Decl | SIMP Simp | RET Exp
+data Statement = STMT_EXP Exp
+    deriving (Show)
 
 data Decl = Decl
     { simpIdentifier :: Token
