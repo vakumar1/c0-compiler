@@ -23,14 +23,23 @@ instance Show LexerError where
     show l = ((show . lexerErrorCat) l) ++ " -- lineNo=" ++ ((show . errorLineNo) l) ++ " linePos=" ++ ((show . errorLinePos) l)
 
 data ParserErrorCategory
-    = EmptyExpression
+    = -- EXP ERRORS
+      EmptyExpression
     | DanglingOpenParen
     | DanglingCloseParen
     | DanglingUnaryOp
     | DanglingBinaryOp
     | ExpectedExpression
     | UnexpectedExpression
-    | ExpectedSemicolon
+    | UnexpectedTokenInExpression
+    | -- STMT ERRORS
+      ExpectedSemicolon
+    | DanglingType
+    | UnexpectedType
+    | UnexpectedIdentifier
+    | UnexpectedReturn
+    | UnexpectedASNOp
+    | UnexpectedTokenInStatement
     deriving (Show)
 
 data ParserError = ParserError

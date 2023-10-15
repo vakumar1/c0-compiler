@@ -5,7 +5,7 @@ module Ast (
     -- BlockElem (..),
     Statements,
     Statement (..),
-    Decl,
+    Decl (..),
     Simp,
     Lval,
     Exp (..),
@@ -26,13 +26,14 @@ data Node = TOKEN_NODE Token | EXP_NODE Exp | STMT_NODE Statement | STMTS_NODE S
 type Statements = [Statement]
 
 -- data Statement = DECL Decl | SIMP Simp | RET Exp
-data Statement = STMT_EXP Exp
+data Statement = STMT_DECL Decl | STMT_RET Exp
     deriving (Show)
 
 data Decl = Decl
-    { simpIdentifier :: Token
-    , simpExpression :: Exp
+    { declIdentifier :: Token
+    , declExpression :: Maybe Exp
     }
+    deriving (Show)
 
 data Simp = Simp
     { simpAsnop :: Token

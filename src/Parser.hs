@@ -18,63 +18,117 @@ stmtsHelper currNodes tokens errors =
         _ -> stmtHelper currNodes tokens errors
 
 stmtsHandleEOF :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
-stmtsHandleEOF currNodes tokens errors = 
+stmtsHandleEOF currNodes tokens errors =
     let reduce = stmtsHelper (stmtsTryReduce currNodes (head tokens)) tokens errors
-    in case currNodes of
-        l | stmtsHitBarrier l -> (Nothing, errors)
-        STMTS_NODE ss : l | stmtsHitBarrier l -> (Just ss, errors)
-        _ -> reduce
+     in case currNodes of
+            l | stmtsHitBarrier l -> (Nothing, errors)
+            STMTS_NODE ss : l | stmtsHitBarrier l -> (Just ss, errors)
+            _ -> reduce
 
 -- STMTS HELPERS
 
 stmtsHitBarrier :: [Node] -> Bool
-stmtsHitBarrier currNodes = 
+stmtsHitBarrier currNodes =
     case currNodes of
         [] -> True
         _ -> False
 
 stmtsTryReduce :: [Node] -> Token -> [Node]
-stmtsTryReduce currNodes lookahead = 
+stmtsTryReduce currNodes lookahead =
     case currNodes of
         STMT_NODE s : _ -> stmtsSmushLeadingStmt [] currNodes
-        _ -> error (compilerError ("entered unknown internal state when parsing stmts. token=" ++ (show lookahead)))
+        _ -> error (compilerError ("entered unknown internal state when parsing stmts. currNodes=" ++ (show currNodes)))
 
 stmtsSmushLeadingStmt :: Statements -> [Node] -> [Node]
-stmtsSmushLeadingStmt acc currNodes = 
-    case currNodes of 
-        STMT_NODE s : _ -> stmtsSmushLeadingStmt (s:acc) (tail currNodes)
+stmtsSmushLeadingStmt acc currNodes =
+    case currNodes of
+        STMT_NODE s : _ -> stmtsSmushLeadingStmt (s : acc) (tail currNodes)
         _ -> (STMTS_NODE (acc)) : currNodes
-
 
 -- STMT HANDLERS
 
 stmtHelper :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
-stmtHelper currNodes tokens errors = 
+stmtHelper currNodes tokens errors =
     case (tokenCat (head tokens)) of
         EOF -> stmtHandleEOF currNodes tokens errors
         SEMICOLON -> stmtHandleSemicolon currNodes tokens errors
-        _ -> expHelper currNodes tokens errors
+        RETURN -> stmtHandleReturn currNodes tokens errors
+        INT -> stmtHandleInt currNodes tokens errors
+        IDENTIFIER _ -> stmtHandleIdentifier currNodes tokens errors
+        EQUAL -> stmtHandleEqual currNodes tokens errors
+        _ -> stmtHandleUnexpected currNodes tokens errors
 
 stmtHandleEOF :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
-stmtHandleEOF currNodes tokens errors = 
-    let reduce = stmtHelper (stmtTryReduce currNodes (head tokens)) tokens errors
-    in case currNodes of
-        l | stmtHitBarrier l -> stmtsHelper currNodes tokens (errors ++ [ParserError ExpectedSemicolon (head tokens)])
-        STMT_NODE s : l | stmtHitBarrier l -> stmtsHelper currNodes tokens (errors ++ [ParserError ExpectedSemicolon (head tokens)])
-        _ -> reduce
+stmtHandleEOF currNodes tokens errors =
+    let discardDangler = \prevNodes err -> expHelper prevNodes tokens (errors ++ [err])
+        reduce = stmtHelper (stmtTryReduce currNodes (head tokens)) tokens errors
+     in case currNodes of
+            l | stmtHitBarrier l -> stmtsHelper currNodes tokens (errors ++ [ParserError ExpectedSemicolon (head tokens)])
+            STMT_NODE s : l | stmtHitBarrier l -> stmtsHelper currNodes tokens (errors ++ [ParserError ExpectedSemicolon (head tokens)])
+            TOKEN_NODE t : _ | istype (tokenCat t) -> discardDangler (tail currNodes) (ParserError ExpectedSemicolon (head tokens))
+            _ -> reduce
 
 stmtHandleSemicolon :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
-stmtHandleSemicolon currNodes tokens errors = 
-    let reduce = stmtHelper (stmtTryReduce currNodes (head tokens)) tokens errors
-    in case currNodes of
-        l | stmtHitBarrier l -> stmtsHelper currNodes (tail tokens) errors
-        STMT_NODE s : l | stmtHitBarrier l -> stmtsHelper currNodes (tail tokens) errors
-        _ -> reduce
+stmtHandleSemicolon currNodes tokens errors =
+    let discardDangler = \prevNodes err -> expHelper prevNodes tokens (errors ++ [err])
+        reduce = stmtHelper (stmtTryReduce currNodes (head tokens)) tokens errors
+     in case currNodes of
+            l | stmtHitBarrier l -> stmtsHelper currNodes (tail tokens) errors
+            STMT_NODE s : l | stmtHitBarrier l -> stmtsHelper currNodes (tail tokens) errors
+            TOKEN_NODE t : _ | istype (tokenCat t) -> discardDangler (tail currNodes) (ParserError ExpectedSemicolon (head tokens))
+            _ -> reduce
+
+stmtHandleUnexpected :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
+stmtHandleUnexpected currNodes tokens errors = stmtHelper currNodes (tail tokens) (errors ++ [ParserError UnexpectedTokenInStatement (head tokens)])
+
+stmtHandleReturn :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
+stmtHandleReturn currNodes tokens errors =
+    let discardLookahead = stmtHelper currNodes (tail tokens) (errors ++ [ParserError UnexpectedReturn (head tokens)])
+        reduce = stmtHelper (stmtTryReduce currNodes (head tokens)) tokens errors
+        shiftLookahead = expHelper ((TOKEN_NODE (head tokens)) : currNodes) (tail tokens) errors
+     in case currNodes of
+            l | stmtHitBarrier l -> shiftLookahead
+            TOKEN_NODE t : _ | istype (tokenCat t) -> discardLookahead
+            TOKEN_NODE a : TOKEN_NODE t : _ | isident (tokenCat a) && istype (tokenCat t) -> discardLookahead
+            _ -> reduce
+
+stmtHandleInt :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
+stmtHandleInt currNodes tokens errors =
+    let discardLookahead = stmtHelper currNodes (tail tokens) (errors ++ [ParserError UnexpectedType (head tokens)])
+        reduce = stmtHelper (stmtTryReduce currNodes (head tokens)) tokens errors
+        shiftLookahead = stmtHelper ((TOKEN_NODE (head tokens)) : currNodes) (tail tokens) errors
+     in case currNodes of
+            l | stmtHitBarrier l -> shiftLookahead
+            TOKEN_NODE t : _ | istype (tokenCat t) -> discardLookahead
+            TOKEN_NODE a : TOKEN_NODE t : _ | isident (tokenCat a) && istype (tokenCat t) -> discardLookahead
+            _ -> reduce
+
+stmtHandleIdentifier :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
+stmtHandleIdentifier currNodes tokens errors =
+    let discardLookahead = stmtHelper currNodes (tail tokens) (errors ++ [ParserError UnexpectedIdentifier (head tokens)])
+        reduce = stmtHelper (stmtTryReduce currNodes (head tokens)) tokens errors
+        shiftLookahead = stmtHelper ((TOKEN_NODE (head tokens)) : currNodes) (tail tokens) errors
+     in case currNodes of
+            l | stmtHitBarrier l -> discardLookahead
+            TOKEN_NODE t : _ | istype (tokenCat t) -> shiftLookahead
+            TOKEN_NODE a : TOKEN_NODE t : _ | isident (tokenCat a) && istype (tokenCat t) -> discardLookahead
+            _ -> reduce
+
+stmtHandleEqual :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
+stmtHandleEqual currNodes tokens errors =
+    let discardLookahead = stmtHelper currNodes (tail tokens) (errors ++ [ParserError UnexpectedASNOp (head tokens)])
+        reduce = stmtHelper (stmtTryReduce currNodes (head tokens)) tokens errors
+        shiftLookahead = expHelper ((TOKEN_NODE (head tokens)) : currNodes) (tail tokens) errors
+     in case currNodes of
+            l | stmtHitBarrier l -> discardLookahead
+            TOKEN_NODE t : _ | istype (tokenCat t) -> discardLookahead
+            TOKEN_NODE a : TOKEN_NODE t : _ | isident (tokenCat a) && istype (tokenCat t) -> shiftLookahead
+            _ -> reduce
 
 -- STMT HELPERS
 
 stmtHitBarrier :: [Node] -> Bool
-stmtHitBarrier currNodes = 
+stmtHitBarrier currNodes =
     case currNodes of
         [] -> True
         STMTS_NODE _ : _ -> True
@@ -82,18 +136,33 @@ stmtHitBarrier currNodes =
         _ -> False
 
 stmtTryReduce :: [Node] -> Token -> [Node]
-stmtTryReduce currNodes lookahead = 
+stmtTryReduce currNodes lookahead =
     case currNodes of
-        EXP_NODE e : _ -> STMT_NODE (STMT_EXP e) : (tail currNodes)
-        _ -> error (compilerError ("entered unknown internal state when parsing stmt. currNodes=" ++ (show currNodes)))
+        TOKEN_NODE a : TOKEN_NODE t : _
+            | istype (tokenCat t) && isident (tokenCat a) ->
+                (STMT_NODE (STMT_DECL (Decl a Nothing))) : (drop 2 currNodes)
+        EXP_NODE e : TOKEN_NODE (Token EQUAL _) : TOKEN_NODE a : TOKEN_NODE t : _
+            | istype (tokenCat t) && isident (tokenCat a) ->
+                (STMT_NODE (STMT_DECL (Decl a (Just e)))) : (drop 4 currNodes)
+        EXP_NODE e : TOKEN_NODE (Token RETURN _) : _ -> STMT_NODE (STMT_RET e) : (drop 2 currNodes)
+        _ -> error (compilerError ("entered unknown internal state when parsing stmt. token=" ++ (show lookahead)))
+
+istype :: TokenCategory -> Bool
+istype t = t == INT
+
+isident :: TokenCategory -> Bool
+isident t =
+    case t of
+        IDENTIFIER _ -> True
+        _ -> False
 
 -- EXP HANDLERS
 
 expHelper :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
 expHelper currNodes tokens errors =
     case (tokenCat (head tokens)) of
-        EOF -> expHandleEOF currNodes tokens errors
-        SEMICOLON -> expHandleSemicolon currNodes tokens errors
+        EOF -> expHandleTerminator currNodes tokens errors
+        SEMICOLON -> expHandleTerminator currNodes tokens errors
         IDENTIFIER _ -> expHandleAtomic currNodes tokens errors
         HEXNUM _ -> expHandleAtomic currNodes tokens errors
         DECNUM _ -> expHandleAtomic currNodes tokens errors
@@ -104,9 +173,10 @@ expHelper currNodes tokens errors =
         PERC -> expHandleStrictBinop currNodes tokens errors
         OPEN_PAREN -> expHandleOpenParen currNodes tokens errors
         CLOSE_PAREN -> expHandleCloseParen currNodes tokens errors
+        _ -> expHandleUnexpected currNodes tokens errors
 
-expHandleEOF :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
-expHandleEOF currNodes tokens errors =
+expHandleTerminator :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
+expHandleTerminator currNodes tokens errors =
     let discardDangler = \prevNodes err -> expHelper prevNodes tokens (errors ++ [err])
         reduce = expHelper (expTryReduce currNodes (head tokens)) tokens errors
      in case currNodes of
@@ -124,24 +194,8 @@ expHandleEOF currNodes tokens errors =
                     discardDangler (tail currNodes) (ParserError DanglingUnaryOp u)
             _ -> reduce
 
-expHandleSemicolon :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
-expHandleSemicolon currNodes tokens errors = 
-    let discardDangler = \prevNodes err -> expHelper prevNodes tokens (errors ++ [err])
-        reduce = expHelper (expTryReduce currNodes (head tokens)) tokens errors
-    in case currNodes of
-            l | expHitBarrier l -> stmtHelper currNodes tokens (errors ++ [ParserError EmptyExpression (head tokens)])
-            EXP_NODE e : l | expHitBarrier l -> stmtHelper currNodes tokens errors
-            TOKEN_NODE (Token OPEN_PAREN d) : _ ->
-                discardDangler (tail currNodes) (ParserError DanglingOpenParen (Token OPEN_PAREN d))
-            EXP_NODE e : TOKEN_NODE (Token OPEN_PAREN d) : leftover ->
-                discardDangler ((head currNodes) : leftover) (ParserError DanglingOpenParen (Token OPEN_PAREN d))
-            TOKEN_NODE b : EXP_NODE e : _
-                | isbinop (tokenCat b) ->
-                    discardDangler (tail currNodes) (ParserError DanglingBinaryOp b)
-            TOKEN_NODE u : _
-                | isunop (tokenCat u) ->
-                    discardDangler (tail currNodes) (ParserError DanglingUnaryOp u)
-            _ -> reduce
+expHandleUnexpected :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
+expHandleUnexpected currNodes tokens errors = expHelper currNodes (tail tokens) (errors ++ [ParserError UnexpectedTokenInExpression (head tokens)])
 
 expHandleAtomic :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
 expHandleAtomic currNodes tokens errors =
@@ -228,15 +282,16 @@ expDiscardLookahead currNodes tokens newErrors = expHelper currNodes (tail token
 expDiscardDangler :: [Node] -> [Token] -> [ParserError] -> (Maybe Statements, [ParserError])
 expDiscardDangler prevNodes tokens newErrors = expHelper prevNodes tokens newErrors
 
-
 -- EXP HELPERS
 
 expHitBarrier :: [Node] -> Bool
-expHitBarrier nodes = 
+expHitBarrier nodes =
     case nodes of
         [] -> True
         STMT_NODE s : _ -> True
         STMTS_NODE ss : _ -> True
+        TOKEN_NODE (Token RETURN _) : _ -> True
+        TOKEN_NODE (Token EQUAL _) : _ -> True
         _ -> False
 
 expTryReduce :: [Node] -> Token -> [Node]
