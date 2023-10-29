@@ -14,20 +14,22 @@ linePosStart :: Int
 linePosStart = 1
 
 lexer :: String -> ([Token], [LexerError])
-lexer code = lexerHelper [] [] "" (code ++ ['\n']) lineNoStart linePosStart
+lexer code = lexerHelper [] [] [] "" (code ++ ['\n']) lineNoStart linePosStart
 
-lexerHelper :: [Token] -> [LexerError] -> String -> String -> Int -> Int -> ([Token], [LexerError])
-lexerHelper finishedTokens errors currToken remainingStr lineNo linePos =
+lexerHelper :: [Token] -> [Token] -> [LexerError] -> String -> String -> Int -> Int -> ([Token], [LexerError])
+lexerHelper finishedTokens openerStack errors currToken remainingStr lineNo linePos =
     case remainingStr of
         -- EOF
         "" -> 
-            ((Token EOF (TokenData lineNo linePos)):finishedTokens, errors)
+            let errorsAddDangler = foldr (\o l -> (LexerError ((tokenLineNo . tokenData) o) ((tokenLinePos . tokenData) o) DanglingOpenEncloserError):l) errors openerStack
+            in ((Token EOF (TokenData lineNo linePos)):finishedTokens, errorsAddDangler)
 
+        -- TODO: move under delimiters (to wrap up currToken)
         -- comment begin
         '/' : '*' : _ -> 
-            multilineComment finishedTokens errors (drop 2 remainingStr) lineNo linePos lineNo linePos
+            multilineComment finishedTokens openerStack errors (drop 2 remainingStr) lineNo linePos lineNo linePos
         '/' : '/' : _ -> 
-            oneLineComment finishedTokens errors (drop 2 remainingStr) lineNo
+            oneLineComment finishedTokens openerStack errors (drop 2 remainingStr) lineNo
 
         -- delimiters
 
@@ -55,43 +57,55 @@ lexerHelper finishedTokens errors currToken remainingStr lineNo linePos =
                             _ -> errors
             in case d of
                 '\n' -> 
-                    lexerHelper newFinishedTokens newErrors "" newRemainingStr (lineNo + 1) 0
+                    lexerHelper newFinishedTokens openerStack newErrors "" newRemainingStr (lineNo + 1) 0
                 _ | elem d whitespaceDelims -> 
-                    lexerHelper newFinishedTokens newErrors "" newRemainingStr lineNo (linePos + 1)
+                    lexerHelper newFinishedTokens openerStack newErrors "" newRemainingStr lineNo (linePos + 1)
                 _ | elem d "{[(" ->
-                    -- TODO: add opener to stack
-                    lexerHelper newFinishedTokens newErrors "" newRemainingStr lineNo (linePos + 1)
+                    lexerHelper newFinishedTokens ((head newFinishedTokens):openerStack) newErrors "" newRemainingStr lineNo (linePos + 1)
                 _ | elem d "}])" ->
-                    -- TODO: add check for match of preceding opener
-                    let haltCat = case d of
-                                    ')' -> OPEN_PAREN
-                                    '}' -> OPEN_BRACE
-                                    ']' -> OPEN_BRACK
-                    in lexerHelper (collapseEnclosing haltCat newFinishedTokens) errors "" newRemainingStr lineNo (linePos + 1)
+                    if closerMatchesLastOpener openerStack d
+                        then 
+                            let haltCat = case d of
+                                            ')' -> OPEN_PAREN
+                                            '}' -> OPEN_BRACE
+                                            ']' -> OPEN_BRACK
+                                collapsedFinishedTokens = collapseEnclosing haltCat newFinishedTokens
+                            in lexerHelper collapsedFinishedTokens (tail openerStack) newErrors "" newRemainingStr lineNo (linePos + 1)
+                        else 
+                            let errorsAddDangler = ((LexerError lineNo linePos DanglingClosedEncloserError):newErrors)
+                            in lexerHelper (tail newFinishedTokens) openerStack errorsAddDangler "" newRemainingStr lineNo (linePos + 1)
                 _ ->
-                    lexerHelper newFinishedTokens newErrors "" newRemainingStr lineNo (linePos + delimLength)
+                    lexerHelper newFinishedTokens openerStack newErrors "" newRemainingStr lineNo (linePos + delimLength)
 
         -- general case
         d : _ ->
-            lexerHelper finishedTokens errors (currToken ++ [d]) (tail remainingStr) lineNo (linePos + 1)
+            lexerHelper finishedTokens openerStack errors (currToken ++ [d]) (tail remainingStr) lineNo (linePos + 1)
 
 
 -- COMMENT HELPERS
 
-oneLineComment :: [Token] -> [LexerError] -> String -> Int -> ([Token], [LexerError])
-oneLineComment finishedTokens errors remainingStr lineNo =
+oneLineComment :: [Token] -> [Token] -> [LexerError] -> String -> Int -> ([Token], [LexerError])
+oneLineComment finishedTokens openerStack errors remainingStr lineNo =
     case remainingStr of
-        "" -> (finishedTokens, errors)
-        '\n' : _ -> lexerHelper finishedTokens errors "" (tail remainingStr) (lineNo + 1) linePosStart
-        _ -> oneLineComment finishedTokens errors (tail remainingStr) lineNo
+        "" -> 
+            lexerHelper finishedTokens openerStack errors "" (tail remainingStr) (lineNo + 1) linePosStart
+        '\n' : _ -> 
+            lexerHelper finishedTokens openerStack errors "" (tail remainingStr) (lineNo + 1) linePosStart
+        _ -> 
+            oneLineComment finishedTokens openerStack errors (tail remainingStr) lineNo
 
-multilineComment :: [Token] -> [LexerError] -> String -> Int -> Int -> Int -> Int -> ([Token], [LexerError])
-multilineComment finishedTokens errors remainingStr commentStartLineNo commentStartLinePos lineNo linePos =
+multilineComment :: [Token] -> [Token] -> [LexerError] -> String -> Int -> Int -> Int -> Int -> ([Token], [LexerError])
+multilineComment finishedTokens openerStack errors remainingStr commentStartLineNo commentStartLinePos lineNo linePos =
     case remainingStr of
-        "" -> (finishedTokens, (LexerError commentStartLineNo commentStartLinePos DanglingCommentError) : errors)
-        '*' : '/' : leftover -> lexerHelper finishedTokens errors "" leftover lineNo (linePos + 2)
-        '\n' : _ -> multilineComment finishedTokens errors (tail remainingStr) commentStartLineNo commentStartLinePos (lineNo + 1) linePosStart
-        _ -> multilineComment finishedTokens errors (tail remainingStr) commentStartLineNo commentStartLinePos lineNo (linePos + 1)
+        "" -> 
+            let errorsAddDangler = ((LexerError commentStartLineNo commentStartLinePos DanglingCommentError) : errors)
+            in lexerHelper finishedTokens openerStack errorsAddDangler "" remainingStr lineNo linePos
+        '*' : '/' : leftover -> 
+            lexerHelper finishedTokens openerStack errors "" leftover lineNo (linePos + 2)
+        '\n' : _ -> 
+            multilineComment finishedTokens openerStack errors (tail remainingStr) commentStartLineNo commentStartLinePos (lineNo + 1) linePosStart
+        _ -> 
+            multilineComment finishedTokens openerStack errors (tail remainingStr) commentStartLineNo commentStartLinePos lineNo (linePos + 1)
 
 
 -- ENCLOSING (){}[] HELPERS
@@ -105,6 +119,14 @@ collapseEnclosingHelper haltCat remainingTokens subTokens =
         then (Token (ENCLOSED_TOKS (head remainingTokens) subTokens) ((tokenData . head) remainingTokens)):(tail remainingTokens)
         else collapseEnclosingHelper haltCat (tail remainingTokens) ((head remainingTokens):subTokens)
 
+closerMatchesLastOpener :: [Token] -> Char -> Bool
+closerMatchesLastOpener openerStack closer = 
+    if null openerStack
+        then False
+        else case (tokenCat . head) openerStack of
+            OPEN_BRACE -> closer == '}'
+            OPEN_PAREN -> closer == ')'
+            OPEN_BRACK -> closer == ']'
 
 -- DELIM HELPERS
 
