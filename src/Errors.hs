@@ -11,8 +11,8 @@ import Tokens
 compilerError :: String -> String
 compilerError msg = "[INTERNAL COMPILER ERROR OCCURRED.]: " ++ msg
 
-data LexerErrorCategory = 
-    InvalidTokenError 
+data LexerErrorCategory
+    = InvalidTokenError
     | DanglingCommentError
     | DanglingOpenEncloserError
     | DanglingClosedEncloserError

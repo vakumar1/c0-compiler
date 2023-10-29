@@ -1,10 +1,10 @@
 module Main (main) where
 
-import Ast
+-- import Ast
 import Errors
 import Lexer
-import Parser
-import Tokens
+
+-- import Parser
 
 import System.Environment
 
@@ -28,13 +28,20 @@ handleParserErrors errors =
         errors
     )
 
+prettyPrintList :: (Show a) => [a] -> String
+prettyPrintList l =
+    ( foldl
+        ( \s e ->
+            s ++ (show e) ++ "\n"
+        )
+        ""
+        l
+    )
+
 compiler :: String -> IO ()
 compiler code =
     let (tokens, lexerErrors) = lexer code
-        (programExp, parserErrors) = parser tokens
-     in if (length lexerErrors) /= 0
-            then putStrLn ((handleLexerErrors lexerErrors) ++ "\n\n" ++ (show tokens))
-            else putStrLn ((handleParserErrors parserErrors) ++ "\n\n" ++ (show programExp))
+     in putStrLn ((handleLexerErrors (reverse lexerErrors)) ++ "\n\n" ++ (prettyPrintList (reverse tokens)))
 
 main :: IO ()
 main = do

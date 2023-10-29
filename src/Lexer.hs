@@ -17,96 +17,95 @@ lexer :: String -> ([Token], [LexerError])
 lexer code = lexerHelper [] [] [] "" (code ++ ['\n']) lineNoStart linePosStart
 
 lexerHelper :: [Token] -> [Token] -> [LexerError] -> String -> String -> Int -> Int -> ([Token], [LexerError])
-lexerHelper finishedTokens openerStack errors currToken remainingStr lineNo linePos =
-    case remainingStr of
-        -- EOF
-        "" -> 
-            let errorsAddDangler = foldr (\o l -> (LexerError ((tokenLineNo . tokenData) o) ((tokenLinePos . tokenData) o) DanglingOpenEncloserError):l) errors openerStack
-            in ((Token EOF (TokenData lineNo linePos)):finishedTokens, errorsAddDangler)
-
-        -- TODO: move under delimiters (to wrap up currToken)
-        -- comment begin
-        '/' : '*' : _ -> 
-            multilineComment finishedTokens openerStack errors (drop 2 remainingStr) lineNo linePos lineNo linePos
-        '/' : '/' : _ -> 
-            oneLineComment finishedTokens openerStack errors (drop 2 remainingStr) lineNo
-
-        -- delimiters
-
-        d : _ | isDelim d ->
-            let (delimTokenCat, delimLength) = case classifyDelim remainingStr of
-                    Just (c, l) -> (Just c, l)
-                    Nothing -> (Nothing, 1)
-                newRemainingStr = (drop delimLength remainingStr)
-                finishedTokenCat = classifyToken currToken
-                tokensAddCurr =
-                    if currToken == ""
-                        then finishedTokens
-                        else case finishedTokenCat of
-                            Just t -> (Token t (TokenData lineNo (linePos - (length currToken)))):finishedTokens
-                            _ -> finishedTokens
-                newFinishedTokens =
-                    case delimTokenCat of
-                        Just c -> (Token c (TokenData lineNo linePos)):tokensAddCurr
-                        Nothing -> tokensAddCurr
-                newErrors =
-                    if currToken == ""
-                        then errors
-                        else case finishedTokenCat of
-                            Nothing -> ((LexerError lineNo (linePos - (length currToken)) InvalidTokenError)):errors
-                            _ -> errors
-            in case d of
-                '\n' -> 
-                    lexerHelper newFinishedTokens openerStack newErrors "" newRemainingStr (lineNo + 1) 0
-                _ | elem d whitespaceDelims -> 
-                    lexerHelper newFinishedTokens openerStack newErrors "" newRemainingStr lineNo (linePos + 1)
-                _ | elem d "{[(" ->
-                    lexerHelper newFinishedTokens ((head newFinishedTokens):openerStack) newErrors "" newRemainingStr lineNo (linePos + 1)
-                _ | elem d "}])" ->
-                    if closerMatchesLastOpener openerStack d
-                        then 
-                            let haltCat = case d of
-                                            ')' -> OPEN_PAREN
-                                            '}' -> OPEN_BRACE
-                                            ']' -> OPEN_BRACK
-                                collapsedFinishedTokens = collapseEnclosing haltCat newFinishedTokens
-                            in lexerHelper collapsedFinishedTokens (tail openerStack) newErrors "" newRemainingStr lineNo (linePos + 1)
-                        else 
-                            let errorsAddDangler = ((LexerError lineNo linePos DanglingClosedEncloserError):newErrors)
-                            in lexerHelper (tail newFinishedTokens) openerStack errorsAddDangler "" newRemainingStr lineNo (linePos + 1)
+lexerHelper finishedTokens openerStack errors currToken remainingStr lineNo linePos
+    -- EOF
+    | null remainingStr =
+        let errorsAddDangler = foldr (\o l -> (LexerError ((tokenLineNo . tokenData) o) ((tokenLinePos . tokenData) o) DanglingOpenEncloserError) : l) errors openerStack
+         in ((Token EOF (TokenData lineNo linePos)) : finishedTokens, errorsAddDangler)
+    -- delimiters
+    | (isDelim . head) remainingStr =
+        -- try to process current token and delimiter
+        let (delimTokenCat, delimLength) = case classifyDelim remainingStr of
+                Just (c, l) -> (Just c, l)
+                Nothing -> (Nothing, 1)
+            newRemainingStr = (drop delimLength remainingStr)
+            finishedTokenCat = classifyToken currToken
+            tokensAddCurr =
+                if currToken == ""
+                    then finishedTokens
+                    else case finishedTokenCat of
+                        Just t -> (Token t (TokenData lineNo (linePos - (length currToken)))) : finishedTokens
+                        _ -> finishedTokens
+            newFinishedTokens =
+                case delimTokenCat of
+                    Just c -> (Token c (TokenData lineNo linePos)) : tokensAddCurr
+                    Nothing -> tokensAddCurr
+            newErrors =
+                if currToken == ""
+                    then errors
+                    else case finishedTokenCat of
+                        Nothing -> ((LexerError lineNo (linePos - (length currToken)) InvalidTokenError)) : errors
+                        _ -> errors
+         in case remainingStr of
+                -- comment: immediately go into comment mode
+                '/' : '*' : _ ->
+                    multilineComment tokensAddCurr openerStack newErrors (drop 2 remainingStr) lineNo linePos lineNo linePos
+                '/' : '/' : _ ->
+                    oneLineComment tokensAddCurr openerStack newErrors (drop 2 remainingStr) lineNo
+                -- whitespace
+                '\n' : _ ->
+                    lexerHelper tokensAddCurr openerStack newErrors "" newRemainingStr (lineNo + 1) 0
+                _
+                    | elem (head remainingStr) whitespaceDelims ->
+                        lexerHelper tokensAddCurr openerStack newErrors "" newRemainingStr lineNo (linePos + 1)
+                -- open enclosure: add delim token to tokens and add opener to stack
+                _
+                    | elem (head remainingStr) "{[(" ->
+                        lexerHelper newFinishedTokens ((head newFinishedTokens) : openerStack) newErrors "" newRemainingStr lineNo (linePos + 1)
+                -- close enclousre: validate against stack and try to collapse the enclosure
+                _
+                    | elem (head remainingStr) "}])" ->
+                        if closerMatchesLastOpener openerStack (head remainingStr)
+                            then
+                                let haltCat = case (head remainingStr) of
+                                        ')' -> OPEN_PAREN
+                                        '}' -> OPEN_BRACE
+                                        ']' -> OPEN_BRACK
+                                    collapsedFinishedTokens = collapseEnclosing haltCat newFinishedTokens
+                                 in lexerHelper collapsedFinishedTokens (tail openerStack) newErrors "" newRemainingStr lineNo (linePos + 1)
+                            else
+                                let errorsAddDangler = ((LexerError lineNo linePos DanglingClosedEncloserError) : newErrors)
+                                 in lexerHelper (tail newFinishedTokens) openerStack errorsAddDangler "" newRemainingStr lineNo (linePos + 1)
+                -- general delim case: add delim token to tokens
                 _ ->
                     lexerHelper newFinishedTokens openerStack newErrors "" newRemainingStr lineNo (linePos + delimLength)
-
-        -- general case
-        d : _ ->
-            lexerHelper finishedTokens openerStack errors (currToken ++ [d]) (tail remainingStr) lineNo (linePos + 1)
-
+    -- general case
+    | otherwise = lexerHelper finishedTokens openerStack errors (currToken ++ [(head remainingStr)]) (tail remainingStr) lineNo (linePos + 1)
 
 -- COMMENT HELPERS
 
 oneLineComment :: [Token] -> [Token] -> [LexerError] -> String -> Int -> ([Token], [LexerError])
 oneLineComment finishedTokens openerStack errors remainingStr lineNo =
     case remainingStr of
-        "" -> 
+        "" ->
             lexerHelper finishedTokens openerStack errors "" (tail remainingStr) (lineNo + 1) linePosStart
-        '\n' : _ -> 
+        '\n' : _ ->
             lexerHelper finishedTokens openerStack errors "" (tail remainingStr) (lineNo + 1) linePosStart
-        _ -> 
+        _ ->
             oneLineComment finishedTokens openerStack errors (tail remainingStr) lineNo
 
 multilineComment :: [Token] -> [Token] -> [LexerError] -> String -> Int -> Int -> Int -> Int -> ([Token], [LexerError])
 multilineComment finishedTokens openerStack errors remainingStr commentStartLineNo commentStartLinePos lineNo linePos =
     case remainingStr of
-        "" -> 
+        "" ->
             let errorsAddDangler = ((LexerError commentStartLineNo commentStartLinePos DanglingCommentError) : errors)
-            in lexerHelper finishedTokens openerStack errorsAddDangler "" remainingStr lineNo linePos
-        '*' : '/' : leftover -> 
+             in lexerHelper finishedTokens openerStack errorsAddDangler "" remainingStr lineNo linePos
+        '*' : '/' : leftover ->
             lexerHelper finishedTokens openerStack errors "" leftover lineNo (linePos + 2)
-        '\n' : _ -> 
+        '\n' : _ ->
             multilineComment finishedTokens openerStack errors (tail remainingStr) commentStartLineNo commentStartLinePos (lineNo + 1) linePosStart
-        _ -> 
+        _ ->
             multilineComment finishedTokens openerStack errors (tail remainingStr) commentStartLineNo commentStartLinePos lineNo (linePos + 1)
-
 
 -- ENCLOSING (){}[] HELPERS
 
@@ -114,13 +113,13 @@ collapseEnclosing :: TokenCategory -> [Token] -> [Token]
 collapseEnclosing haltCat tokens = collapseEnclosingHelper haltCat tokens []
 
 collapseEnclosingHelper :: TokenCategory -> [Token] -> [Token] -> [Token]
-collapseEnclosingHelper haltCat remainingTokens subTokens = 
+collapseEnclosingHelper haltCat remainingTokens subTokens =
     if haltCat == (tokenCat . head) remainingTokens
-        then (Token (ENCLOSED_TOKS (head remainingTokens) subTokens) ((tokenData . head) remainingTokens)):(tail remainingTokens)
-        else collapseEnclosingHelper haltCat (tail remainingTokens) ((head remainingTokens):subTokens)
+        then (Token (ENCLOSED_TOKS (head remainingTokens) subTokens) ((tokenData . head) remainingTokens)) : (tail remainingTokens)
+        else collapseEnclosingHelper haltCat (tail remainingTokens) ((head remainingTokens) : subTokens)
 
 closerMatchesLastOpener :: [Token] -> Char -> Bool
-closerMatchesLastOpener openerStack closer = 
+closerMatchesLastOpener openerStack closer =
     if null openerStack
         then False
         else case (tokenCat . head) openerStack of
