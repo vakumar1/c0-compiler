@@ -3,6 +3,7 @@ module Main (main) where
 -- import Ast
 import Errors
 import Lexer
+import Parser
 
 -- import Parser
 
@@ -41,7 +42,8 @@ prettyPrintList l =
 compiler :: String -> IO ()
 compiler code =
     let (tokens, lexerErrors) = lexer code
-     in putStrLn ((handleLexerErrors (reverse lexerErrors)) ++ "\n\n" ++ (prettyPrintList (reverse tokens)))
+        final = parser (reverse tokens)
+    in ((putStrLn . show) final)
 
 main :: IO ()
 main = do

@@ -37,6 +37,7 @@ library:
   source-dirs: src
   dependencies:
   - text
+  - array
 
 executables:
   c0-compiler-exe:

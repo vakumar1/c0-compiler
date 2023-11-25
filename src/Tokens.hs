@@ -17,7 +17,6 @@ data TokenCategory
     | CLOSE_PAREN
     | CLOSE_BRACK
     | CLOSE_BRACE
-    | ENCLOSED_TOKS Token [Token]
     | PLUS
     | DASH
     | STAR
@@ -49,7 +48,6 @@ data TokenCategory
     | CHAR
     | STRING
     | EOF
-    | PROGRAM -- TODO: remove temp program token
     deriving (Eq, Show)
 data TokenData = TokenData
     { tokenLineNo :: Int

@@ -1,32 +1,21 @@
 module Ast (
-    Node (..),
-    -- Program,
-    -- Block,
-    -- BlockElem (..),
+    Program,
     Statements,
     Statement (..),
     Decl (..),
-    Simp,
-    Lval,
     Exp (..),
+    Intconst (..),
     Unop (..),
     Binop (..),
 ) where
 
 import Tokens
 
--- TODO: include all types into AST node
-data Node = TOKEN_NODE Token | EXP_NODE Exp | STMT_NODE Statement | STMTS_NODE Statements
-    deriving (Show)
-
--- type Program = Block
-
--- type Block = Statements
+type Program = Statements
 
 type Statements = [Statement]
 
--- data Statement = DECL Decl | SIMP Simp | RET Exp
-data Statement = STMT_DECL Decl | STMT_RET Exp
+data Statement = STMT_BLOCK Statements | STMT_DECL Decl | STMT_RET Exp
     deriving (Show)
 
 data Decl = Decl
@@ -35,18 +24,23 @@ data Decl = Decl
     }
     deriving (Show)
 
-data Simp = Simp
-    { simpAsnop :: Token
-    , simpLvalue :: Lval
-    , simpExp :: Exp
-    }
+-- data Simp = Simp
+--     { simpAsnop :: Token
+--     , simpLvalue :: Lval
+--     , simpExp :: Exp
+--     }
 
-type Lval = Token
+-- type Lval = Token
 
-data Exp = INTCONST_EXP Intconst | IDENTIFIER_EXP Token | BINOP_EXP Binop | UNOP_EXP Unop
+data Exp = INTCONST_EXP Intconst 
+    | IDENTIFIER_EXP Token 
+    | BINOP_EXP Binop 
+    | UNOP_EXP Unop
     deriving (Show)
 
-type Intconst = Token
+data Intconst = HEXNUM_INTCONST Token
+    | DECNUM_INTCONST Token
+    deriving (Show)
 
 data Unop = Unop
     { unop :: Token

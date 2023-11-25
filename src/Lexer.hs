@@ -21,7 +21,7 @@ lexerHelper finishedTokens openerStack errors currToken remainingStr lineNo line
     -- EOF
     | null remainingStr =
         let errorsAddDangler = foldr (\o l -> (LexerError ((tokenLineNo . tokenData) o) ((tokenLinePos . tokenData) o) DanglingOpenEncloserError) : l) errors openerStack
-         in ((Token EOF (TokenData lineNo linePos)) : finishedTokens, errorsAddDangler)
+         in (finishedTokens, errorsAddDangler)
     -- delimiters
     | (isDelim . head) remainingStr =
         -- try to process current token and delimiter
@@ -66,13 +66,7 @@ lexerHelper finishedTokens openerStack errors currToken remainingStr lineNo line
                 _
                     | elem (head remainingStr) "}])" ->
                         if closerMatchesLastOpener openerStack (head remainingStr)
-                            then
-                                let haltCat = case (head remainingStr) of
-                                        ')' -> OPEN_PAREN
-                                        '}' -> OPEN_BRACE
-                                        ']' -> OPEN_BRACK
-                                    collapsedFinishedTokens = collapseEnclosing haltCat newFinishedTokens
-                                 in lexerHelper collapsedFinishedTokens (tail openerStack) newErrors "" newRemainingStr lineNo (linePos + 1)
+                            then lexerHelper newFinishedTokens (tail openerStack) newErrors "" newRemainingStr lineNo (linePos + 1)
                             else
                                 let errorsAddDangler = ((LexerError lineNo linePos DanglingClosedEncloserError) : newErrors)
                                  in lexerHelper (tail newFinishedTokens) openerStack errorsAddDangler "" newRemainingStr lineNo (linePos + 1)
@@ -108,15 +102,6 @@ multilineComment finishedTokens openerStack errors remainingStr commentStartLine
             multilineComment finishedTokens openerStack errors (tail remainingStr) commentStartLineNo commentStartLinePos lineNo (linePos + 1)
 
 -- ENCLOSING (){}[] HELPERS
-
-collapseEnclosing :: TokenCategory -> [Token] -> [Token]
-collapseEnclosing haltCat tokens = collapseEnclosingHelper haltCat tokens []
-
-collapseEnclosingHelper :: TokenCategory -> [Token] -> [Token] -> [Token]
-collapseEnclosingHelper haltCat remainingTokens subTokens =
-    if haltCat == (tokenCat . head) remainingTokens
-        then (Token (ENCLOSED_TOKS (head remainingTokens) subTokens) ((tokenData . head) remainingTokens)) : (tail remainingTokens)
-        else collapseEnclosingHelper haltCat (tail remainingTokens) ((head remainingTokens) : subTokens)
 
 closerMatchesLastOpener :: [Token] -> Char -> Bool
 closerMatchesLastOpener openerStack closer =
