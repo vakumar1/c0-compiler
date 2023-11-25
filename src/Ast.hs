@@ -1,7 +1,10 @@
 module Ast (
     Program,
+    Block,
     Statements,
     Statement (..),
+    Simp (..),
+    Lval (..),
     Decl (..),
     Exp (..),
     Intconst (..),
@@ -11,11 +14,15 @@ module Ast (
 
 import Tokens
 
-type Program = Statements
+type Program = Block
+
+type Block = Statements
 
 type Statements = [Statement]
 
-data Statement = STMT_BLOCK Statements | STMT_DECL Decl | STMT_RET Exp
+data Statement = DECL_STMT Decl 
+    | SIMP_STMT Simp
+    | RET_STMT Exp
     deriving (Show)
 
 data Decl = Decl
@@ -24,13 +31,17 @@ data Decl = Decl
     }
     deriving (Show)
 
--- data Simp = Simp
---     { simpAsnop :: Token
---     , simpLvalue :: Lval
---     , simpExp :: Exp
---     }
+data Simp = Simp
+    { simpAsnop :: Token
+    , simpLvalue :: Lval
+    , simpExp :: Exp
+    }
+    deriving (Show)
 
--- type Lval = Token
+data Lval = Lval
+    { lvalIdent :: Token
+    }
+    deriving (Show)
 
 data Exp = INTCONST_EXP Intconst 
     | IDENTIFIER_EXP Token 

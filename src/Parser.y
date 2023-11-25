@@ -31,11 +31,12 @@ import Ast
     '/='            { Token SLASH_EQ _ }
     '%='            { Token PERC_EQ _ }
     '='             { Token EQUAL _ }
+    main            { Token (IDENTIFIER "main") _ }
     ident           { Token (IDENTIFIER _) _ }
     dec             { Token (DECNUM _) _ }
     hex             { Token (HEXNUM _) _ }
     while           { Token WHILE _ }
-    for             { Token OPEN_PAREN _ }
+    for             { Token FOR _ }
     continue        { Token CONTINUE _ }
     break           { Token BREAK _ }
     return          { Token RETURN _ }
@@ -45,7 +46,7 @@ import Ast
     null            { Token NULL _ }
     alloc           { Token ALLOC _ }
     alloc_arr       { Token ALLOC_ARRAY _ }
-    int             { Token OPEN_PAREN _ }
+    int             { Token INT _ }
     bool            { Token BOOL _ }
     void            { Token VOID _ }
     char            { Token CHAR _ }
@@ -57,6 +58,30 @@ import Ast
 %left '+' '-'
 %left '=' '+=' '-=' '*=' '/=' '%='
 %%
+
+Program : int main '(' void ')' Block   { $6 }
+
+Block : '{' Stmts '}'   { $2 }
+
+Stmts :                 { [] }
+    | Stmt Stmts        { ($1):($2) }
+
+Stmt : Decl ';'         { DECL_STMT $1 }
+    | Simp ';'          { SIMP_STMT $1 }
+    | return Exp ';'    { RET_STMT $2 }
+
+Decl : int ident        { Decl $2 Nothing }
+    | int ident '=' Exp { Decl $2 (Just $4)}
+
+Simp : Lval '=' Exp     { Simp $2 $1 $3 }
+    | Lval '+=' Exp     { Simp $2 $1 $3 }
+    | Lval '-=' Exp     { Simp $2 $1 $3 }
+    | Lval '*=' Exp     { Simp $2 $1 $3 }
+    | Lval '/=' Exp     { Simp $2 $1 $3 }
+    | Lval '%=' Exp     { Simp $2 $1 $3 }
+
+Lval : ident            { Lval $1 }
+    | '(' Lval ')'      { $2 }
 
 Exp : '(' Exp ')'   { $2 }
     | Intconst      { INTCONST_EXP $1 }

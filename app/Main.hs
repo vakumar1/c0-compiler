@@ -43,7 +43,7 @@ compiler :: String -> IO ()
 compiler code =
     let (tokens, lexerErrors) = lexer code
         final = parser (reverse tokens)
-    in ((putStrLn . show) final)
+    in ((putStrLn . prettyPrintList) final)
 
 main :: IO ()
 main = do
