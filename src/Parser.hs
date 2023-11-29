@@ -4,6 +4,7 @@ module Parser (
 ) where
 
 import Tokens
+import Types
 import Ast
 import qualified Data.Array as Happy_Data_Array
 import qualified Data.Bits as Bits
@@ -433,9 +434,9 @@ happyReduction_7 _ _ _  = notHappyAtAll
 
 happyReduce_8 = happySpecReduce_2  8 happyReduction_8
 happyReduction_8 (HappyTerminal happy_var_2)
-	_
+	(HappyTerminal happy_var_1)
 	 =  HappyAbsSyn8
-		 (Decl happy_var_2 Nothing
+		 (Decl happy_var_2 (Type INT_TYPE happy_var_1) Nothing
 	)
 happyReduction_8 _ _  = notHappyAtAll 
 
@@ -443,10 +444,10 @@ happyReduce_9 = happyReduce 4 8 happyReduction_9
 happyReduction_9 ((HappyAbsSyn11  happy_var_4) `HappyStk`
 	_ `HappyStk`
 	(HappyTerminal happy_var_2) `HappyStk`
-	_ `HappyStk`
+	(HappyTerminal happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn8
-		 (Decl happy_var_2 (Just happy_var_4)
+		 (Decl happy_var_2 (Type INT_TYPE happy_var_1) (Just happy_var_4)
 	) `HappyStk` happyRest
 
 happyReduce_10 = happySpecReduce_3  9 happyReduction_10

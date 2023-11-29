@@ -2,8 +2,16 @@ module Middle (
 
 ) where
 
-import Types
 import Elaborated
+import Types
+import Errors
+import qualified Data.Map as Map
+
+{-
+
+ELABORATION
+
+-}
 
 -- TODO: update program after adding functions + multiple statements allowed per program
 elaborate :: Program -> ProgramElab
@@ -23,10 +31,10 @@ elaborateStmts ss =
 elaborateDecl :: Decl -> Statements -> DeclElab
 elaborateDecl decl remaining = 
     case decl of
-        Decl (IDENTIFIER s) Nothing
-            -> DeclElab (declIdentifier s) (INT_TYPE) (elaborateStmts remaining)
-        Decl (IDENTIFIER s) (Just e)
-            -> DeclElab (declIdentifier s) (INT_TYPE) (elaborateStmts ((SIMP_STMT (Simp (EQUAL) (Lval (IDENTIFIER s)) e)) : remaining))
+        Decl id type Nothing
+            -> DeclElab (Variable id type) (elaborateStmts remaining)
+        Decl id type (Just e)
+            -> DeclElab (Variable id type) (elaborateStmts ((SIMP_STMT (Simp (EQUAL) (Lval (IDENTIFIER s)) e)) : remaining))
 
 elaborateSimp :: Simp -> AsnElab
 elaborateSimp simp = 
@@ -78,3 +86,68 @@ elaborateUnop :: Unop -> (UnopElb, bool)
 elaborateUnop u = 
     case u of
         Unop (DASH) e -> (NEG_EXP_ELAB (elaborateExp e), false)
+
+{-
+
+VERIFICATION
+
+-}
+
+verifyInitialization :: ProgramElab -> [VerificationError]
+verifyInitialization program = verifyInitializationSeq program empty
+
+verifyInitializationSeq :: SeqElab -> Map String Token -> [VerificationError]
+verifyInitializationSeq seq initialized = 
+    case seq of
+        [] -> (initialized, [])
+        DECL_ELAB d : _ -> (verifyInitializationDecl d initialized) : (verifyInitializationSeq (tail seq) initialized)
+        ASN_ELAB a : _ -> (verifyInitializationAsn a initialized) : (verifyInitializationSeq (tail seq) initialized)
+        RET_ELAB r : _ -> (verifyInitializationRet r initialized) : (verifyInitializationSeq (tail seq) initialized)
+
+verifyInitializationDecl :: DeclElab -> Map String Token -> [VerificationError]
+verifyInitializationDecl decl initialized = 
+    let subSeq = declElabStatement decl
+        identifier = (variableIdentifier . declVariable) decl
+    in case (extractIdentifierName identifier) of
+        Just name -> 
+            let (_, subErrors) = verifyInitializationSeq seq (insert name identifier initialized)
+            in case (lookup name initialized) of
+                Just prevIdentifier -> (DOUBLE_INIT (DoubleInitializationError prevIdentifier identifer)) : subErrors
+                _ -> subErrors
+
+verifyInitializationAsn :: AsnElab -> Map String Token -> [VerificationError]
+verifyInitializationAsn asn initialized = 
+    (verifyInitializationIdentifier (asnElabIdentifier asn) initialized) ++ 
+    (verifyInitializationExp (asnElabExpression asn) initialized)
+
+verifyInitializationRet :: RetElab -> Map String Token -> [VerificationError]
+verifyInitializationRet ret initialized = 
+    (verifyInitializationExp (retElabExpression ret) initialized)
+
+verifyInitializationExp :: ExpElab -> Map String Token -> [VerificationError]
+verifyInitializationExp exp initialized = 
+    case exp of
+        CONST_ELAB _ -> []
+        IDENTIFIER_ELAB identifier -> verifyInitializationIdentifier identifier initialized
+        PURE_BINOP_ELAB binop -> verifyInitializationBinop binop initialized
+        IMPURE_BINOP_ELAB binop -> verifyInitializationBinop binop initialized
+        PURE_UNOP_ELAB unop -> verifyInitializationUnop unop initialized
+        IMPURE_UNOP_ELAB unop -> verifyInitializationUnop unop initialized
+
+verifyInitializationIdentifier :: Token -> Map String Token -> [VerificationError]
+verifyInitializationIdentifier identifier initialized = 
+    case (extractIdentifierName identifier) of
+        Just name ->
+            case (lookup name initialized) of
+                Nothing -> [(USE_BEFORE_INIT (UseBeforeInitializationError identifier))]
+                _ -> []
+
+verifyInitializationBinop :: BinopElab -> Map String Token -> [VerificationError]
+verifyInitializationBinop binop initialized = 
+    case binop of
+        _ e1 e2 -> (verifyInitializationExp e1 initialized) ++ (verifyInitializationExp e2 initialized)
+
+verifyInitializationUnop :: UnopElab -> Map String Token -> [VerificationError]
+verifyInitializationUnop unop initialized = 
+    case unop of
+        _ e -> verifyInitializationExp e initialized

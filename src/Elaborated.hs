@@ -20,13 +20,12 @@ data StatementElab = DECL_ELAB DeclElab
     | SEQ_ELAB SeqElab
 
 data DeclElab = DeclElab
-    { declElabIdentifier :: String
-    , declElabType :: Type
+    { declVariable :: Variable
     , declElabStatement :: StatementElab
     }
 
 data AsnElab = AsnElab
-    { asnElabIdentifier :: String
+    { asnElabIdentifier :: Token
     , asnElabExpression :: ExpElab
     }
 
@@ -37,7 +36,7 @@ data RetElab = RetElab
 type SeqElab = [StatementElab]
 
 data ExpElab = CONST_ELAB ConstElab
-    | IDENTIFIER_ELAB String
+    | IDENTIFIER_ELAB Token
     | PURE_BINOP_ELAB BinopElab
     | IMPURE_BINOP_ELAB BinopElab
     | PURE_UNOP_ELAB UnopElab
@@ -52,4 +51,9 @@ data BinopElab = ADD_EXP_ELAB ExpElab ExpElab
     | MOD_EXP_ELAB ExpElab ExpElab
 
 data UnopElab = NEG_EXP_ELAB ExpElab
+
+data Variable = Variable
+    { variableIdentifier :: Token
+    , variableType :: Type
+    }
 

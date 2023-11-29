@@ -2,6 +2,7 @@ module Tokens (
     Token (..),
     TokenCategory (..),
     TokenData (..),
+    extractIdentifierName (..)
 ) where
 
 data Token = Token
@@ -54,3 +55,9 @@ data TokenData = TokenData
     , tokenLinePos :: Int
     }
     deriving (Eq, Show)
+
+extractIdentifierName :: Token -> Maybe String
+extractIdentifierName token = 
+    case token of
+        IDENTIFER name -> Just name
+        _ -> Nothing

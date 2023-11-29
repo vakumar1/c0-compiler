@@ -10,9 +10,12 @@ module Ast (
     Intconst (..),
     Unop (..),
     Binop (..),
+    TypeCategory (..),
+    Type (..)
 ) where
 
 import Tokens
+import Types
 
 type Program = Block
 
@@ -20,13 +23,14 @@ type Block = Statements
 
 type Statements = [Statement]
 
-data Statement = DECL_STMT Decl 
+data Statement = DECL_STMT Decl
     | SIMP_STMT Simp
     | RET_STMT Exp
     deriving (Show)
 
 data Decl = Decl
     { declIdentifier :: Token
+    , declType :: Type
     , declExpression :: Maybe Exp
     }
     deriving (Show)

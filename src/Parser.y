@@ -4,6 +4,7 @@ module Parser (
 ) where
 
 import Tokens
+import Types
 import Ast
 
 }
@@ -70,8 +71,8 @@ Stmt : Decl ';'         { DECL_STMT $1 }
     | Simp ';'          { SIMP_STMT $1 }
     | return Exp ';'    { RET_STMT $2 }
 
-Decl : int ident        { Decl $2 Nothing }
-    | int ident '=' Exp { Decl $2 (Just $4)}
+Decl : int ident        { Decl $2 (Type INT_TYPE $1) Nothing }
+    | int ident '=' Exp { Decl $2 (Type INT_TYPE $1) (Just $4)}
 
 Simp : Lval '=' Exp     { Simp $2 $1 $3 }
     | Lval '+=' Exp     { Simp $2 $1 $3 }

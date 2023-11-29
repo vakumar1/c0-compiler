@@ -3,6 +3,9 @@ module Errors (
     LexerErrorCategory (..),
     ParserError (..),
     ParserErrorCategory (..),
+    UseBeforeInitializationError (..),
+    DoubleInitializationError (..),
+    VerificationError (..),
     compilerError,
 ) where
 
@@ -60,3 +63,16 @@ instance Show ParserError where
             ++ ((show . tokenLinePos . tokenData . parserErrorToken) p)
             ++ " token="
             ++ ((show . tokenCat . parserErrorToken) p)
+
+data UseBeforeInitializationError = UseBeforeInitializationError
+    { useBeforeInitializationErrorUse :: Token
+    }
+
+data DoubleInitializationError = DoubleInitializationError
+    { doubleInitializationErrorFirstInit :: Token
+    , doubleInitializationErrorSecondInit :: Token
+    }
+
+data VerificationError
+    = USE_BEFORE_INIT UseBeforeInitializationError
+    | DOUBLE_INIT DoubleInitializationError
