@@ -38,6 +38,7 @@ library:
   dependencies:
   - text
   - array
+  - containers
 
 executables:
   c0-compiler-exe:

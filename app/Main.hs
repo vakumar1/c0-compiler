@@ -3,6 +3,7 @@ module Main (main) where
 -- import Ast
 import Errors
 import Lexer
+import Middle
 import Parser
 
 -- import Parser
@@ -42,8 +43,9 @@ prettyPrintList l =
 compiler :: String -> IO ()
 compiler code =
     let (tokens, lexerErrors) = lexer code
-        final = parser (reverse tokens)
-    in ((putStrLn . prettyPrintList) final)
+        ast = parser (reverse tokens)
+        elaborated = elaborate ast
+     in ((putStrLn . prettyPrintList) (verifyInitialization elaborated))
 
 main :: IO ()
 main = do

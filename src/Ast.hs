@@ -11,7 +11,6 @@ module Ast (
     Unop (..),
     Binop (..),
     TypeCategory (..),
-    Type (..)
 ) where
 
 import Tokens
@@ -23,7 +22,8 @@ type Block = Statements
 
 type Statements = [Statement]
 
-data Statement = DECL_STMT Decl
+data Statement
+    = DECL_STMT Decl
     | SIMP_STMT Simp
     | RET_STMT Exp
     deriving (Show)
@@ -31,6 +31,7 @@ data Statement = DECL_STMT Decl
 data Decl = Decl
     { declIdentifier :: Token
     , declType :: Type
+    , declEqual :: Maybe Token
     , declExpression :: Maybe Exp
     }
     deriving (Show)
@@ -47,13 +48,15 @@ data Lval = Lval
     }
     deriving (Show)
 
-data Exp = INTCONST_EXP Intconst 
-    | IDENTIFIER_EXP Token 
-    | BINOP_EXP Binop 
+data Exp
+    = INTCONST_EXP Intconst
+    | IDENTIFIER_EXP Token
+    | BINOP_EXP Binop
     | UNOP_EXP Unop
     deriving (Show)
 
-data Intconst = HEXNUM_INTCONST Token
+data Intconst
+    = HEXNUM_INTCONST Token
     | DECNUM_INTCONST Token
     deriving (Show)
 

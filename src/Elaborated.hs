@@ -3,18 +3,22 @@ module Elaborated (
     StatementElab (..),
     DeclElab (..),
     AsnElab (..),
+    RetElab (..),
     SeqElab,
     ExpElab (..),
     ConstElab (..),
     BinopElab (..),
     UnopElab (..),
+    Variable (..),
 ) where
 
+import Tokens
 import Types
 
 type ProgramElab = SeqElab
 
-data StatementElab = DECL_ELAB DeclElab
+data StatementElab
+    = DECL_ELAB DeclElab
     | ASN_ELAB AsnElab
     | RET_ELAB RetElab
     | SEQ_ELAB SeqElab
@@ -35,7 +39,8 @@ data RetElab = RetElab
 
 type SeqElab = [StatementElab]
 
-data ExpElab = CONST_ELAB ConstElab
+data ExpElab
+    = CONST_ELAB ConstElab
     | IDENTIFIER_ELAB Token
     | PURE_BINOP_ELAB BinopElab
     | IMPURE_BINOP_ELAB BinopElab
@@ -44,7 +49,8 @@ data ExpElab = CONST_ELAB ConstElab
 
 data ConstElab = INT_CONST_ELAB Int
 
-data BinopElab = ADD_EXP_ELAB ExpElab ExpElab
+data BinopElab
+    = ADD_EXP_ELAB ExpElab ExpElab
     | SUB_EXP_ELAB ExpElab ExpElab
     | MUL_EXP_ELAB ExpElab ExpElab
     | DIV_EXP_ELAB ExpElab ExpElab
@@ -56,4 +62,3 @@ data Variable = Variable
     { variableIdentifier :: Token
     , variableType :: Type
     }
-
