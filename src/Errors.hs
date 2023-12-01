@@ -3,8 +3,8 @@ module Errors (
     LexerErrorCategory (..),
     ParserError (..),
     ParserErrorCategory (..),
-    UseBeforeInitializationError (..),
-    DoubleInitializationError (..),
+    UseBeforeDeclarationError (..),
+    DoubleDeclarationError (..),
     VerificationError (..),
     compilerError,
 ) where
@@ -64,12 +64,12 @@ instance Show ParserError where
             ++ " token="
             ++ ((show . tokenCat . parserErrorToken) p)
 
-data UseBeforeInitializationError = UseBeforeInitializationError
+data UseBeforeDeclarationError = UseBeforeDeclarationError
     { useBeforeInitializationErrorUse :: Token
     }
-instance Show UseBeforeInitializationError where
+instance Show UseBeforeDeclarationError where
     show e =
-        "UseBeforeInitializationError"
+        "UseBeforeDeclarationError"
             ++ " --\n"
             ++ " lineNo="
             ++ ((show . tokenLineNo . tokenData . useBeforeInitializationErrorUse) e)
@@ -78,13 +78,13 @@ instance Show UseBeforeInitializationError where
             ++ " token="
             ++ ((show . tokenCat . useBeforeInitializationErrorUse) e)
 
-data DoubleInitializationError = DoubleInitializationError
+data DoubleDeclarationError = DoubleDeclarationError
     { doubleInitializationErrorFirstInit :: Token
     , doubleInitializationErrorSecondInit :: Token
     }
-instance Show DoubleInitializationError where
+instance Show DoubleDeclarationError where
     show e =
-        "DoubleInitializationError"
+        "DoubleDeclarationError"
             ++ "\n"
             ++ " firstInit --"
             ++ " lineNo="
@@ -102,7 +102,11 @@ instance Show DoubleInitializationError where
             ++ " token="
             ++ ((show . tokenCat . doubleInitializationErrorSecondInit) e)
 
+data InvalidReturnError = InvalidReturnError
+    { invalidReturnStmt :: Token
+    }
+
 data VerificationError
-    = USE_BEFORE_INIT UseBeforeInitializationError
-    | DOUBLE_INIT DoubleInitializationError
+    = USE_BEFORE_DECL UseBeforeDeclarationError
+    | DOUBLE_DECL DoubleDeclarationError
     deriving (Show)

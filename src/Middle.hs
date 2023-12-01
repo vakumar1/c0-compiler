@@ -1,6 +1,6 @@
 module Middle (
     elaborate,
-    verifyInitialization,
+    verifyDeclaration,
 ) where
 
 import Ast
@@ -18,8 +18,10 @@ ELABORATION
 -}
 
 -- TODO: update program after adding functions + multiple statements allowed per program
-elaborate :: Program -> ProgramElab
-elaborate = elaborateBlock
+elaborate :: Function -> FunctionElab
+elaborate fn =
+    let seq = elaborateBlock (functionBlock fn)
+     in FunctionElab (functionName fn) (functionReturnType fn) seq
 
 elaborateBlock :: Block -> SeqElab
 elaborateBlock = elaborateStmts
@@ -28,17 +30,19 @@ elaborateStmts :: Statements -> SeqElab
 elaborateStmts ss =
     case ss of
         [] -> []
-        DECL_STMT d : _ -> [(DECL_ELAB (elaborateDecl d (tail ss)))]
+        DECL_STMT d : _ -> (DECL_ELAB (elaborateDecl d)) : (elaborateStmts (tail ss))
         SIMP_STMT s : _ -> (ASN_ELAB (elaborateSimp s)) : (elaborateStmts (tail ss))
         RET_STMT e : _ -> (RET_ELAB (RetElab (elaborateExp e))) : (elaborateStmts (tail ss))
 
-elaborateDecl :: Decl -> Statements -> DeclElab
-elaborateDecl decl remaining =
+elaborateDecl :: Decl -> DeclElab
+elaborateDecl decl =
     case decl of
         Decl id ty Nothing Nothing ->
-            DeclElab (Variable id ty) (SEQ_ELAB (elaborateStmts remaining))
+            DeclElab (Variable id ty) Nothing
         Decl id ty (Just as) (Just e) ->
-            DeclElab (Variable id ty) (SEQ_ELAB (elaborateStmts ((SIMP_STMT (Simp as (Lval id) e)) : remaining)))
+            DeclElab (Variable id ty) (Just (elaborateSimp (Simp as (Lval id) e)))
+
+-- (SEQ_ELAB (elaborateStmts ((SIMP_STMT (Simp as (Lval id) e)) : remaining)))
 
 elaborateSimp :: Simp -> AsnElab
 elaborateSimp (Simp as (Lval id) e) =
@@ -88,74 +92,89 @@ elaborateUnop (Unop op e) =
 
 {-
 
-VERIFICATION
+INITIALIZATION VERIFICATION
 
 -}
 
-verifyInitialization :: ProgramElab -> [VerificationError]
-verifyInitialization program = verifyInitializationSeq program Map.empty
+verifyDeclaration :: FunctionElab -> [VerificationError]
+verifyDeclaration fn =
+    let (_, errors) = verifyDeclarationSeq (functionElabBlock fn) Map.empty
+     in errors
 
-verifyInitializationStmt :: StatementElab -> Map.Map String Token -> [VerificationError]
-verifyInitializationStmt stmt initialized =
+verifyDeclarationStmt :: StatementElab -> Map.Map String Token -> (Map.Map String Token, [VerificationError])
+verifyDeclarationStmt stmt initialized =
     case stmt of
-        DECL_ELAB d -> verifyInitializationDecl d initialized
-        ASN_ELAB a -> verifyInitializationAsn a initialized
-        RET_ELAB r -> verifyInitializationRet r initialized
-        SEQ_ELAB s -> verifyInitializationSeq s initialized
+        DECL_ELAB d -> verifyDeclarationDecl d initialized
+        ASN_ELAB a -> verifyDeclarationAsn a initialized
+        RET_ELAB r -> verifyDeclarationRet r initialized
+        SEQ_ELAB s -> verifyDeclarationSeq s initialized
 
-verifyInitializationSeq :: SeqElab -> Map.Map String Token -> [VerificationError]
-verifyInitializationSeq seq initialized =
+verifyDeclarationSeq :: SeqElab -> Map.Map String Token -> (Map.Map String Token, [VerificationError])
+verifyDeclarationSeq seq initialized =
     case seq of
-        [] -> []
-        s : _ -> (verifyInitializationStmt s initialized) ++ (verifyInitializationSeq (tail seq) initialized)
+        [] -> (initialized, [])
+        s : _ ->
+            let (newInitialized, headErrors) = verifyDeclarationStmt s initialized
+                (_, tailErrors) = verifyDeclarationSeq (tail seq) newInitialized
+             in (initialized, headErrors ++ tailErrors)
 
-verifyInitializationDecl :: DeclElab -> Map.Map String Token -> [VerificationError]
-verifyInitializationDecl decl initialized =
-    let stmt = declElabStatement decl
-        identifier = (variableIdentifier . declVariable) decl
-     in case (extractIdentifierName identifier) of
-            Just name ->
-                case (Map.lookup name initialized) of
-                    Just prevIdentifier -> (DOUBLE_INIT (DoubleInitializationError prevIdentifier identifier)) : (verifyInitializationStmt stmt initialized)
-                    _ -> verifyInitializationStmt stmt (Map.insert name identifier initialized)
+verifyDeclarationDecl :: DeclElab -> Map.Map String Token -> (Map.Map String Token, [VerificationError])
+verifyDeclarationDecl decl initialized =
+    let identifier = (variableIdentifier (declElabVariable decl))
+        asn = (declElabAsn decl)
+        (declErrors, newInitialized) =
+            case (extractIdentifierName identifier) of
+                Just name ->
+                    case (Map.lookup name initialized) of
+                        Just prevIdentifier ->
+                            ([DOUBLE_DECL (DoubleDeclarationError prevIdentifier identifier)], initialized)
+                        _ ->
+                            ([], (Map.insert name identifier initialized))
+        asnErrors =
+            case asn of
+                Just a -> snd (verifyDeclarationAsn a newInitialized)
+                Nothing -> []
+     in (newInitialized, declErrors ++ asnErrors)
 
-verifyInitializationAsn :: AsnElab -> Map.Map String Token -> [VerificationError]
-verifyInitializationAsn asn initialized =
-    (verifyInitializationIdentifier (asnElabIdentifier asn) initialized)
-        ++ (verifyInitializationExp (asnElabExpression asn) initialized)
+verifyDeclarationAsn :: AsnElab -> Map.Map String Token -> (Map.Map String Token, [VerificationError])
+verifyDeclarationAsn asn initialized =
+    ( initialized
+    , (verifyDeclarationIdentifier (asnElabIdentifier asn) initialized)
+        ++ (verifyDeclarationExp (asnElabExpression asn) initialized)
+    )
 
-verifyInitializationRet :: RetElab -> Map.Map String Token -> [VerificationError]
-verifyInitializationRet ret initialized =
-    (verifyInitializationExp (retElabExpression ret) initialized)
+verifyDeclarationRet :: RetElab -> Map.Map String Token -> (Map.Map String Token, [VerificationError])
+verifyDeclarationRet ret initialized =
+    (initialized, verifyDeclarationExp (retElabExpression ret) initialized)
 
-verifyInitializationExp :: ExpElab -> Map.Map String Token -> [VerificationError]
-verifyInitializationExp exp initialized =
+verifyDeclarationExp :: ExpElab -> Map.Map String Token -> [VerificationError]
+verifyDeclarationExp exp initialized =
     case exp of
         CONST_ELAB _ -> []
-        IDENTIFIER_ELAB identifier -> verifyInitializationIdentifier identifier initialized
-        PURE_BINOP_ELAB binop -> verifyInitializationBinop binop initialized
-        IMPURE_BINOP_ELAB binop -> verifyInitializationBinop binop initialized
-        PURE_UNOP_ELAB unop -> verifyInitializationUnop unop initialized
-        IMPURE_UNOP_ELAB unop -> verifyInitializationUnop unop initialized
+        IDENTIFIER_ELAB identifier -> verifyDeclarationIdentifier identifier initialized
+        PURE_BINOP_ELAB binop -> verifyDeclarationBinop binop initialized
+        IMPURE_BINOP_ELAB binop -> verifyDeclarationBinop binop initialized
+        PURE_UNOP_ELAB unop -> verifyDeclarationUnop unop initialized
+        IMPURE_UNOP_ELAB unop -> verifyDeclarationUnop unop initialized
 
-verifyInitializationIdentifier :: Token -> Map.Map String Token -> [VerificationError]
-verifyInitializationIdentifier identifier initialized =
+verifyDeclarationIdentifier :: Token -> Map.Map String Token -> [VerificationError]
+verifyDeclarationIdentifier identifier initialized =
     case (extractIdentifierName identifier) of
         Just name ->
             case (Map.lookup name initialized) of
-                Nothing -> [(USE_BEFORE_INIT (UseBeforeInitializationError identifier))]
+                Nothing -> [(USE_BEFORE_DECL (UseBeforeDeclarationError identifier))]
                 _ -> []
 
-verifyInitializationBinop :: BinopElab -> Map.Map String Token -> [VerificationError]
-verifyInitializationBinop binop initialized =
+verifyDeclarationBinop :: BinopElab -> Map.Map String Token -> [VerificationError]
+verifyDeclarationBinop binop initialized =
     case binop of
-        ADD_EXP_ELAB e1 e2 -> (verifyInitializationExp e1 initialized) ++ (verifyInitializationExp e2 initialized)
-        SUB_EXP_ELAB e1 e2 -> (verifyInitializationExp e1 initialized) ++ (verifyInitializationExp e2 initialized)
-        MUL_EXP_ELAB e1 e2 -> (verifyInitializationExp e1 initialized) ++ (verifyInitializationExp e2 initialized)
-        DIV_EXP_ELAB e1 e2 -> (verifyInitializationExp e1 initialized) ++ (verifyInitializationExp e2 initialized)
-        MOD_EXP_ELAB e1 e2 -> (verifyInitializationExp e1 initialized) ++ (verifyInitializationExp e2 initialized)
+        ADD_EXP_ELAB e1 e2 -> (verifyDeclarationExp e1 initialized) ++ (verifyDeclarationExp e2 initialized)
+        SUB_EXP_ELAB e1 e2 -> (verifyDeclarationExp e1 initialized) ++ (verifyDeclarationExp e2 initialized)
+        MUL_EXP_ELAB e1 e2 -> (verifyDeclarationExp e1 initialized) ++ (verifyDeclarationExp e2 initialized)
+        DIV_EXP_ELAB e1 e2 -> (verifyDeclarationExp e1 initialized) ++ (verifyDeclarationExp e2 initialized)
+        MOD_EXP_ELAB e1 e2 -> (verifyDeclarationExp e1 initialized) ++ (verifyDeclarationExp e2 initialized)
 
-verifyInitializationUnop :: UnopElab -> Map.Map String Token -> [VerificationError]
-verifyInitializationUnop unop initialized =
+verifyDeclarationUnop :: UnopElab -> Map.Map String Token -> [VerificationError]
+verifyDeclarationUnop unop initialized =
     case unop of
-        NEG_EXP_ELAB e -> verifyInitializationExp e initialized
+        NEG_EXP_ELAB e -> verifyDeclarationExp e initialized

@@ -1,5 +1,5 @@
 module Ast (
-    Program,
+    Function (..),
     Block,
     Statements,
     Statement (..),
@@ -16,7 +16,11 @@ module Ast (
 import Tokens
 import Types
 
-type Program = Block
+data Function = Function
+    { functionName :: Token
+    , functionReturnType :: Type
+    , functionBlock :: Block
+    }
 
 type Block = Statements
 

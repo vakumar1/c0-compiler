@@ -45,7 +45,7 @@ compiler code =
     let (tokens, lexerErrors) = lexer code
         ast = parser (reverse tokens)
         elaborated = elaborate ast
-     in ((putStrLn . prettyPrintList) (verifyInitialization elaborated))
+     in ((putStrLn . prettyPrintList) (verifyDeclaration elaborated))
 
 main :: IO ()
 main = do

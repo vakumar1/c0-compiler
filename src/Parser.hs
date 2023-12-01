@@ -238,7 +238,7 @@ happyExpList =
 happyExpListPerState st =
     token_strs_expected
   where
-    token_strs = ["error", "%dummy", "%start_parser", "Program", "Block", "Stmts", "Stmt", "Decl", "Simp", "Lval", "Exp", "Intconst", "';'", "'('", "'['", "'{'", "')'", "']'", "'}'", "'+'", "'-'", "'*'", "'/'", "'%'", "'+='", "'-='", "'*='", "'/='", "'%='", "'='", "main", "ident", "dec", "hex", "while", "for", "continue", "break", "return", "assert", "true", "false", "null", "alloc", "alloc_arr", "int", "bool", "void", "char", "string", "eof", "%eof"]
+    token_strs = ["error", "%dummy", "%start_parser", "Function", "Block", "Stmts", "Stmt", "Decl", "Simp", "Lval", "Exp", "Intconst", "';'", "'('", "'['", "'{'", "')'", "']'", "'}'", "'+'", "'-'", "'*'", "'/'", "'%'", "'+='", "'-='", "'*='", "'/='", "'%='", "'='", "main", "ident", "dec", "hex", "while", "for", "continue", "break", "return", "assert", "true", "false", "null", "alloc", "alloc_arr", "int", "bool", "void", "char", "string", "eof", "%eof"]
     bit_start = st Prelude.* 52
     bit_end = (st Prelude.+ 1) Prelude.* 52
     read_bit = readArrayBit happyExpList
@@ -584,12 +584,12 @@ happyReduction_1
             `HappyStk` _
             `HappyStk` _
             `HappyStk` _
-            `HappyStk` _
-            `HappyStk` _
+            `HappyStk` (HappyTerminal happy_var_2)
+            `HappyStk` (HappyTerminal happy_var_1)
             `HappyStk` happyRest
         ) =
         HappyAbsSyn4
-            ( happy_var_6
+            ( Function happy_var_2 (Type INT_TYPE happy_var_1) happy_var_6
             )
             `HappyStk` happyRest
 

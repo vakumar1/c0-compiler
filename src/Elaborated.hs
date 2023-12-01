@@ -1,5 +1,5 @@
 module Elaborated (
-    ProgramElab,
+    FunctionElab (..),
     StatementElab (..),
     DeclElab (..),
     AsnElab (..),
@@ -15,7 +15,11 @@ module Elaborated (
 import Tokens
 import Types
 
-type ProgramElab = SeqElab
+data FunctionElab = FunctionElab
+    { functionElabName :: Token
+    , functionElabReturnType :: Type
+    , functionElabBlock :: SeqElab
+    }
 
 data StatementElab
     = DECL_ELAB DeclElab
@@ -24,8 +28,8 @@ data StatementElab
     | SEQ_ELAB SeqElab
 
 data DeclElab = DeclElab
-    { declVariable :: Variable
-    , declElabStatement :: StatementElab
+    { declElabVariable :: Variable
+    , declElabAsn :: Maybe AsnElab
     }
 
 data AsnElab = AsnElab

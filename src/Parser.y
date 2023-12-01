@@ -60,7 +60,7 @@ import Ast
 %left '=' '+=' '-=' '*=' '/=' '%='
 %%
 
-Program : int main '(' void ')' Block   { $6 }
+Function : int main '(' void ')' Block   { Function $2 (Type INT_TYPE $1) $6 }
 
 Block : '{' Stmts '}'   { $2 }
 
