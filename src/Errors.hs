@@ -5,11 +5,13 @@ module Errors (
     ParserErrorCategory (..),
     UseBeforeDeclarationError (..),
     DoubleDeclarationError (..),
+    InvalidReturnError (..),
     VerificationError (..),
     compilerError,
 ) where
 
 import Tokens
+import Elaborated
 
 compilerError :: String -> String
 compilerError msg = "[INTERNAL COMPILER ERROR OCCURRED.]: " ++ msg
@@ -103,10 +105,19 @@ instance Show DoubleDeclarationError where
             ++ ((show . tokenCat . doubleInitializationErrorSecondInit) e)
 
 data InvalidReturnError = InvalidReturnError
-    { invalidReturnStmt :: Token
+    { invalidReturnFn :: Token
     }
+instance Show InvalidReturnError where
+    show e = 
+        "InvalidReturnErr"
+            ++ "\n"
+            ++ "function -- "
+            ++ (show (invalidReturnFn e))
+
+
 
 data VerificationError
     = USE_BEFORE_DECL UseBeforeDeclarationError
     | DOUBLE_DECL DoubleDeclarationError
+    | INVALID_RET InvalidReturnError
     deriving (Show)

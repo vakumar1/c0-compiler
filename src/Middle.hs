@@ -1,6 +1,7 @@
 module Middle (
     elaborate,
     verifyDeclaration,
+    verifyReturn,
 ) where
 
 import Ast
@@ -178,3 +179,30 @@ verifyDeclarationUnop :: UnopElab -> Map.Map String Token -> [VerificationError]
 verifyDeclarationUnop unop initialized =
     case unop of
         NEG_EXP_ELAB e -> verifyDeclarationExp e initialized
+
+
+{-
+
+RETURN VERIFICATION
+
+-}
+
+verifyReturn :: FunctionElab -> [VerificationError]
+verifyReturn fn = 
+    if verifyReturnSeq (functionElabBlock fn)
+        then []
+        else [INVALID_RET (InvalidReturnError (functionElabName fn))]
+
+verifyReturnSeq :: SeqElab -> Bool
+verifyReturnSeq seq = 
+    case seq of
+        [] -> False
+        s : _ -> (verifyReturnStmt s) || (verifyReturnSeq (tail seq))
+
+verifyReturnStmt :: StatementElab -> Bool
+verifyReturnStmt stmt =
+    case stmt of
+        DECL_ELAB d -> False
+        ASN_ELAB a -> False
+        RET_ELAB r -> True
+        SEQ_ELAB s -> False
