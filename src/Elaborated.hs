@@ -44,14 +44,12 @@ data RetElab = RetElab
 type SeqElab = [StatementElab]
 
 data ExpElab
-    = CONST_ELAB ConstElab
+    = CONST_ELAB Const
     | IDENTIFIER_ELAB Token
     | PURE_BINOP_ELAB BinopElab
     | IMPURE_BINOP_ELAB BinopElab
     | PURE_UNOP_ELAB UnopElab
     | IMPURE_UNOP_ELAB UnopElab
-
-data ConstElab = INT_CONST_ELAB Int
 
 data BinopElab
     = ADD_EXP_ELAB ExpElab ExpElab
@@ -62,7 +60,3 @@ data BinopElab
 
 data UnopElab = NEG_EXP_ELAB ExpElab
 
-data Variable = Variable
-    { variableIdentifier :: Token
-    , variableType :: Type
-    }

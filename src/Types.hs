@@ -14,3 +14,11 @@ data Type = Type
     , typeToken :: Token
     }
     deriving (Show)
+
+data Variable = Variable
+    { variableIdentifier :: Token
+    , variableType :: Type
+    }
+
+data Const = INT_CONST Int
+
