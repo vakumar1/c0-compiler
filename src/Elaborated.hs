@@ -46,10 +46,8 @@ type SeqElab = [StatementElab]
 data ExpElab
     = CONST_ELAB Const
     | IDENTIFIER_ELAB Token
-    | PURE_BINOP_ELAB BinopElab
-    | IMPURE_BINOP_ELAB BinopElab
-    | PURE_UNOP_ELAB UnopElab
-    | IMPURE_UNOP_ELAB UnopElab
+    | BINOP_ELAB BinopElab
+    | UNOP_ELAB UnopElab
 
 data BinopElab
     = ADD_EXP_ELAB ExpElab ExpElab

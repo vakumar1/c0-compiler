@@ -16,11 +16,11 @@ type ProgramIr = Map LineIr BasicBlockIr
 type BasicBlockIr = [Command]
 
 data CommandIr
-    = ASN_PURE VariableIr PureIr
-    | ASN_IMPURE_BINOP VariableIr ImpureBinopIr
-    | GOTO_LINE Line
-    | DEF_LINE Line
-    | RET_PURE PureIr
+    = ASN_PURE_IR VariableIr PureIr
+    | ASN_IMPURE_BINOP_IR VariableIr ImpureBinopIr
+    | GOTO_LINE_IR LineIr
+    | DEF_LINE_IR LineIr
+    | RET_PURE_IR PureIr
 
 data PureIr
     = CONST_IR Const
@@ -30,12 +30,12 @@ data PureIr
 
 data ImpureBinopIr
     = DIV_IR PureIr PureIr
+    | MOD_IR PureIr PureIr
 
 data PureBinopIr
     = ADD_IR PureIr PureIr
     | SUB_IR PureIr PureIr
     | MUL_IR PureIr PureIr
-    | MOD_IR PureIr PureIr
 
 data PureUnopIr
     = NEG_IR PureIr

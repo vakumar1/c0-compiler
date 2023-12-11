@@ -43,8 +43,6 @@ elaborateDecl decl =
         Decl id ty (Just as) (Just e) ->
             DeclElab (Variable id ty) (Just (elaborateSimp (Simp as (Lval id) e)))
 
--- (SEQ_ELAB (elaborateStmts ((SIMP_STMT (Simp as (Lval id) e)) : remaining)))
-
 elaborateSimp :: Simp -> AsnElab
 elaborateSimp (Simp as (Lval id) e) =
     case (tokenCat as) of
@@ -56,16 +54,8 @@ elaborateExp e =
     case e of
         INTCONST_EXP i -> CONST_ELAB (elaborateConst i)
         IDENTIFIER_EXP id -> IDENTIFIER_ELAB id
-        BINOP_EXP b ->
-            let (be, effectful) = elaborateBinop b
-             in if effectful
-                    then IMPURE_BINOP_ELAB be
-                    else PURE_BINOP_ELAB be
-        UNOP_EXP u ->
-            let (ue, effectful) = elaborateUnop u
-             in if effectful
-                    then IMPURE_UNOP_ELAB ue
-                    else PURE_UNOP_ELAB ue
+        BINOP_EXP b -> BINOP_ELAB (elaborateBinop b)
+        UNOP_EXP u -> UNOP_ELAB (elaborateUnop u)
 
 elaborateConst :: Intconst -> ConstElab
 elaborateConst i =
@@ -153,8 +143,7 @@ verifyDeclarationExp exp initialized =
     case exp of
         CONST_ELAB _ -> []
         IDENTIFIER_ELAB identifier -> verifyDeclarationIdentifier identifier initialized
-        PURE_BINOP_ELAB binop -> verifyDeclarationBinop binop initialized
-        IMPURE_BINOP_ELAB binop -> verifyDeclarationBinop binop initialized
+        BINOP_ELAB binop -> verifyDeclarationBinop binop initialized
         PURE_UNOP_ELAB unop -> verifyDeclarationUnop unop initialized
         IMPURE_UNOP_ELAB unop -> verifyDeclarationUnop unop initialized
 
