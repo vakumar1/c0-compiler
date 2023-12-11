@@ -7,10 +7,10 @@ module Ast (
     Lval (..),
     Decl (..),
     Exp (..),
-    Intconst (..),
+    Const (..),
     Unop (..),
     Binop (..),
-    TypeCategory (..),
+    Type (..),
 ) where
 
 import Tokens
@@ -53,15 +53,11 @@ data Lval = Lval
     deriving (Show)
 
 data Exp
-    = INTCONST_EXP Intconst
+    = HEXNUM_EXP Token
+    | DECNUM_EXP Token
     | IDENTIFIER_EXP Token
     | BINOP_EXP Binop
     | UNOP_EXP Unop
-    deriving (Show)
-
-data Intconst
-    = HEXNUM_INTCONST Token
-    | DECNUM_INTCONST Token
     deriving (Show)
 
 data Unop = Unop
@@ -74,5 +70,11 @@ data Binop = Binop
     { binop :: Token
     , binopLeftExpression :: Exp
     , binopRightExpression :: Exp
+    }
+    deriving (Show)
+
+data Type = Type
+    { typeCategory :: TypeCategory
+    , typeToken :: Token
     }
     deriving (Show)

@@ -22,7 +22,7 @@ ELABORATION
 elaborate :: Function -> FunctionElab
 elaborate fn =
     let seq = elaborateBlock (functionBlock fn)
-     in FunctionElab (functionName fn) (functionReturnType fn) seq
+     in FunctionElab (functionName fn) (elaborateType (functionReturnType fn)) seq
 
 elaborateBlock :: Block -> SeqElab
 elaborateBlock = elaborateStmts
@@ -39,9 +39,9 @@ elaborateDecl :: Decl -> DeclElab
 elaborateDecl decl =
     case decl of
         Decl id ty Nothing Nothing ->
-            DeclElab (Variable id ty) Nothing
+            DeclElab (VariableElab id (elaborateType ty)) Nothing
         Decl id ty (Just as) (Just e) ->
-            DeclElab (Variable id ty) (Just (elaborateSimp (Simp as (Lval id) e)))
+            DeclElab (VariableElab id (elaborateType ty)) (Just (elaborateSimp (Simp as (Lval id) e)))
 
 elaborateSimp :: Simp -> AsnElab
 elaborateSimp (Simp as (Lval id) e) =
@@ -52,34 +52,38 @@ elaborateSimp (Simp as (Lval id) e) =
 elaborateExp :: Exp -> ExpElab
 elaborateExp e =
     case e of
-        INTCONST_EXP i -> CONST_ELAB (elaborateConst i)
+        HEXNUM_EXP h -> CONST_ELAB (elaborateConst i)
+        DECNUM_EXP d -> CONST_ELAB (elaborateConst d)
         IDENTIFIER_EXP id -> IDENTIFIER_ELAB id
         BINOP_EXP b -> BINOP_ELAB (elaborateBinop b)
         UNOP_EXP u -> UNOP_ELAB (elaborateUnop u)
 
-elaborateConst :: Intconst -> ConstElab
-elaborateConst i =
-    case i of
-        HEXNUM_INTCONST (Token (HEXNUM h) _) ->
-            case (Numeric.readHex h) of
-                [(i, _)] -> INT_CONST_ELAB i
-        DECNUM_INTCONST (Token (DECNUM d) _) ->
-            case (Numeric.readDec d) of
-                [(i, _)] -> INT_CONST_ELAB i
-
-elaborateBinop :: Binop -> (BinopElab, Bool)
+elaborateBinop :: Binop -> BinopElab
 elaborateBinop (Binop op e1 e2) =
     case (tokenCat op) of
-        PLUS -> (ADD_EXP_ELAB (elaborateExp e1) (elaborateExp e2), False)
-        DASH -> (SUB_EXP_ELAB (elaborateExp e1) (elaborateExp e2), False)
-        STAR -> (MUL_EXP_ELAB (elaborateExp e1) (elaborateExp e2), False)
-        SLASH -> (DIV_EXP_ELAB (elaborateExp e1) (elaborateExp e2), True)
-        PERC -> (MOD_EXP_ELAB (elaborateExp e1) (elaborateExp e2), False)
+        PLUS -> ADD_EXP_ELAB (elaborateExp e1) (elaborateExp e2)
+        DASH -> SUB_EXP_ELAB (elaborateExp e1) (elaborateExp e2)
+        STAR -> MUL_EXP_ELAB (elaborateExp e1) (elaborateExp e2)
+        SLASH -> DIV_EXP_ELAB (elaborateExp e1) (elaborateExp e2)
+        PERC -> MOD_EXP_ELAB (elaborateExp e1) (elaborateExp e2)
 
-elaborateUnop :: Unop -> (UnopElab, Bool)
+elaborateUnop :: Unop -> UnopElab
 elaborateUnop (Unop op e) =
     case (tokenCat op) of
-        DASH -> (NEG_EXP_ELAB (elaborateExp e), False)
+        DASH -> NEG_EXP_ELAB (elaborateExp e)
+
+elaborateType :: Type -> TypeElab
+elaborateType t = TypeElab (typeCategory t) (typeToken t)
+
+elaborateConst :: Token -> ConstElab
+elaborateConst i =
+    case i of
+        HEXNUM_CONST (Token (HEXNUM h) _) ->
+            case (Numeric.readHex h) of
+                [(i, _)] -> INT_CONST_ELAB i
+        DECNUM_CONST (Token (DECNUM d) _) ->
+            case (Numeric.readDec d) of
+                [(i, _)] -> INT_CONST_ELAB i
 
 {-
 
@@ -111,16 +115,15 @@ verifyDeclarationSeq seq initialized =
 
 verifyDeclarationDecl :: DeclElab -> Map.Map String Token -> (Map.Map String Token, [VerificationError])
 verifyDeclarationDecl decl initialized =
-    let identifier = (variableIdentifier (declElabVariable decl))
+    let identifier = (variableElabIdentifier (declElabVariable decl))
         asn = (declElabAsn decl)
         (declErrors, newInitialized) =
-            case (extractIdentifierName identifier) of
-                Just name ->
-                    case (Map.lookup name initialized) of
-                        Just prevIdentifier ->
-                            ([DOUBLE_DECL (DoubleDeclarationError prevIdentifier identifier)], initialized)
-                        _ ->
-                            ([], (Map.insert name identifier initialized))
+            let name = extractIdentifierName identifier
+             in case (Map.lookup name initialized) of
+                    Just prevIdentifier ->
+                        ([DOUBLE_DECL (DoubleDeclarationError prevIdentifier identifier)], initialized)
+                    _ ->
+                        ([], (Map.insert name identifier initialized))
         asnErrors =
             case asn of
                 Just a -> snd (verifyDeclarationAsn a newInitialized)
@@ -144,16 +147,13 @@ verifyDeclarationExp exp initialized =
         CONST_ELAB _ -> []
         IDENTIFIER_ELAB identifier -> verifyDeclarationIdentifier identifier initialized
         BINOP_ELAB binop -> verifyDeclarationBinop binop initialized
-        PURE_UNOP_ELAB unop -> verifyDeclarationUnop unop initialized
-        IMPURE_UNOP_ELAB unop -> verifyDeclarationUnop unop initialized
+        UNOP_ELAB unop -> verifyDeclarationUnop unop initialized
 
 verifyDeclarationIdentifier :: Token -> Map.Map String Token -> [VerificationError]
 verifyDeclarationIdentifier identifier initialized =
-    case (extractIdentifierName identifier) of
-        Just name ->
-            case (Map.lookup name initialized) of
-                Nothing -> [(USE_BEFORE_DECL (UseBeforeDeclarationError identifier))]
-                _ -> []
+    case (Map.lookup (extractIdentifierName identifier) initialized) of
+        Nothing -> [(USE_BEFORE_DECL (UseBeforeDeclarationError identifier))]
+        _ -> []
 
 verifyDeclarationBinop :: BinopElab -> Map.Map String Token -> [VerificationError]
 verifyDeclarationBinop binop initialized =
@@ -169,21 +169,22 @@ verifyDeclarationUnop unop initialized =
     case unop of
         NEG_EXP_ELAB e -> verifyDeclarationExp e initialized
 
-
 {-
 
 RETURN VERIFICATION
 
 -}
 
+-- TODO: add type check on return value
+
 verifyReturn :: FunctionElab -> [VerificationError]
-verifyReturn fn = 
+verifyReturn fn =
     if verifyReturnSeq (functionElabBlock fn)
         then []
         else [INVALID_RET (InvalidReturnError (functionElabName fn))]
 
 verifyReturnSeq :: SeqElab -> Bool
-verifyReturnSeq seq = 
+verifyReturnSeq seq =
     case seq of
         [] -> False
         s : _ -> (verifyReturnStmt s) || (verifyReturnSeq (tail seq))

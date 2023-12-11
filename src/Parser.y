@@ -72,7 +72,7 @@ Stmt : Decl ';'         { DECL_STMT $1 }
     | return Exp ';'    { RET_STMT $2 }
 
 Decl : int ident        { Decl $2 (Type INT_TYPE $1) Nothing Nothing }
-    | int ident '=' Exp { Decl $2 (Type INT_TYPE $1) (Just $3) (Just $4)}
+    | int ident '=' Exp { Decl $2 (Type INT_TYPE $1) (Just $3) (Just $4) }
 
 Simp : Lval '=' Exp     { Simp $2 $1 $3 }
     | Lval '+=' Exp     { Simp $2 $1 $3 }
@@ -85,7 +85,8 @@ Lval : ident            { Lval $1 }
     | '(' Lval ')'      { $2 }
 
 Exp : '(' Exp ')'   { $2 }
-    | Intconst      { INTCONST_EXP $1 }
+    | hex           { HEXNUM_EXP $1 }
+    | dec           { DECNUM_EXP $1 }
     | ident         { IDENTIFIER_EXP $1 }
     | Exp '+' Exp   { BINOP_EXP (Binop $2 $1 $3) }
     | Exp '-' Exp   { BINOP_EXP (Binop $2 $1 $3) }
@@ -93,11 +94,6 @@ Exp : '(' Exp ')'   { $2 }
     | Exp '/' Exp   { BINOP_EXP (Binop $2 $1 $3) }
     | Exp '%' Exp   { BINOP_EXP (Binop $2 $1 $3) }
     | '-' Exp       { UNOP_EXP (Unop $1 $2) }
-
-Intconst : dec      { DECNUM_INTCONST $1 }
-    | hex           { HEXNUM_INTCONST $1 }
-
-
 
 {
 parseError :: [Token] -> a

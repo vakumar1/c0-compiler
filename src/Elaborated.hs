@@ -6,18 +6,20 @@ module Elaborated (
     RetElab (..),
     SeqElab,
     ExpElab (..),
-    ConstElab (..),
     BinopElab (..),
     UnopElab (..),
-    Variable (..),
+    VariableElab (..),
+    TypeElab (..),
+    extractIdentifierName,
 ) where
 
+import Errors
 import Tokens
 import Types
 
 data FunctionElab = FunctionElab
     { functionElabName :: Token
-    , functionElabReturnType :: Type
+    , functionElabReturnType :: TypeElab
     , functionElabBlock :: SeqElab
     }
 
@@ -28,7 +30,7 @@ data StatementElab
     | SEQ_ELAB SeqElab
 
 data DeclElab = DeclElab
-    { declElabVariable :: Variable
+    { declElabVariable :: VariableElab
     , declElabAsn :: Maybe AsnElab
     }
 
@@ -58,3 +60,21 @@ data BinopElab
 
 data UnopElab = NEG_EXP_ELAB ExpElab
 
+data VariableElab = VariableElab
+    { variableElabIdentifier :: Token
+    , variableElabType :: TypeElab
+    }
+
+data TypeElab = TypeElab
+    { typeElabType :: TypeCategory
+    , typeElabToken :: Token
+    }
+    deriving (Show)
+
+-- DATA STRUCTURE HELPERS
+
+extractIdentifierName :: Token -> String
+extractIdentifierName token =
+    case (tokenCat token) of
+        IDENTIFIER name -> name
+        _ -> compilerError "Expected an identifer token but got token=" ++ (show token)

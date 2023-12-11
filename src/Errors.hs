@@ -11,7 +11,6 @@ module Errors (
 ) where
 
 import Tokens
-import Elaborated
 
 compilerError :: String -> String
 compilerError msg = "[INTERNAL COMPILER ERROR OCCURRED.]: " ++ msg
@@ -108,13 +107,11 @@ data InvalidReturnError = InvalidReturnError
     { invalidReturnFn :: Token
     }
 instance Show InvalidReturnError where
-    show e = 
+    show e =
         "InvalidReturnErr"
             ++ "\n"
             ++ "function -- "
             ++ (show (invalidReturnFn e))
-
-
 
 data VerificationError
     = USE_BEFORE_DECL UseBeforeDeclarationError
