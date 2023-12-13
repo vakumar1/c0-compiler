@@ -103,6 +103,24 @@ instance Show DoubleDeclarationError where
             ++ " token="
             ++ ((show . tokenCat . doubleInitializationErrorSecondInit) e)
 
+data OpTypeMismatch = OpTypeMismatch
+    { opToken :: Token
+    , opCat :: OpElabCat
+    , argTypes :: [TypeCategory]
+    }
+
+data AsnTypeMismatch = AsnTypeMismatch
+    { asnVar :: Token
+    , asnType :: TypeCategory
+    , expType :: TypeCategory
+    }
+
+-- TODO: add token identifying return statement location
+data RetTypeMismatch = RetTypeMismatch
+    { retType :: TypeCategory
+    , expType :: TypeCategory
+    }
+
 data InvalidReturnError = InvalidReturnError
     { invalidReturnFn :: Token
     }
@@ -116,5 +134,8 @@ instance Show InvalidReturnError where
 data VerificationError
     = USE_BEFORE_DECL UseBeforeDeclarationError
     | DOUBLE_DECL DoubleDeclarationError
+    | OP_TYPE_MISMATCH OpTypeMismatch
+    | ASN_TYPE_MISMATCH AsnTypeMismatch
+    | RET_TYPE_MISMATCH RetTypeMismatch
     | INVALID_RET InvalidReturnError
     deriving (Show)

@@ -17,6 +17,8 @@ import Errors
 import Tokens
 import Types
 
+import qualified Data.Map as Map
+
 data FunctionElab = FunctionElab
     { functionElabName :: Token
     , functionElabReturnType :: TypeElab
@@ -51,14 +53,32 @@ data ExpElab
     | BINOP_ELAB BinopElab
     | UNOP_ELAB UnopElab
 
-data BinopElab
-    = ADD_EXP_ELAB ExpElab ExpElab
-    | SUB_EXP_ELAB ExpElab ExpElab
-    | MUL_EXP_ELAB ExpElab ExpElab
-    | DIV_EXP_ELAB ExpElab ExpElab
-    | MOD_EXP_ELAB ExpElab ExpElab
+data BinopElab = BinopElab 
+    { binopElabCat :: BinopCatElab
+    , binopElabOp :: Token
+    , binopElabExp1 :: ExpElab
+    , binopElabExp2 :: ExpElab
+    }
 
-data UnopElab = NEG_EXP_ELAB ExpElab
+data BinopCatElab
+    = ADD_EXP_ELAB
+    | SUB_EXP_ELAB
+    | MUL_EXP_ELAB
+    | DIV_EXP_ELAB
+    | MOD_EXP_ELAB
+
+data UnopElab = UnopElab
+    { unopElabCat :: UnopCatElab
+    , unopElabOp :: Token
+    , unopElabExp :: ExpElab
+    }
+
+data UnopCatElab
+    = NEG_EXP_ELAB
+
+data OpElabCat
+    = BINOP_CAT_ELAB BinopCatElab
+    | UNOP_CAT_ELAB UnopCatElab
 
 data VariableElab = VariableElab
     { variableElabIdentifier :: Token
@@ -72,6 +92,11 @@ data TypeElab = TypeElab
     deriving (Show)
 
 -- DATA STRUCTURE HELPERS
+
+data Scope = Scope
+    { scopeMaps :: [Map.Map String VariableElab]
+    , scopeRegCtr :: Int
+    }
 
 extractIdentifierName :: Token -> String
 extractIdentifierName token =

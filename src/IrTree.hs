@@ -1,25 +1,26 @@
-module Ir (
-    Program,
-    BasicBlock,
-    Command (..),
+module IrTree (
+    BasicBlockIr (..),
+    CommandIr (..),
+    PureIr (..),
     ImpureBinopIr (..),
     PureBinopIr (..),
-    PureIr (..),
+    PureUnopIr (..),
+    VariableIr (..),
 )
-
 where
 
-import qualified Data.Map as Map
+import Types
 
-type ProgramIr = Map LineIr BasicBlockIr
-
-type BasicBlockIr = [Command]
+data BasicBlockIr = BasicBlockIr
+    { bbIrArgs :: [VariableIr]
+    , bbIrCommands :: [CommandIr]
+    }
 
 data CommandIr
-    = ASN_PURE_IR VariableIr PureIr
+    = INIT_IR VariableIr
+    | ASN_PURE_IR VariableIr PureIr
     | ASN_IMPURE_BINOP_IR VariableIr ImpureBinopIr
-    | GOTO_LINE_IR LineIr
-    | DEF_LINE_IR LineIr
+    | GOTO_BB_IR BasicBlockIr
     | RET_PURE_IR PureIr
 
 data PureIr
@@ -40,10 +41,8 @@ data PureBinopIr
 data PureUnopIr
     = NEG_IR PureIr
 
-
-
--- command-level types
-
-type VariableIr = Int
-
-type LineIr = String
+data VariableIr = VariableIr
+    { variableIrName :: String
+    , variableIrType :: TypeCategory
+    , variableIrTemp :: Bool
+    }

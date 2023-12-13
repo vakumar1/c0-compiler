@@ -28,6 +28,8 @@ library
       Ast
       Elaborated
       Errors
+      Ir
+      IrTree
       Lexer
       Middle
       Parser
