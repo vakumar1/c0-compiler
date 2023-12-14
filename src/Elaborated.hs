@@ -7,7 +7,9 @@ module Elaborated (
     SeqElab,
     ExpElab (..),
     BinopElab (..),
+    BinopCatElab (..),
     UnopElab (..),
+    UnopCatElab (..),
     VariableElab (..),
     TypeElab (..),
     extractIdentifierName,
@@ -53,7 +55,7 @@ data ExpElab
     | BINOP_ELAB BinopElab
     | UNOP_ELAB UnopElab
 
-data BinopElab = BinopElab 
+data BinopElab = BinopElab
     { binopElabCat :: BinopCatElab
     , binopElabOp :: Token
     , binopElabExp1 :: ExpElab
@@ -91,12 +93,7 @@ data TypeElab = TypeElab
     }
     deriving (Show)
 
--- DATA STRUCTURE HELPERS
-
-data Scope = Scope
-    { scopeMaps :: [Map.Map String VariableElab]
-    , scopeRegCtr :: Int
-    }
+-- HELPERS
 
 extractIdentifierName :: Token -> String
 extractIdentifierName token =

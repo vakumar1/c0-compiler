@@ -2,6 +2,7 @@ module Main (main) where
 
 -- import Ast
 import Errors
+import Ir
 import Lexer
 import Middle
 import Parser
@@ -45,9 +46,8 @@ compiler code =
     let (tokens, lexerErrors) = lexer code
         ast = parser (reverse tokens)
         elaborated = elaborate ast
-        declErrors = verifyDeclaration elaborated
-        retErrors = verifyReturn elaborated
-     in (putStrLn ((prettyPrintList declErrors) ++ (prettyPrintList retErrors)))
+        (ir, verErrors) = irFunction elaborated
+     in (putStrLn (prettyPrintList verErrors))
 
 main :: IO ()
 main = do

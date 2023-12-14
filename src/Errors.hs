@@ -5,12 +5,16 @@ module Errors (
     ParserErrorCategory (..),
     UseBeforeDeclarationError (..),
     DoubleDeclarationError (..),
+    OpTypeMismatch (..),
+    AsnTypeMismatch (..),
+    RetTypeMismatch (..),
     InvalidReturnError (..),
     VerificationError (..),
     compilerError,
 ) where
 
 import Tokens
+import Types
 
 compilerError :: String -> String
 compilerError msg = "[INTERNAL COMPILER ERROR OCCURRED.]: " ++ msg
@@ -104,32 +108,34 @@ instance Show DoubleDeclarationError where
             ++ ((show . tokenCat . doubleInitializationErrorSecondInit) e)
 
 data OpTypeMismatch = OpTypeMismatch
-    { opToken :: Token
-    , opCat :: OpElabCat
-    , argTypes :: [TypeCategory]
+    { opTypeMismatchOp :: Token
+    , opTypeMismatchArgTypes :: [TypeCategory]
     }
+    deriving (Show)
 
 data AsnTypeMismatch = AsnTypeMismatch
-    { asnVar :: Token
-    , asnType :: TypeCategory
-    , expType :: TypeCategory
+    { asnTypeMismatchVar :: Token
+    , asnTypeMismatchAsnType :: TypeCategory
+    , asnTypeMismatchExpType :: TypeCategory
     }
+    deriving (Show)
 
 -- TODO: add token identifying return statement location
 data RetTypeMismatch = RetTypeMismatch
-    { retType :: TypeCategory
-    , expType :: TypeCategory
+    { retTypeMismatchRetType :: TypeCategory
+    , retTypeMismatchExpType :: TypeCategory
     }
+    deriving (Show)
 
 data InvalidReturnError = InvalidReturnError
-    { invalidReturnFn :: Token
+    { invalidReturnErrorFn :: Token
     }
 instance Show InvalidReturnError where
     show e =
         "InvalidReturnErr"
             ++ "\n"
             ++ "function -- "
-            ++ (show (invalidReturnFn e))
+            ++ (show (invalidReturnErrorFn e))
 
 data VerificationError
     = USE_BEFORE_DECL UseBeforeDeclarationError
