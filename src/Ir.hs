@@ -186,12 +186,12 @@ data Scope = Scope
 
 getIrArgs :: [Map.Map String VariableElab] -> [VariableIr]
 getIrArgs maps = 
-    let singleMap = foldr (\nextMap interMap -> (getIrArgsFoldFn interMap (Map.toList nextMap))) Map.empty maps
+    let singleMap = foldr getIrArgsFoldFn Map.empty maps
     in map getIrArgsTranslateFn (Map.toList singleMap)
 
-getIrArgsFoldFn :: Map.Map String VariableElab -> [(String, VariableElab)] -> Map.Map String VariableElab
+getIrArgsFoldFn :: Map.Map String VariableElab -> Map.Map String VariableElab -> Map.Map String VariableElab
 getIrArgsFoldFn initMap nextMap = 
-    foldr (\(s, v) interMap -> Map.insert s v interMap) initMap nextMap
+    foldr (\(s, v) interMap -> Map.insert s v interMap) initMap (Map.toList nextMap)
 
 getIrArgsTranslateFn :: (String, VariableElab) -> VariableIr
 getIrArgsTranslateFn (varName, varElab) = 
