@@ -30,6 +30,7 @@ data Statement
     = DECL_STMT Decl
     | SIMP_STMT Simp
     | RET_STMT Exp
+    | BLOCK_STMT Block
     deriving (Show)
 
 data Decl = Decl

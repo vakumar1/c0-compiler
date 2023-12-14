@@ -32,6 +32,7 @@ elaborateStmts ss =
         DECL_STMT d : _ -> (DECL_ELAB (elaborateDecl d)) : (elaborateStmts (tail ss))
         SIMP_STMT s : _ -> (ASN_ELAB (elaborateSimp s)) : (elaborateStmts (tail ss))
         RET_STMT e : _ -> (RET_ELAB (RetElab (elaborateExp e))) : (elaborateStmts (tail ss))
+        BLOCK_STMT b : _ -> (SEQ_ELAB (elaborateBlock b)) : (elaborateStmts (tail ss))
 
 elaborateDecl :: Decl -> DeclElab
 elaborateDecl decl =

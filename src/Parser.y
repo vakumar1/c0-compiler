@@ -69,6 +69,7 @@ Stmts :                 { [] }
 
 Stmt : Decl ';'         { DECL_STMT $1 }
     | Simp ';'          { SIMP_STMT $1 }
+    | Block             { BLOCK_STMT $1 }
     | return Exp ';'    { RET_STMT $2 }
 
 Decl : int ident        { Decl $2 (Type INT_TYPE $1) Nothing Nothing }

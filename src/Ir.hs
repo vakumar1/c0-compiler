@@ -30,6 +30,7 @@ irSeq fn ss bb scope errs =
             let (retComms, _, retErrs) = irRet r fn scope
                 bbRet = BasicBlockIr (bbIrArgs bb) (retComms ++ (bbIrCommands bb))
              in ([bbRet], retErrs ++ errs)
+        
         -- ii. extend current basic block
         DECL_ELAB d : _ ->
             let (declComms, declScope, declErrs) = irDecl d scope
@@ -39,6 +40,22 @@ irSeq fn ss bb scope errs =
             let (asnComms, asnScope, asnErrs) = irAsn a scope
                 bbAsn = BasicBlockIr (bbIrArgs bb) (asnComms ++ (bbIrCommands bb))
              in irSeq fn (tail ss) bbAsn asnScope (asnErrs ++ errs)
+
+        -- iii. start new basic block
+        SEQ_ELAB s : _ ->
+            let currBbArgs = getIrArgs (scopeMaps scope)
+
+                -- evaluate for inner block
+                innerBb = BasicBlockIr currBbArgs []
+                innerScope = Scope (Map.empty:(scopeMaps scope)) (scopeRegCtr scope)
+                (innerSeqBb, innerSeqErrs) = irSeq fn s innerBb innerScope []
+
+                -- evaluate for remainder of block
+                nextBb = BasicBlockIr currBbArgs []
+                (nextSeqBb, nextSeqErrs) = irSeq fn (tail ss) nextBb scope []
+
+            -- concat results from existing bb, inner bb(s), and remaining bb(s)
+            in (nextSeqBb ++ innerSeqBb ++ [bb], nextSeqErrs ++ innerSeqErrs ++ errs)
 
 irDecl :: DeclElab -> Scope -> ([CommandIr], Scope, [VerificationError])
 irDecl (DeclElab varElab Nothing) scope =
@@ -166,6 +183,19 @@ data Scope = Scope
     { scopeMaps :: [Map.Map String VariableElab]
     , scopeRegCtr :: Int
     }
+
+getIrArgs :: [Map.Map String VariableElab] -> [VariableIr]
+getIrArgs maps = 
+    let singleMap = foldr (\nextMap interMap -> (getIrArgsFoldFn interMap (Map.toList nextMap))) Map.empty maps
+    in map getIrArgsTranslateFn (Map.toList singleMap)
+
+getIrArgsFoldFn :: Map.Map String VariableElab -> [(String, VariableElab)] -> Map.Map String VariableElab
+getIrArgsFoldFn initMap nextMap = 
+    foldr (\(s, v) interMap -> Map.insert s v interMap) initMap nextMap
+
+getIrArgsTranslateFn :: (String, VariableElab) -> VariableIr
+getIrArgsTranslateFn (varName, varElab) = 
+    VariableIr varName (typeElabType (variableElabType varElab)) False
 
 identifierLookup :: Token -> [Map.Map String VariableElab] -> Maybe VariableElab
 identifierLookup tok maps =
