@@ -2,9 +2,9 @@ module Main (main) where
 
 -- import Ast
 import Errors
-import Ir
+import ElabToIr
 import Lexer
-import Middle
+import AstToElab
 import Parser
 
 -- import Parser

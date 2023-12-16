@@ -26,12 +26,12 @@ source-repository head
 library
   exposed-modules:
       Ast
+      AstToElab
       Elaborated
+      ElabToIr
       Errors
       Ir
-      IrTree
       Lexer
-      Middle
       Parser
       Tokens
       Types

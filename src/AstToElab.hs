@@ -1,4 +1,4 @@
-module Middle (
+module AstToElab (
     elaborate,
 ) where
 
