@@ -116,7 +116,7 @@ irExp e state =
         UNOP_ELAB u -> irUnop u state
 
 irConst :: Const -> State -> ([CommandIr], Maybe (PureIr, TypeCategory), State, [VerificationError])
-irConst const state = ([], Just (CONST_IR const, constToType const), state, [])
+irConst const state = ([], Just (PURE_BASE_IR (CONST_IR const), constToType const), state, [])
 
 irIdentifier :: Token -> State -> ([CommandIr], Maybe (PureIr, TypeCategory), State, [VerificationError])
 irIdentifier tok state =
@@ -124,7 +124,7 @@ irIdentifier tok state =
         Just (varElab, varScopeId) ->
             let varIr = varElabToIr varElab varScopeId
                 varTypeCat = (typeElabType (variableElabType varElab))
-             in ([], Just (VAR_IR varIr, varTypeCat), state, [])
+             in ([], Just (PURE_BASE_IR (VAR_IR varIr), varTypeCat), state, [])
         Nothing ->
             ([], Nothing, state, [(USE_BEFORE_DECL (UseBeforeDeclarationError tok))])
 
@@ -158,8 +158,8 @@ irUnop (UnopElab cat op e) state =
                  in case m_infType of
                         -- return pure exp with inferred type
                         Just infType ->
-                            let (unopComms, unopPu) = unopOpTranslate cat expPu
-                             in (unopComms ++ expComms, Just (unopPu, infType), expState, expErrs)
+                            let (unopComms, unopPu, unopState) = unopOpTranslate cat infType expPu expState
+                             in (unopComms ++ expComms, Just (unopPu, infType), unopState, expErrs)
                         -- fail when type for unop cannot be inferred
                         Nothing ->
                             ([], Nothing, state, (OP_TYPE_MISMATCH (OpTypeMismatch op [expTy])) : expErrs)
@@ -243,22 +243,24 @@ binopTypeInf cat t1 t2 =
 
 binopOpTranslate :: BinopCatElab -> TypeCategory -> PureIr -> PureIr -> State -> ([CommandIr], PureIr, State)
 binopOpTranslate cat ty p1 p2 state =
-    case cat of
-        ADD_EXP_ELAB -> ([], PURE_BINOP_IR (ADD_IR p1 p2), state)
-        SUB_EXP_ELAB -> ([], PURE_BINOP_IR (SUB_IR p1 p2), state)
-        MUL_EXP_ELAB -> ([], PURE_BINOP_IR (MUL_IR p1 p2), state)
+    let (expandComms1, expandPureBase1, expandState1) = expandPureIr p1 state
+        (expandComms2, expandPureBase2, expandState2) = expandPureIr p2 expandState1
+    in case cat of
+        ADD_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr ADD_IR ty expandPureBase1 expandPureBase2), expandState2)
+        SUB_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr SUB_IR ty expandPureBase1 expandPureBase2), expandState2)
+        MUL_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr MUL_IR ty expandPureBase1 expandPureBase2), expandState2)
         DIV_EXP_ELAB ->
             let (tempName, newState) = addTemp state
                 temp = VariableIr tempName ty True
-                binop = DIV_IR p1 p2
-                comm = ASN_IMPURE_BINOP_IR temp binop
-             in ([comm], VAR_IR temp, newState)
+                binop = IMPURE_BINOP_IR (ImpureBinopIr DIV_IR ty expandPureBase1 expandPureBase2)
+                comm = ASN_IMPURE_IR temp binop
+             in (comm:(expandComms2 ++ expandComms2), PURE_BASE_IR (VAR_IR temp), expandState2)
         MOD_EXP_ELAB ->
             let (tempName, newState) = addTemp state
                 temp = VariableIr tempName ty True
-                binop = MOD_IR p1 p2
-                comm = ASN_IMPURE_BINOP_IR temp binop
-             in ([comm], VAR_IR temp, newState)
+                binop = IMPURE_BINOP_IR (ImpureBinopIr MOD_IR ty expandPureBase1 expandPureBase2)
+                comm = ASN_IMPURE_IR temp binop
+             in (comm:(expandComms2 ++ expandComms2), PURE_BASE_IR (VAR_IR temp), expandState2)
 
 unopTypeInf :: UnopCatElab -> TypeCategory -> Maybe TypeCategory
 unopTypeInf cat t1 =
@@ -266,7 +268,25 @@ unopTypeInf cat t1 =
         INT_TYPE -> Just INT_TYPE
         _ -> Nothing
 
-unopOpTranslate :: UnopCatElab -> PureIr -> ([CommandIr], PureIr)
-unopOpTranslate cat p1 =
-    case cat of
-        NEG_EXP_ELAB -> ([], PURE_UNOP_IR (NEG_IR p1))
+unopOpTranslate :: UnopCatElab -> TypeCategory -> PureIr -> State -> ([CommandIr], PureIr, State)
+unopOpTranslate cat ty p1 state =
+    let (expandComms, expandPureBase, expandState) = expandPureIr p1 state
+    in case cat of
+        NEG_EXP_ELAB -> (expandComms, PURE_UNOP_IR (PureUnopIr NEG_IR ty expandPureBase), expandState)
+
+-- applies an extra level of processing to convert potentially recursive PureIr into 
+-- [CommandIr] + Const/VariableIr
+expandPureIr :: PureIr -> State -> ([CommandIr], PureBaseIr, State)
+expandPureIr pu state = 
+    case pu of
+        PURE_BASE_IR base -> ([], base, state)
+        PURE_BINOP_IR binop ->
+            let (tempName, newState) = addTemp state
+                binopTemp = VariableIr tempName (pureBinopInfType binop) True
+                binopComm = ASN_PURE_IR binopTemp pu
+            in ([binopComm], VAR_IR binopTemp, newState)
+        PURE_UNOP_IR unop ->
+            let (tempName, newState) = addTemp state
+                unopTemp = VariableIr tempName (pureUnopInfType unop) True
+                unopComm = ASN_PURE_IR unopTemp pu
+            in ([unopComm], VAR_IR unopTemp, newState)

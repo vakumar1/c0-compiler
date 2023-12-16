@@ -31,6 +31,7 @@ library
       ElabToIr
       Errors
       Ir
+      IrToSSA
       Lexer
       Parser
       Tokens
