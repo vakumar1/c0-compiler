@@ -11,49 +11,81 @@ import Types
 
 import qualified Data.Map as Map
 
+
 -- IR TRANSLATION
 -- + DECLARATION VERIFICATION
 -- + TYPE VERIFICATION
 
-irFunction :: FunctionElab -> ([BasicBlockIr], [VerificationError])
-irFunction fn =
-    let initBb = BasicBlockIr [] []
-        emptyState = State [] 0 0
-        initState = addScope emptyState
-     in irSeq fn (functionElabBlock fn) initBb initState []
+irFunction :: FunctionElab -> (FunctionIr, [VerificationError])
+irFunction fnElab =
+    let (initBb, initState) = addBb (addScope (State [] 0 0 0))
+        initFnIr = FunctionIr Map.empty Map.empty Map.empty
+        (_, _, finalFnIr, errs) = irSeq fnElab (functionElabBlock fnElab) initState initBb initFnIr []
+    in (finalFnIr, errs)
 
-irSeq :: FunctionElab -> SeqElab -> BasicBlockIr -> State -> [VerificationError] -> ([BasicBlockIr], [VerificationError])
-irSeq fn ss bb state errs =
-    case ss of
-        -- i. terminate current basic block
-        [] -> ([bb], errs)
-        RET_ELAB r : _ ->
-            let (retComms, _, retErrs) = irRet r fn state
-                bbRet = BasicBlockIr (bbIrArgs bb) (retComms ++ (bbIrCommands bb))
-             in ([bbRet], retErrs ++ errs)
+-- Seq Elab -> IR is responsible for:
+-- i. constructing all new BasicBlocks (except the initial BB)
+-- ii. appending commands to the current BB
+-- iii. adding all BBs it terminates to function-wide BB tracker map
+-- iv. adding edges between BBs in function-wide CFG (and adding corresponding instructions)
+-- v. returning the indices of the ENTRY BB and EXIT BB of the Seq
+irSeq :: FunctionElab -> SeqElab -> State -> BasicBlockIr -> FunctionIr -> [VerificationError] -> 
+    ((Int, Int), State, FunctionIr, [VerificationError])
+irSeq fnElab seq state currBb fnIr errs =
+    let currIndex = bbIndex currBb
+    in case seq of
+        -- i. terminate current basic block and add to fnIr
+        [] -> 
+            let termFnIr = addBbsToFunction fnIr [currBb]
+            in ((currIndex, currIndex), state, termFnIr, errs)
+        RET_ELAB retElab : _ ->
+            let (retComms, retState, retErrs) = irRet retElab fnElab state
+                retBb = appendCommsToBb currBb retComms
+                retFnIr = addBbsToFunction fnIr [retBb]
+             in ((currIndex, currIndex), retState, retFnIr, retErrs ++ errs)
         -- ii. extend current basic block
-        DECL_ELAB d : _ ->
-            let (declComms, declState, declErrs) = irDecl d state
-                bbDecl = BasicBlockIr (bbIrArgs bb) (declComms ++ (bbIrCommands bb))
-             in irSeq fn (tail ss) bbDecl declState (declErrs ++ errs)
-        ASN_ELAB a : _ ->
-            let (asnComms, asnState, asnErrs) = irAsn a state
-                bbAsn = BasicBlockIr (bbIrArgs bb) (asnComms ++ (bbIrCommands bb))
-             in irSeq fn (tail ss) bbAsn asnState (asnErrs ++ errs)
+        DECL_ELAB declElab : _ ->
+            let (declComms, declState, declErrs) = irDecl declElab state
+                declBb = appendCommsToBb currBb declComms
+             in irSeq fnElab (tail seq) declState declBb fnIr (declErrs ++ errs)
+        ASN_ELAB asnElab : _ ->
+            let (asnComms, asnState, asnErrs) = irAsn asnElab state
+                asnBb = appendCommsToBb currBb asnComms
+             in irSeq fnElab (tail seq) asnState asnBb fnIr (asnErrs ++ errs)
         -- iii. start new basic block
-        SEQ_ELAB s : _ ->
-            let currBbArgs = getIrArgs (scopes state)
+        SEQ_ELAB innerSeq : _ ->
+                -- create inner block; create new scope; and evaluate for inner seq (then clean up top scope)
+            let (innerBb, createInnerState) = addBb state
+                addScopeState = addScope createInnerState
+                ((innerStartIndex, innerEndIndex), innerState, innerFnIr, innerErrs) = irSeq fnElab innerSeq addScopeState innerBb fnIr []
+                removeScopeState = popScopeMap innerState
 
-                -- evaluate for inner block
-                innerBb = BasicBlockIr currBbArgs []
-                innerState = addScope state
-                (innerSeqBb, innerSeqErrs) = irSeq fn s innerBb innerState []
+                -- create next block; and evaluate for tail seq
+                nextSeq = tail seq
+                (nextBb, createNextState) = addBb removeScopeState
+                ((nextStartIndex, nextEndIndex), nextState, nextFnIr, nextErrs) = irSeq fnElab nextSeq createNextState nextBb innerFnIr []
 
-                -- evaluate for remainder of block
-                nextBb = BasicBlockIr currBbArgs []
-                (nextSeqBb, nextSeqErrs) = irSeq fn (tail ss) nextBb state []
-             in -- concat results from existing bb, inner bb(s), and remaining bb(s)
-                (nextSeqBb ++ innerSeqBb ++ [bb], nextSeqErrs ++ innerSeqErrs ++ errs)
+                -- curr => inner blocks: add goto command and CFG edges
+                currInnerComm = GOTO_BB_IR innerStartIndex
+                currInnerBb = appendCommsToBb currBb [currInnerComm]
+                currInnerFnIr = addEdgeToCFG nextFnIr currIndex innerStartIndex
+
+                -- inner => next blocks: add goto command and CFG edges
+                innerNextComm = GOTO_BB_IR nextStartIndex
+                innerFinishedBb = 
+                    -- note: the innerEndIndex BB must be in the latest fnIr since it terminates the BB
+                    -- and is responsible for adding it to the fnIr it returns
+                    case (Map.lookup innerEndIndex (functionIrBlocks nextFnIr)) of
+                        Just bb -> bb
+                innerNextBb = appendCommsToBb innerFinishedBb [innerNextComm]
+                innerNextFnIr = addEdgeToCFG currInnerFnIr innerEndIndex nextStartIndex
+
+                -- add updated curr/inner blocks to fnIr 
+                finalFnIr = addBbsToFunction innerNextFnIr [currInnerBb, innerNextBb]
+                finalErrs = nextErrs ++ innerErrs ++ errs
+            in ((currIndex, nextEndIndex), nextState, finalFnIr, finalErrs)
+
+-- STATEMENT ELAB->IR
 
 irDecl :: DeclElab -> State -> ([CommandIr], State, [VerificationError])
 irDecl (DeclElab varElab Nothing) state =
@@ -106,6 +138,8 @@ irRet (RetElab e) (FunctionElab _ (TypeElab retTy _) _) state =
                     else ([], state, (RET_TYPE_MISMATCH (RetTypeMismatch retTy expTy)) : expErrs)
             Nothing ->
                 ([], state, expErrs)
+
+-- EXP ELAB->IR
 
 irExp :: ExpElab -> State -> ([CommandIr], Maybe (PureIr, TypeCategory), State, [VerificationError])
 irExp e state =
@@ -167,12 +201,13 @@ irUnop (UnopElab cat op e) state =
             _ ->
                 ([], Nothing, state, expErrs)
 
--- MANAGE AND ACCESS ELABORATED STATE
+-- HELPERS: MANAGE AND ACCESS ELABORATED STATE
 
 data State = State
     { scopes :: [Scope]
     , regCtr :: Int
     , mapCtr :: Int
+    , bbCtr :: Int
     }
 
 data Scope = Scope
@@ -182,22 +217,27 @@ data Scope = Scope
 
 addTemp :: State -> (String, State)
 addTemp state =
-    let tempName = (show (regCtr state)) ++ ":temp"
-     in (tempName, State (scopes state) ((regCtr state) + 1) (mapCtr state))
+    let tempName = (show (regCtr state)) ++ ":"
+     in (tempName, State (scopes state) ((regCtr state) + 1) (mapCtr state) (bbCtr state))
 
 addScope :: State -> State
 addScope state =
     let newScope = Scope Map.empty (mapCtr state)
-     in State (newScope : (scopes state)) (regCtr state) ((mapCtr state) + 1)
+     in State (newScope : (scopes state)) (regCtr state) ((mapCtr state) + 1) (bbCtr state)
+
+addBb :: State -> (BasicBlockIr, State)
+addBb state = 
+    let newBb = BasicBlockIr (bbCtr state) []
+    in (newBb, State (scopes state) (regCtr state) (mapCtr state) ((bbCtr state) + 1))
 
 insertToTopScope :: State -> String -> VariableElab -> State
 insertToTopScope state name varElab =
     let topScope = head (scopes state)
         varScope = Scope (Map.insert name varElab (scopeMap topScope)) (scopeId topScope)
-     in State (varScope : (tail (scopes state))) (regCtr state) (mapCtr state)
+     in State (varScope : (tail (scopes state))) (regCtr state) (mapCtr state) (bbCtr state)
 
 popScopeMap :: State -> State
-popScopeMap state = State (tail (scopes state)) (regCtr state) (mapCtr state)
+popScopeMap state = State (tail (scopes state)) (regCtr state) (mapCtr state) (bbCtr state)
 
 identifierLookup :: Token -> [Scope] -> Maybe (VariableElab, Int)
 identifierLookup tok scopes =
@@ -215,7 +255,7 @@ varElabToIr varElab varScopeId =
         (typeElabType (variableElabType varElab))
         False
 
---  BB ARGUMENT EXTRACTION
+-- HELPERS: BB ARGUMENT EXTRACTION
 
 -- merges all scopes (from right to left to prioritize higher scopes)
 -- maps all varElabs (with corresponding scope id) to varIr
@@ -233,7 +273,7 @@ getIrArgsFoldFn scope initMap =
 getIrArgsTranslateFn :: (String, (Int, VariableElab)) -> VariableIr
 getIrArgsTranslateFn (_, (varScopeId, varElab)) = varElabToIr varElab varScopeId
 
--- OP HELPERS
+-- HELPERS: OP TRANSLATION
 
 binopTypeInf :: BinopCatElab -> TypeCategory -> TypeCategory -> Maybe TypeCategory
 binopTypeInf cat t1 t2 =

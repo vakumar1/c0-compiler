@@ -6,9 +6,10 @@ import ElabToIr
 import Lexer
 import AstToElab
 import Parser
+import Ir
 
 -- import Parser
-
+import qualified Data.Map as Map
 import System.Environment
 
 handleLexerErrors :: [LexerError] -> String
@@ -47,8 +48,16 @@ compiler code =
         ast = parser (reverse tokens)
         elaborated = elaborate ast
         (ir, verErrors) = irFunction elaborated
-     in (putStrLn (prettyPrintList verErrors))
-
+     in case verErrors of
+        [] ->
+            (putStrLn (
+            "Blocks\n" ++ ((prettyPrintList . Map.toList . functionIrBlocks) ir) ++ "\n" ++ 
+            "Predecessors\n" ++ ((prettyPrintList . Map.toList . functionIrPredecessorMap) ir) ++ "\n" ++ 
+            "Successors\n" ++ ((prettyPrintList . Map.toList . functionIrSuccessorMap) ir) ++ "\n"
+            ))
+        _ -> (putStrLn (
+            "ERRORS\n" ++ (prettyPrintList verErrors)
+            ))
 main :: IO ()
 main = do
     args <- getArgs

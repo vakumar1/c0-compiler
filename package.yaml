@@ -49,6 +49,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - containers
     - c0-compiler
 
 tests:
