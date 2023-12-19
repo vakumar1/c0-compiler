@@ -15,6 +15,7 @@ module Ir (
     addBbsToFunction,
     addEdgeToCFG,
     appendCommsToBb,
+    bbTerminates,
 )
 where
 
@@ -131,3 +132,10 @@ addEdgeToCFG fn source dest =
 
 appendCommsToBb :: BasicBlockIr -> [CommandIr] -> BasicBlockIr
 appendCommsToBb bb comms = BasicBlockIr (bbIndex bb) (comms ++ (bbIrCommands bb))
+
+bbTerminates :: BasicBlockIr -> Bool
+bbTerminates bb = 
+    case (bbIrCommands bb) of
+        [] -> False
+        RET_PURE_IR _ : _ -> True
+        _ -> False
