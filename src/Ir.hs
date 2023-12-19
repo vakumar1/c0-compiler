@@ -16,6 +16,7 @@ module Ir (
     addEdgeToCFG,
     appendCommsToBb,
     bbTerminates,
+    bfsSuccessors
 )
 where
 
@@ -139,3 +140,21 @@ bbTerminates bb =
         [] -> False
         RET_PURE_IR _ : _ -> True
         _ -> False
+
+-- returns a BFS iteration over the CFG
+bfsSuccessors :: FunctionIr -> [Int]
+bfsSuccessors fnIr = bfsSuccessorsHelper fnIr [0] Set.empty []
+
+bfsSuccessorsHelper :: FunctionIr -> [Int] -> Set.Set Int -> [Int] -> [Int]
+bfsSuccessorsHelper fnIr queue seen order = 
+    case queue of
+        [] -> order
+        id : _ ->
+            let succIds = 
+                    case Map.lookup id (functionIrSuccessorMap fnIr) of
+                        Just s -> s
+                        Nothing -> Set.empty
+                newQueue = foldr (\succId interQueue -> if (Set.member succId seen) then interQueue else (interQueue ++ [succId])) (tail queue) succIds
+                newSeen = foldr (\succId interSeen -> Set.insert succId interSeen) seen succIds
+                newOrder = id:order
+            in bfsSuccessorsHelper fnIr newQueue newSeen newOrder

@@ -7,6 +7,7 @@ import Lexer
 import AstToElab
 import Parser
 import Ir
+import IrToSSA
 
 -- import Parser
 import qualified Data.Map as Map
@@ -50,11 +51,12 @@ compiler code =
         (ir, verErrors) = irFunction elaborated
      in case verErrors of
         [] ->
-            (putStrLn (
-            "Blocks\n" ++ ((prettyPrintList . Map.toList . functionIrBlocks) ir) ++ "\n" ++ 
-            "Predecessors\n" ++ ((prettyPrintList . Map.toList . functionIrPredecessorMap) ir) ++ "\n" ++ 
-            "Successors\n" ++ ((prettyPrintList . Map.toList . functionIrSuccessorMap) ir) ++ "\n"
-            ))
+            let maxSSAIr = (irToMaximalSSA ir)
+            in (putStrLn (
+                "Blocks\n" ++ ((prettyPrintList . Map.toList . functionIrBlocks) maxSSAIr) ++ "\n" ++ 
+                "Predecessors\n" ++ ((prettyPrintList . Map.toList . functionIrPredecessorMap) maxSSAIr) ++ "\n" ++ 
+                "Successors\n" ++ ((prettyPrintList . Map.toList . functionIrSuccessorMap) maxSSAIr) ++ "\n"
+                ))
         _ -> (putStrLn (
             "ERRORS\n" ++ (prettyPrintList verErrors)
             ))
