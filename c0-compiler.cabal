@@ -33,6 +33,7 @@ library
       Ir
       IrToSSA
       Lexer
+      Liveness
       Parser
       Tokens
       Types

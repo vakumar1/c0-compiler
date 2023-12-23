@@ -10,6 +10,7 @@ import Tokens
 import Types
 
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Debug.Trace as Trace
 
 
@@ -20,7 +21,7 @@ import qualified Debug.Trace as Trace
 irFunction :: FunctionElab -> (FunctionIr, [VerificationError])
 irFunction fnElab =
     let (initBb, initState) = addBb (addScope (State [] 0 0 0))
-        initFnIr = FunctionIr Map.empty Map.empty Map.empty
+        initFnIr = FunctionIr Map.empty Map.empty Map.empty Set.empty
         (_, _, finalFnIr, errs) = irSeq fnElab (functionElabBlock fnElab) initState initBb initFnIr []
     in (finalFnIr, errs)
 

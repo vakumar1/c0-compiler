@@ -8,12 +8,14 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Maybe as Maybe
 
+-- IR -> MAXIMAL SSA 
+
 irToMaximalSSA :: FunctionIr -> FunctionIr
 irToMaximalSSA fnIr = 
     let idList = bfsSuccessors fnIr
         blockList = Maybe.catMaybes (map (\id -> Map.lookup id (functionIrBlocks fnIr)) idList)
         (newBlocks, _) = foldr irToMaximalSSAFoldFn (Map.empty, Map.empty) blockList
-    in FunctionIr newBlocks (functionIrPredecessorMap fnIr) (functionIrSuccessorMap fnIr)
+    in FunctionIr newBlocks (functionIrPredecessorMap fnIr) (functionIrSuccessorMap fnIr) (functionIrTerminators fnIr)
 
 irToMaximalSSAFoldFn :: BasicBlockIr -> (Map.Map Int BasicBlockIr, Map.Map String Int) -> (Map.Map Int BasicBlockIr, Map.Map String Int)
 irToMaximalSSAFoldFn bb (interBlocks, interCtr) = 

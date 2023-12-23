@@ -11,6 +11,7 @@ import IrToSSA
 
 -- import Parser
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import System.Environment
 
 handleLexerErrors :: [LexerError] -> String
@@ -55,7 +56,8 @@ compiler code =
             in (putStrLn (
                 "Blocks\n" ++ ((prettyPrintList . Map.toList . functionIrBlocks) maxSSAIr) ++ "\n" ++ 
                 "Predecessors\n" ++ ((prettyPrintList . Map.toList . functionIrPredecessorMap) maxSSAIr) ++ "\n" ++ 
-                "Successors\n" ++ ((prettyPrintList . Map.toList . functionIrSuccessorMap) maxSSAIr) ++ "\n"
+                "Successors\n" ++ ((prettyPrintList . Map.toList . functionIrSuccessorMap) maxSSAIr) ++ "\n" ++
+                "Terminators\n" ++ ((prettyPrintList . Set.toList . functionIrTerminators) maxSSAIr)
                 ))
         _ -> (putStrLn (
             "ERRORS\n" ++ (prettyPrintList verErrors)
