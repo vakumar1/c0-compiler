@@ -9,9 +9,12 @@ import Ir
 
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Data.List as List
+
+-- IFG CONSTRUCTION
 
 constructIFG :: FunctionIr -> IFG
-constructIFG fnIr = constructIFGHelper fnIr (bfsPredecessors fnIr) Set.empty Set.empty
+constructIFG fnIr = constructIFGHelper fnIr (bfsPredecessors fnIr) Set.empty (IFG Set.empty Map.empty)
 
 constructIFGHelper :: FunctionIr -> [Int] -> Set.Set String -> IFG -> IFG
 constructIFGHelper fnIr blocks liveVars initIFG = 
@@ -40,14 +43,16 @@ constructIFGCommand (liveVars, initIFG) comm =
                 ifgAddedAsnEdges = foldr (\liveVar interIFG -> addEdgeToIFG (liveVar, (variableIrName asnVar)) interIFG) 
                                         initIFG 
                                         liveVars
-            in (liveVarsRemovedAsn, ifgAddedAsnEdges)
+                ifgAddedAsnNode = addNodeToIFG (variableIrName asnVar) ifgAddedAsnEdges
+            in (liveVarsRemovedAsn, ifgAddedAsnNode)
         ASN_IMPURE_IR asnVar asnImpure ->
             let liveVarsAddedUsed = Set.union liveVars (getUsedVarsImpure asnImpure)
                 liveVarsRemovedAsn = Set.delete (variableIrName asnVar) liveVarsAddedUsed
                 ifgAddedAsnEdges = foldr (\liveVar interIFG -> addEdgeToIFG (liveVar, (variableIrName asnVar)) interIFG) 
                                         initIFG 
                                         liveVars
-            in (liveVarsRemovedAsn, ifgAddedAsnEdges)
+                ifgAddedAsnNode = addNodeToIFG (variableIrName asnVar) ifgAddedAsnEdges
+            in (liveVarsRemovedAsn, ifgAddedAsnNode)
         GOTO_BB_IR _ -> (liveVars, initIFG)
         RET_PURE_IR retPure -> 
             let liveVarsAddedUsed = Set.union liveVars (getUsedVarsPure retPure)
@@ -71,9 +76,94 @@ getUsedVarsPureBase base =
         CONST_IR const -> Set.empty
         VAR_IR var -> Set.singleton (variableIrName var)
 
--- HELPERS
+-- SIMPLICIAL ELIM ORDERING
 
-type IFG = Set.Set (String, String)
+simplicialElimOrder :: IFG -> [String]
+simplicialElimOrder ifg = 
+    let initWeights = foldr
+            (\node interWeights -> Map.insert node 0 interWeights)
+            Map.empty
+            (ifgNodes ifg)
+    in reverse (simplicialElimOrderHelper ifg initWeights)
+
+simplicialElimOrderHelper :: IFG -> Map.Map String Int -> [String]
+simplicialElimOrderHelper ifg weights = 
+    if (Map.null weights)
+        then []
+        else 
+            let (maxVar, _) = foldr 
+                    (\(node, weight) (currNode, currWeight) -> 
+                        if (weight >= currWeight)
+                            then (node, weight)
+                            else (currNode, currWeight)
+                    )
+                    ("", -1)
+                    (Map.toList weights)
+                neighbors = 
+                    case Map.lookup maxVar (ifgEdges ifg) of
+                        Just s -> s
+                        Nothing -> Set.empty
+                incrWeights = foldr
+                    (\neighbor interWeights ->
+                        let newWeight = 
+                                case Map.lookup neighbor interWeights of
+                                    Just w -> w + 1
+                                    Nothing -> 0
+                        in Map.insert neighbor newWeight interWeights
+                    )
+                    weights
+                    neighbors
+                removeWeights = Map.delete maxVar incrWeights
+            in maxVar:(simplicialElimOrderHelper ifg removeWeights)
+
+-- GREEDY GRAPH COLORING
+
+greedyGraphColoring :: IFG -> [String] -> Map.Map String Int
+greedyGraphColoring ifg order = greedyGraphColoringHelper ifg order Map.empty
+
+greedyGraphColoringHelper :: IFG -> [String] -> Map.Map String Int -> Map.Map String Int
+greedyGraphColoringHelper ifg order initColoring = 
+    case order of
+        [] -> initColoring
+        var : _ ->
+            let neighbors = 
+                    case Map.lookup var (ifgEdges ifg) of
+                        Just s -> s
+                        Nothing -> Set.empty
+                remainingColors = foldr
+                    (\neighbor unusedColors ->
+                        case Map.lookup neighbor initColoring of
+                            Just c -> (List.delete c unusedColors)
+                            Nothing -> unusedColors
+                    )
+                    [0..]
+                    neighbors
+                newColoring = Map.insert var (head remainingColors) initColoring
+            in greedyGraphColoringHelper ifg (tail order) newColoring
+
+-- IFG HELPERS
+
+data IFG = IFG 
+    { ifgNodes :: Set.Set String
+    , ifgEdges :: Map.Map String (Set.Set String)
+    }
+
+addNodeToIFG :: String -> IFG -> IFG
+addNodeToIFG var ifg = 
+    let newNodes = Set.insert var (ifgNodes ifg)
+    in IFG newNodes (ifgEdges ifg)
 
 addEdgeToIFG :: (String, String) -> IFG -> IFG
-addEdgeToIFG (var1, var2) ifg = Set.insert ((min var1 var2), (max var1 var2)) ifg
+addEdgeToIFG (var1, var2) ifg = 
+    let neighbors1 = 
+            case Map.lookup var1 (ifgEdges ifg) of
+                Just s -> s
+                Nothing -> Set.empty
+        newNeighbors1 = Set.insert var2 neighbors1
+        neighbors2 = 
+            case Map.lookup var2 (ifgEdges ifg) of
+                Just s -> s
+                Nothing -> Set.empty
+        newNeighbors2 = Set.insert var1 neighbors2
+        newEdges = Map.insert var2 newNeighbors2 (Map.insert var1 newNeighbors1 (ifgEdges ifg))
+    in IFG (ifgNodes ifg) newEdges

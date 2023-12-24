@@ -147,7 +147,7 @@ bbTerminates bb =
 
 -- returns a BFS iteration over the CFG starting from block 0
 bfsSuccessors :: FunctionIr -> [Int]
-bfsSuccessors fnIr = bfsSuccessorsHelper fnIr [0] (Set.insert 0 Set.empty) []
+bfsSuccessors fnIr = reverse (bfsSuccessorsHelper fnIr [0] (Set.insert 0 Set.empty) [])
 
 bfsSuccessorsHelper :: FunctionIr -> [Int] -> Set.Set Int -> [Int] -> [Int]
 bfsSuccessorsHelper fnIr queue seen order = 
@@ -172,7 +172,7 @@ bfsSuccessorsHelper fnIr queue seen order =
 bfsPredecessors :: FunctionIr -> [Int]
 bfsPredecessors fnIr = 
     let retBlocks = bfsPredecessorsInitQueue fnIr
-    in bfsPredecessorsHelper fnIr retBlocks (Set.fromList retBlocks) []
+    in reverse (bfsPredecessorsHelper fnIr retBlocks (Set.fromList retBlocks) [])
 
 bfsPredecessorsInitQueue :: FunctionIr -> [Int]
 bfsPredecessorsInitQueue fnIr = 
