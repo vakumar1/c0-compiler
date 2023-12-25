@@ -1,6 +1,5 @@
 module Liveness (
-    constructIFG,
-    IFG,
+    regAllocColoring,
 )
 
 where
@@ -10,6 +9,12 @@ import Ir
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.List as List
+
+regAllocColoring :: FunctionIr -> Map.Map String Int
+regAllocColoring fnIr = 
+    let ifg = constructIFG fnIr
+        order = simplicialElimOrder ifg
+    in greedyGraphColoring ifg order
 
 -- IFG CONSTRUCTION
 

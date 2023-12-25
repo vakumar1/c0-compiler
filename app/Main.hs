@@ -8,6 +8,9 @@ import AstToElab
 import Parser
 import Ir
 import IrToSSA
+import Codegen
+import X86
+import Liveness
 
 -- import Parser
 import qualified Data.Map as Map
@@ -44,29 +47,23 @@ prettyPrintList l =
         l
     )
 
-compiler :: String -> IO ()
+compiler :: String -> String
 compiler code =
     let (tokens, lexerErrors) = lexer code
         ast = parser (reverse tokens)
         elaborated = elaborate ast
         (ir, verErrors) = irFunction elaborated
-     in case verErrors of
-        [] ->
-            let maxSSAIr = (irToMaximalSSA ir)
-            in (putStrLn (
-                "Blocks\n" ++ ((prettyPrintList . Map.toList . functionIrBlocks) maxSSAIr) ++ "\n" ++ 
-                "Predecessors\n" ++ ((prettyPrintList . Map.toList . functionIrPredecessorMap) maxSSAIr) ++ "\n" ++ 
-                "Successors\n" ++ ((prettyPrintList . Map.toList . functionIrSuccessorMap) maxSSAIr) ++ "\n" ++
-                "Terminators\n" ++ ((prettyPrintList . Set.toList . functionIrTerminators) maxSSAIr)
-                ))
-        _ -> (putStrLn (
-            "ERRORS\n" ++ (prettyPrintList verErrors)
-            ))
+        maxSSAIr = irToMaximalSSA ir
+        coloring = regAllocColoring maxSSAIr
+        x86instr = irToX86 coloring maxSSAIr
+    in foldr (\instr interCode -> interCode ++ (show instr)) "" x86instr
+
 main :: IO ()
 main = do
     args <- getArgs
     case args of
         (filename : _) -> do
-            code <- readFile filename
-            compiler code
+            cCode <- readFile filename
+            putStrLn (compiler cCode)
+
         _ -> putStrLn "Usage: programname filename"

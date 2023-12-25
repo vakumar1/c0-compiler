@@ -27,6 +27,7 @@ library
   exposed-modules:
       Ast
       AstToElab
+      Codegen
       Elaborated
       ElabToIr
       Errors
@@ -37,6 +38,7 @@ library
       Parser
       Tokens
       Types
+      X86
   other-modules:
       Paths_c0_compiler
   autogen-modules:
