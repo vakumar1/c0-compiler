@@ -5,7 +5,6 @@ module X86 (
     Register (..),
     availableRegisters,
 )
-
 where
 
 import qualified Text.Printf as Printf
@@ -23,17 +22,17 @@ data X86Instruction
     | JMP_X86 Label
     | RET_X86
 instance Show X86Instruction where
-    show instr = 
-        let prefix = 
+    show instr =
+        let prefix =
                 case instr of
                     LABEL_X86 _ -> "\n"
                     _ -> "    "
             suffix = "\n"
-            instrStr = 
+            instrStr =
                 case instr of
-                    LABEL_X86 l -> 
+                    LABEL_X86 l ->
                         Printf.printf "%s:" l
-                    MOV_X86 r1 r2 -> 
+                    MOV_X86 r1 r2 ->
                         Printf.printf "mov %s, %s" (show r1) (show r2)
                     ADD_X86 r1 r2 ->
                         Printf.printf "add %s, %s" (show r1) (show r2)
@@ -53,7 +52,7 @@ instance Show X86Instruction where
                         Printf.printf "jmp %s" l
                     RET_X86 ->
                         "ret"
-        in prefix ++ instrStr ++ suffix
+         in prefix ++ instrStr ++ suffix
 
 type Label = String
 
@@ -78,7 +77,7 @@ data Register
     | ESP
     | EBP
 instance Show Register where
-    show reg = 
+    show reg =
         case reg of
             EAX -> "%eax"
             EBX -> "%ebx"

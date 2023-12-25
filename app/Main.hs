@@ -1,16 +1,17 @@
 module Main (main) where
 
 -- import Ast
-import Errors
-import ElabToIr
-import Lexer
+
 import AstToElab
-import Parser
+import Codegen
+import ElabToIr
+import Errors
 import Ir
 import IrToSSA
-import Codegen
-import X86
+import Lexer
 import Liveness
+import Parser
+import X86
 
 -- import Parser
 import qualified Data.Map as Map
@@ -56,7 +57,7 @@ compiler code =
         maxSSAIr = irToMaximalSSA ir
         coloring = regAllocColoring maxSSAIr
         x86instr = irToX86 coloring maxSSAIr
-    in foldl (\interCode instr -> interCode ++ (show instr)) "" x86instr
+     in foldl (\interCode instr -> interCode ++ (show instr)) "" x86instr
 
 main :: IO ()
 main = do
@@ -65,5 +66,4 @@ main = do
         (filename : _) -> do
             cCode <- readFile filename
             putStrLn (compiler cCode)
-
         _ -> putStrLn "Usage: programname filename"

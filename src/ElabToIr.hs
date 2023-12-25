@@ -13,7 +13,6 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Debug.Trace as Trace
 
-
 -- IR TRANSLATION
 -- + DECLARATION VERIFICATION
 -- + TYPE VERIFICATION
@@ -23,7 +22,7 @@ irFunction fnElab =
     let (initBb, initState) = addBb (addScope (State [] 0 0 0))
         initFnIr = FunctionIr Map.empty Map.empty Map.empty Set.empty
         (_, _, finalFnIr, errs) = irSeq fnElab (functionElabBlock fnElab) initState initBb initFnIr []
-    in (finalFnIr, errs)
+     in (finalFnIr, errs)
 
 -- Seq Elab -> IR is responsible for:
 -- i. constructing all new BasicBlocks (except the initial BB)
@@ -31,72 +30,80 @@ irFunction fnElab =
 -- iii. adding all BBs it terminates to function-wide BB tracker map
 -- iv. adding edges between BBs in function-wide CFG (and adding corresponding instructions)
 -- v. returning the indices of the ENTRY BB and EXIT BB of the Seq
-irSeq :: FunctionElab -> SeqElab -> State -> BasicBlockIr -> FunctionIr -> [VerificationError] -> 
+irSeq ::
+    FunctionElab ->
+    SeqElab ->
+    State ->
+    BasicBlockIr ->
+    FunctionIr ->
+    [VerificationError] ->
     ((Int, Int), State, FunctionIr, [VerificationError])
 irSeq fnElab seq state currBb fnIr errs =
     let currIndex = bbIndex currBb
-    in case seq of
-        -- i. terminate current basic block and add to fnIr
-        [] -> 
-            let termFnIr = addBbsToFunction fnIr [currBb]
-            in ((currIndex, currIndex), state, termFnIr, errs)
-        RET_ELAB retElab : _ ->
-            let (retComms, retState, retErrs) = irRet retElab fnElab state
-                retBb = appendCommsToBb currBb retComms
-                retFnIr = addBbsToFunction fnIr [retBb]
-             in ((currIndex, currIndex), retState, retFnIr, retErrs ++ errs)
-        -- ii. extend current basic block
-        DECL_ELAB declElab : _ ->
-            let (declComms, declState, declErrs) = irDecl declElab state
-                declBb = appendCommsToBb currBb declComms
-             in irSeq fnElab (tail seq) declState declBb fnIr (declErrs ++ errs)
-        ASN_ELAB asnElab : _ ->
-            let (asnComms, asnState, asnErrs) = irAsn asnElab state
-                asnBb = appendCommsToBb currBb asnComms
-             in irSeq fnElab (tail seq) asnState asnBb fnIr (asnErrs ++ errs)
-        -- iii. start new basic block
-        SEQ_ELAB innerSeq : _ ->
+     in case seq of
+            -- i. terminate current basic block and add to fnIr
+            [] ->
+                let termFnIr = addBbsToFunction fnIr [currBb]
+                 in ((currIndex, currIndex), state, termFnIr, errs)
+            RET_ELAB retElab : _ ->
+                let (retComms, retState, retErrs) = irRet retElab fnElab state
+                    retBb = appendCommsToBb currBb retComms
+                    retFnIr = addBbsToFunction fnIr [retBb]
+                 in ((currIndex, currIndex), retState, retFnIr, retErrs ++ errs)
+            -- ii. extend current basic block
+            DECL_ELAB declElab : _ ->
+                let (declComms, declState, declErrs) = irDecl declElab state
+                    declBb = appendCommsToBb currBb declComms
+                 in irSeq fnElab (tail seq) declState declBb fnIr (declErrs ++ errs)
+            ASN_ELAB asnElab : _ ->
+                let (asnComms, asnState, asnErrs) = irAsn asnElab state
+                    asnBb = appendCommsToBb currBb asnComms
+                 in irSeq fnElab (tail seq) asnState asnBb fnIr (asnErrs ++ errs)
+            -- iii. start new basic block
+            SEQ_ELAB innerSeq : _ ->
                 -- create inner block; create new scope; and evaluate for inner seq (then clean up top scope)
-            let (innerBb, createInnerState) = addBb state
-                addScopeState = addScope createInnerState
-                ((innerStartIndex, innerEndIndex), innerState, innerFnIr, innerErrs) = irSeq fnElab innerSeq addScopeState innerBb fnIr []
-                removeScopeState = popScopeMap innerState
+                let (innerBb, createInnerState) = addBb state
+                    addScopeState = addScope createInnerState
+                    ((innerStartIndex, innerEndIndex), innerState, innerFnIr, innerErrs) = irSeq fnElab innerSeq addScopeState innerBb fnIr []
+                    removeScopeState = popScopeMap innerState
 
-                -- curr => inner blocks: add goto command and CFG edges
-                currInnerComm = GOTO_BB_IR innerStartIndex
-                currInnerBb = appendCommsToBb currBb [currInnerComm]
-                currInnerFnIr = addEdgeToCFG innerFnIr currIndex innerStartIndex
-                innerFinishedBb = 
-                    -- note: the innerEndIndex BB must be in the latest fnIr since it terminates the BB
-                    -- and is responsible for adding it to the fnIr it returns
-                    case (Map.lookup innerEndIndex (functionIrBlocks currInnerFnIr)) of
-                        Just bb -> bb
-                
-                -- o/w create tail block
-            in if (bbTerminates innerFinishedBb)
-                -- ignore tail block if inner BB terminates
-                then let 
-                    -- add updated curr block to fnIr
-                    finalFnIr = addBbsToFunction currInnerFnIr [currInnerBb]
-                    finalErrs = innerErrs ++ errs
-                in ((currIndex, innerEndIndex), removeScopeState, finalFnIr, finalErrs)
-                
-                -- o/w create tail block
-                else let
-                    -- create next block; and evaluate for tail seq
-                    nextSeq = tail seq
-                    (nextBb, createNextState) = addBb removeScopeState
-                    ((nextStartIndex, nextEndIndex), nextState, nextFnIr, nextErrs) = irSeq fnElab nextSeq createNextState nextBb currInnerFnIr []
+                    -- curr => inner blocks: add goto command and CFG edges
+                    currInnerComm = GOTO_BB_IR innerStartIndex
+                    currInnerBb = appendCommsToBb currBb [currInnerComm]
+                    currInnerFnIr = addEdgeToCFG innerFnIr currIndex innerStartIndex
+                    innerFinishedBb =
+                        -- note: the innerEndIndex BB must be in the latest fnIr since it terminates the BB
+                        -- and is responsible for adding it to the fnIr it returns
+                        case (Map.lookup innerEndIndex (functionIrBlocks currInnerFnIr)) of
+                            Just bb -> bb
+                 in -- o/w create tail block
+                    if (bbTerminates innerFinishedBb)
+                        then -- ignore tail block if inner BB terminates
 
-                    -- inner => next blocks: add goto command and CFG edges
-                    innerNextComm = GOTO_BB_IR nextStartIndex
-                    innerNextBb = appendCommsToBb innerFinishedBb [innerNextComm]
-                    innerNextFnIr = addEdgeToCFG nextFnIr innerEndIndex nextStartIndex
+                            let
+                                -- add updated curr block to fnIr
+                                finalFnIr = addBbsToFunction currInnerFnIr [currInnerBb]
+                                finalErrs = innerErrs ++ errs
+                             in
+                                ((currIndex, innerEndIndex), removeScopeState, finalFnIr, finalErrs)
+                        else -- o/w create tail block
 
-                    -- add updated curr/inner blocks to fnIr 
-                    finalFnIr = addBbsToFunction innerNextFnIr [currInnerBb, innerNextBb]
-                    finalErrs = nextErrs ++ innerErrs ++ errs
-                in ((currIndex, nextEndIndex), nextState, finalFnIr, finalErrs)
+                            let
+                                -- create next block; and evaluate for tail seq
+                                nextSeq = tail seq
+                                (nextBb, createNextState) = addBb removeScopeState
+                                ((nextStartIndex, nextEndIndex), nextState, nextFnIr, nextErrs) = irSeq fnElab nextSeq createNextState nextBb currInnerFnIr []
+
+                                -- inner => next blocks: add goto command and CFG edges
+                                innerNextComm = GOTO_BB_IR nextStartIndex
+                                innerNextBb = appendCommsToBb innerFinishedBb [innerNextComm]
+                                innerNextFnIr = addEdgeToCFG nextFnIr innerEndIndex nextStartIndex
+
+                                -- add updated curr/inner blocks to fnIr
+                                finalFnIr = addBbsToFunction innerNextFnIr [currInnerBb, innerNextBb]
+                                finalErrs = nextErrs ++ innerErrs ++ errs
+                             in
+                                ((currIndex, nextEndIndex), nextState, finalFnIr, finalErrs)
 
 -- STATEMENT ELAB->IR
 
@@ -239,9 +246,9 @@ addScope state =
      in State (newScope : (scopes state)) (regCtr state) ((mapCtr state) + 1) (bbCtr state)
 
 addBb :: State -> (BasicBlockIr, State)
-addBb state = 
+addBb state =
     let newBb = BasicBlockIr (bbCtr state) []
-    in (newBb, State (scopes state) (regCtr state) (mapCtr state) ((bbCtr state) + 1))
+     in (newBb, State (scopes state) (regCtr state) (mapCtr state) ((bbCtr state) + 1))
 
 insertToTopScope :: State -> String -> VariableElab -> State
 insertToTopScope state name varElab =
@@ -298,22 +305,22 @@ binopOpTranslate :: BinopCatElab -> TypeCategory -> PureIr -> PureIr -> State ->
 binopOpTranslate cat ty p1 p2 state =
     let (expandComms1, expandPureBase1, expandState1) = expandPureIr p1 state
         (expandComms2, expandPureBase2, expandState2) = expandPureIr p2 expandState1
-    in case cat of
-        ADD_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr ADD_IR ty expandPureBase1 expandPureBase2), expandState2)
-        SUB_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr SUB_IR ty expandPureBase1 expandPureBase2), expandState2)
-        MUL_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr MUL_IR ty expandPureBase1 expandPureBase2), expandState2)
-        DIV_EXP_ELAB ->
-            let (tempName, newState) = addTemp state
-                temp = VariableIr tempName ty True
-                binop = IMPURE_BINOP_IR (ImpureBinopIr DIV_IR ty expandPureBase1 expandPureBase2)
-                comm = ASN_IMPURE_IR temp binop
-             in (comm:(expandComms2 ++ expandComms2), PURE_BASE_IR (VAR_IR temp), newState)
-        MOD_EXP_ELAB ->
-            let (tempName, newState) = addTemp state
-                temp = VariableIr tempName ty True
-                binop = IMPURE_BINOP_IR (ImpureBinopIr MOD_IR ty expandPureBase1 expandPureBase2)
-                comm = ASN_IMPURE_IR temp binop
-             in (comm:(expandComms2 ++ expandComms2), PURE_BASE_IR (VAR_IR temp), newState)
+     in case cat of
+            ADD_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr ADD_IR ty expandPureBase1 expandPureBase2), expandState2)
+            SUB_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr SUB_IR ty expandPureBase1 expandPureBase2), expandState2)
+            MUL_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr MUL_IR ty expandPureBase1 expandPureBase2), expandState2)
+            DIV_EXP_ELAB ->
+                let (tempName, newState) = addTemp state
+                    temp = VariableIr tempName ty True
+                    binop = IMPURE_BINOP_IR (ImpureBinopIr DIV_IR ty expandPureBase1 expandPureBase2)
+                    comm = ASN_IMPURE_IR temp binop
+                 in (comm : (expandComms2 ++ expandComms2), PURE_BASE_IR (VAR_IR temp), newState)
+            MOD_EXP_ELAB ->
+                let (tempName, newState) = addTemp state
+                    temp = VariableIr tempName ty True
+                    binop = IMPURE_BINOP_IR (ImpureBinopIr MOD_IR ty expandPureBase1 expandPureBase2)
+                    comm = ASN_IMPURE_IR temp binop
+                 in (comm : (expandComms2 ++ expandComms2), PURE_BASE_IR (VAR_IR temp), newState)
 
 unopTypeInf :: UnopCatElab -> TypeCategory -> Maybe TypeCategory
 unopTypeInf cat t1 =
@@ -324,22 +331,22 @@ unopTypeInf cat t1 =
 unopOpTranslate :: UnopCatElab -> TypeCategory -> PureIr -> State -> ([CommandIr], PureIr, State)
 unopOpTranslate cat ty p1 state =
     let (expandComms, expandPureBase, expandState) = expandPureIr p1 state
-    in case cat of
-        NEG_EXP_ELAB -> (expandComms, PURE_UNOP_IR (PureUnopIr NEG_IR ty expandPureBase), expandState)
+     in case cat of
+            NEG_EXP_ELAB -> (expandComms, PURE_UNOP_IR (PureUnopIr NEG_IR ty expandPureBase), expandState)
 
--- applies an extra level of processing to convert potentially recursive PureIr into 
+-- applies an extra level of processing to convert potentially recursive PureIr into
 -- [CommandIr] + Const/VariableIr
 expandPureIr :: PureIr -> State -> ([CommandIr], PureBaseIr, State)
-expandPureIr pu state = 
+expandPureIr pu state =
     case pu of
         PURE_BASE_IR base -> ([], base, state)
         PURE_BINOP_IR binop ->
             let (tempName, newState) = addTemp state
                 binopTemp = VariableIr tempName (pureBinopInfType binop) True
                 binopComm = ASN_PURE_IR binopTemp pu
-            in ([binopComm], VAR_IR binopTemp, newState)
+             in ([binopComm], VAR_IR binopTemp, newState)
         PURE_UNOP_IR unop ->
             let (tempName, newState) = addTemp state
                 unopTemp = VariableIr tempName (pureUnopInfType unop) True
                 unopComm = ASN_PURE_IR unopTemp pu
-            in ([unopComm], VAR_IR unopTemp, newState)
+             in ([unopComm], VAR_IR unopTemp, newState)

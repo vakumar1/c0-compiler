@@ -1,101 +1,99 @@
 module Codegen (
     irToX86,
 )
-
 where
 
 import Ir
 import Liveness
-import X86
 import Types
+import X86
 
-import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 irToX86 :: Map.Map String Int -> FunctionIr -> [X86Instruction]
-irToX86 coloring fnIr = 
+irToX86 coloring fnIr =
     let blocks = bfsSuccessors fnIr
         -- initialize function spillover at SP - 8 and w/ all available registers
         initAlloc = AllocState Map.empty 8 availableRegisters
-        (finalInstr, _) = foldl 
-            (\(interInstr, interAlloc) bbIndex ->
-                case Map.lookup bbIndex (functionIrBlocks fnIr) of
-                    Just bb -> 
-                        let (bbInstr, newAlloc) = bbIrToX86 coloring bb interAlloc
-                        in (interInstr ++ bbInstr, newAlloc)
-                    Nothing -> (interInstr, interAlloc)
-            )
-            ([], initAlloc)
-            blocks
-        in finalInstr
+        (finalInstr, _) =
+            foldl
+                ( \(interInstr, interAlloc) bbIndex ->
+                    case Map.lookup bbIndex (functionIrBlocks fnIr) of
+                        Just bb ->
+                            let (bbInstr, newAlloc) = bbIrToX86 coloring bb interAlloc
+                             in (interInstr ++ bbInstr, newAlloc)
+                        Nothing -> (interInstr, interAlloc)
+                )
+                ([], initAlloc)
+                blocks
+     in finalInstr
 
 bbIrToX86 :: Map.Map String Int -> BasicBlockIr -> AllocState -> ([X86Instruction], AllocState)
-bbIrToX86 coloring bb initAlloc = 
+bbIrToX86 coloring bb initAlloc =
     foldr
-        (\comm (interInstr, interAlloc) ->
+        ( \comm (interInstr, interAlloc) ->
             let (commInstr, newAlloc) = commIrToX86 coloring comm interAlloc
-            in (interInstr ++ commInstr, newAlloc)
+             in (interInstr ++ commInstr, newAlloc)
         )
         ([LABEL_X86 (bbToLabel (bbIndex bb))], initAlloc)
         (bbIrCommands bb)
 
 commIrToX86 :: Map.Map String Int -> CommandIr -> AllocState -> ([X86Instruction], AllocState)
-commIrToX86 coloring comm initAlloc = 
+commIrToX86 coloring comm initAlloc =
     case comm of
         INIT_IR var -> ([], initAlloc)
         ASN_PURE_IR asnVar asnPure -> asnPureIrToX86 coloring asnVar asnPure initAlloc
         ASN_IMPURE_IR asnVar asnImpure -> asnImpureIrToX86 coloring asnVar asnImpure initAlloc
-        GOTO_BB_IR bbIndex -> 
+        GOTO_BB_IR bbIndex ->
             let instr = gotoToX86 bbIndex
-            in (instr, initAlloc)
-        RET_PURE_IR retPure -> 
+             in (instr, initAlloc)
+        RET_PURE_IR retPure ->
             let instr = retToX86 coloring retPure initAlloc
-            in (instr, initAlloc)
+             in (instr, initAlloc)
 
 -- initIrToX86 :: Map.Map String Int -> VariableIr -> AllocState -> (AllocState, [X86Instruction])
--- initIrToX86 coloring var initAlloc = 
+-- initIrToX86 coloring var initAlloc =
 --     case Map.lookup (variableIrName var) coloring of
---         Just color -> 
+--         Just color ->
 --             case Map.lookup color (allocStateRegMap initAlloc) of
 --                 Just _ -> (initAlloc, [])
 --                 Nothing -> (allocColor color initAlloc, [])
 
 asnPureIrToX86 :: Map.Map String Int -> VariableIr -> PureIr -> AllocState -> ([X86Instruction], AllocState)
-asnPureIrToX86 coloring asnVar asnPure initAlloc = 
-    let (asnVarLoc, asnAlloc) = 
+asnPureIrToX86 coloring asnVar asnPure initAlloc =
+    let (asnVarLoc, asnAlloc) =
             case Map.lookup (variableIrName asnVar) coloring of
-                Just color -> 
+                Just color ->
                     case Map.lookup color (allocStateRegMap initAlloc) of
                         Just argLoc -> (argLoc, initAlloc)
                         Nothing -> allocColor color initAlloc
-        inst = 
+        inst =
             case asnPure of
                 PURE_BASE_IR base ->
                     case base of
                         -- x = CONST
-                        CONST_IR const -> 
+                        CONST_IR const ->
                             case const of
-                                INT_CONST int -> 
+                                INT_CONST int ->
                                     [ MOV_X86 asnVarLoc (CONST_ARGLOC int)
                                     ]
-                        
                         -- x = VAR
                         VAR_IR pureVar ->
                             let pureVarLoc =
                                     case Map.lookup (variableIrName pureVar) coloring of
                                         Just color -> getColorReg color asnAlloc
-                            in case pureVarLoc of
-                                REG_ARGLOC pureVarReg ->
-                                    [ MOV_X86 asnVarLoc pureVarLoc
-                                    ]
-                                STACK_ARGLOC pureVarStackLoc ->
-                                    [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc
-                                    , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
-                                    ]
-                        
+                             in case pureVarLoc of
+                                    REG_ARGLOC pureVarReg ->
+                                        [ MOV_X86 asnVarLoc pureVarLoc
+                                        ]
+                                    STACK_ARGLOC pureVarStackLoc ->
+                                        [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
+                                        ]
                 -- x = y ? z
                 PURE_BINOP_IR (PureBinopIr cat ty base1 base2) ->
-                    let pureVarLoc1 = 
+                    let pureVarLoc1 =
                             case base1 of
                                 CONST_IR const ->
                                     case const of
@@ -103,7 +101,7 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                 VAR_IR pureVar ->
                                     case Map.lookup (variableIrName pureVar) coloring of
                                         Just color -> getColorReg color asnAlloc
-                        pureVarLoc2 = 
+                        pureVarLoc2 =
                             case base2 of
                                 CONST_IR const ->
                                     case const of
@@ -111,49 +109,48 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                 VAR_IR pureVar ->
                                     case Map.lookup (variableIrName pureVar) coloring of
                                         Just color -> getColorReg color asnAlloc
-                    in case cat of
-                        ADD_IR -> 
-                            case asnVarLoc of
-                                -- reg = y + z -> perform binop in reg
-                                REG_ARGLOC asnVarReg -> 
-                                    [ MOV_X86 asnVarLoc pureVarLoc1
-                                    , ADD_X86 asnVarLoc pureVarLoc2
-                                    ]
-                                -- S[i] = y + z -> perform binop in EDX and move to S[i]
-                                STACK_ARGLOC asnVarStackLoc ->
-                                    [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc1
-                                    , ADD_X86 (REG_ARGLOC EDX) pureVarLoc2
-                                    , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
-                                    ]
-                        SUB_IR -> 
-                            case asnVarLoc of
-                                -- reg = y - z -> perform binop in reg
-                                REG_ARGLOC asnVarReg -> 
-                                    [ MOV_X86 asnVarLoc pureVarLoc1
-                                    , SUB_X86 asnVarLoc pureVarLoc2
-                                    ]
-                                -- S[i] = y - z -> perform binop in EDX and move to S[i]
-                                STACK_ARGLOC asnVarStackLoc ->
-                                    [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc1
-                                    , SUB_X86 (REG_ARGLOC EDX) pureVarLoc2
-                                    , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
-                                    ]
-                        MUL_IR ->
-                            case asnVarLoc of
-                                -- reg = y * z -> perform binop in reg
-                                REG_ARGLOC asnVarReg -> 
-                                    [ MOV_X86 asnVarLoc pureVarLoc1
-                                    , IMUL_X86 asnVarLoc pureVarLoc2
-                                    ]
-                                -- S[i] = y * z -> perform binop in EDX and move to S[i]
-                                STACK_ARGLOC asnVarStackLoc ->
-                                    [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc1
-                                    , IMUL_X86 (REG_ARGLOC EDX) pureVarLoc2
-                                    , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
-                                    ]
-
+                     in case cat of
+                            ADD_IR ->
+                                case asnVarLoc of
+                                    -- reg = y + z -> perform binop in reg
+                                    REG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 asnVarLoc pureVarLoc1
+                                        , ADD_X86 asnVarLoc pureVarLoc2
+                                        ]
+                                    -- S[i] = y + z -> perform binop in EDX and move to S[i]
+                                    STACK_ARGLOC asnVarStackLoc ->
+                                        [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc1
+                                        , ADD_X86 (REG_ARGLOC EDX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
+                                        ]
+                            SUB_IR ->
+                                case asnVarLoc of
+                                    -- reg = y - z -> perform binop in reg
+                                    REG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 asnVarLoc pureVarLoc1
+                                        , SUB_X86 asnVarLoc pureVarLoc2
+                                        ]
+                                    -- S[i] = y - z -> perform binop in EDX and move to S[i]
+                                    STACK_ARGLOC asnVarStackLoc ->
+                                        [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc1
+                                        , SUB_X86 (REG_ARGLOC EDX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
+                                        ]
+                            MUL_IR ->
+                                case asnVarLoc of
+                                    -- reg = y * z -> perform binop in reg
+                                    REG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 asnVarLoc pureVarLoc1
+                                        , IMUL_X86 asnVarLoc pureVarLoc2
+                                        ]
+                                    -- S[i] = y * z -> perform binop in EDX and move to S[i]
+                                    STACK_ARGLOC asnVarStackLoc ->
+                                        [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc1
+                                        , IMUL_X86 (REG_ARGLOC EDX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
+                                        ]
                 PURE_UNOP_IR (PureUnopIr cat ty base) ->
-                    let pureVarLoc = 
+                    let pureVarLoc =
                             case base of
                                 CONST_IR const ->
                                     case const of
@@ -161,25 +158,25 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                 VAR_IR pureVar ->
                                     case Map.lookup (variableIrName pureVar) coloring of
                                         Just color -> getColorReg color asnAlloc
-                    in case cat of
-                        NEG_IR ->
-                            [ MOV_X86 asnVarLoc pureVarLoc
-                            , NEG_X86 asnVarLoc
-                            ]
-    in (inst, asnAlloc)
+                     in case cat of
+                            NEG_IR ->
+                                [ MOV_X86 asnVarLoc pureVarLoc
+                                , NEG_X86 asnVarLoc
+                                ]
+     in (inst, asnAlloc)
 
 asnImpureIrToX86 :: Map.Map String Int -> VariableIr -> ImpureIr -> AllocState -> ([X86Instruction], AllocState)
-asnImpureIrToX86 coloring asnVar asnImpure initAlloc = 
-    let (asnVarLoc, asnAlloc) = 
+asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
+    let (asnVarLoc, asnAlloc) =
             case Map.lookup (variableIrName asnVar) coloring of
-                Just color -> 
+                Just color ->
                     case Map.lookup color (allocStateRegMap initAlloc) of
                         Just argLoc -> (argLoc, initAlloc)
                         Nothing -> allocColor color initAlloc
-        inst = 
+        inst =
             case asnImpure of
                 IMPURE_BINOP_IR (ImpureBinopIr cat ty base1 base2) ->
-                    let pureVarLoc1 = 
+                    let pureVarLoc1 =
                             case base1 of
                                 CONST_IR const ->
                                     case const of
@@ -187,7 +184,7 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                 VAR_IR pureVar ->
                                     case Map.lookup (variableIrName pureVar) coloring of
                                         Just color -> getColorReg color asnAlloc
-                        pureVarLoc2 = 
+                        pureVarLoc2 =
                             case base2 of
                                 CONST_IR const ->
                                     case const of
@@ -195,75 +192,71 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                 VAR_IR pureVar ->
                                     case Map.lookup (variableIrName pureVar) coloring of
                                         Just color -> getColorReg color asnAlloc
-                    in case cat of
-                        DIV_IR -> 
-                            case pureVarLoc2 of
-                                -- if divisor is a const temporarily push onto stack
-                                CONST_ARGLOC int ->
-                                    [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
-                                    , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1      -- mov dividend to EAX
-                                    , PUSH_X86 pureVarLoc2                      -- push divisor to stack
-                                    , IDIV_X86 (STACK_ARGLOC 0)                 -- divide EAX / S[0]
-                                    , ADD_X86 (REG_ARGLOC ESP) (CONST_ARGLOC 4) -- pop divisor from stack
-                                    , MOV_X86 asnVarLoc (REG_ARGLOC EAX)        -- move quotient to result
-                                    ]
-                                -- o/w use existing location
-                                _ ->
-                                    [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
-                                    , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1      -- mov dividend to EAX
-                                    , IDIV_X86 pureVarLoc2                      -- divide EAX / divisor (in reg/on stack)
-                                    , MOV_X86 asnVarLoc (REG_ARGLOC EAX)        -- move quotient to result
-                                    ]
-
-                        MOD_IR ->
-                            case pureVarLoc2 of
-                                -- if divisor is a const temporarily push onto stack
-                                CONST_ARGLOC int ->
-                                    [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
-                                    , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1      -- mov dividend to EAX
-                                    , PUSH_X86 pureVarLoc2                      -- push divisor to stack
-                                    , IDIV_X86 (STACK_ARGLOC 0)                 -- divide EAX / S[0]
-                                    , ADD_X86 (REG_ARGLOC ESP) (CONST_ARGLOC 4) -- pop divisor from stack
-                                    , MOV_X86 asnVarLoc (REG_ARGLOC EDX)        -- move remainder to result
-                                    ]
-                                -- o/w use existing location
-                                _ ->
-                                    [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
-                                    , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1      -- mov dividend to EAX
-                                    , IDIV_X86 pureVarLoc2                      -- divide EAX / divisor (in reg/on stack)
-                                    , MOV_X86 asnVarLoc (REG_ARGLOC EDX)        -- move remainder to result
-                                    ]
-    in (inst, asnAlloc)
+                     in case cat of
+                            DIV_IR ->
+                                case pureVarLoc2 of
+                                    -- if divisor is a const temporarily push onto stack
+                                    CONST_ARGLOC int ->
+                                        [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
+                                        , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1 -- mov dividend to EAX
+                                        , PUSH_X86 pureVarLoc2 -- push divisor to stack
+                                        , IDIV_X86 (STACK_ARGLOC 0) -- divide EAX / S[0]
+                                        , ADD_X86 (REG_ARGLOC ESP) (CONST_ARGLOC 4) -- pop divisor from stack
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC EAX) -- move quotient to result
+                                        ]
+                                    -- o/w use existing location
+                                    _ ->
+                                        [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
+                                        , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1 -- mov dividend to EAX
+                                        , IDIV_X86 pureVarLoc2 -- divide EAX / divisor (in reg/on stack)
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC EAX) -- move quotient to result
+                                        ]
+                            MOD_IR ->
+                                case pureVarLoc2 of
+                                    -- if divisor is a const temporarily push onto stack
+                                    CONST_ARGLOC int ->
+                                        [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
+                                        , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1 -- mov dividend to EAX
+                                        , PUSH_X86 pureVarLoc2 -- push divisor to stack
+                                        , IDIV_X86 (STACK_ARGLOC 0) -- divide EAX / S[0]
+                                        , ADD_X86 (REG_ARGLOC ESP) (CONST_ARGLOC 4) -- pop divisor from stack
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX) -- move remainder to result
+                                        ]
+                                    -- o/w use existing location
+                                    _ ->
+                                        [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
+                                        , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1 -- mov dividend to EAX
+                                        , IDIV_X86 pureVarLoc2 -- divide EAX / divisor (in reg/on stack)
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX) -- move remainder to result
+                                        ]
+     in (inst, asnAlloc)
 
 gotoToX86 :: Int -> [X86Instruction]
 gotoToX86 bbIndex = [JMP_X86 (bbToLabel bbIndex)]
 
 retToX86 :: Map.Map String Int -> PureIr -> AllocState -> [X86Instruction]
-retToX86 coloring retPure initAlloc = 
+retToX86 coloring retPure initAlloc =
     case retPure of
         PURE_BASE_IR base ->
             case base of
                 -- ret CONST
-                CONST_IR const -> 
+                CONST_IR const ->
                     case const of
-                        INT_CONST int -> 
+                        INT_CONST int ->
                             [ MOV_X86 (REG_ARGLOC EAX) (CONST_ARGLOC int)
                             , RET_X86
                             ]
-                
                 -- ret VAR
                 VAR_IR pureVar ->
                     let pureVarLoc =
                             case Map.lookup (variableIrName pureVar) coloring of
                                 Just color -> getColorReg color initAlloc
-                    in 
-                        [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc
+                     in [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc
                         , RET_X86
                         ]
-                
         -- ret y ? z
         PURE_BINOP_IR (PureBinopIr cat ty base1 base2) ->
-            let pureVarLoc1 = 
+            let pureVarLoc1 =
                     case base1 of
                         CONST_IR const ->
                             case const of
@@ -271,7 +264,7 @@ retToX86 coloring retPure initAlloc =
                         VAR_IR pureVar ->
                             case Map.lookup (variableIrName pureVar) coloring of
                                 Just color -> getColorReg color initAlloc
-                pureVarLoc2 = 
+                pureVarLoc2 =
                     case base2 of
                         CONST_IR const ->
                             case const of
@@ -279,25 +272,24 @@ retToX86 coloring retPure initAlloc =
                         VAR_IR pureVar ->
                             case Map.lookup (variableIrName pureVar) coloring of
                                 Just color -> getColorReg color initAlloc
-            in case cat of
-                ADD_IR -> 
-                    [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc1
-                    , ADD_X86 (REG_ARGLOC EAX) pureVarLoc2
-                    , RET_X86
-                    ]
-                SUB_IR -> 
-                    [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc1
-                    , SUB_X86 (REG_ARGLOC EAX) pureVarLoc2
-                    , RET_X86
-                    ]
-                MUL_IR ->
-                    [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc1
-                    , IMUL_X86 (REG_ARGLOC EAX) pureVarLoc2
-                    , RET_X86
-                    ]
-
+             in case cat of
+                    ADD_IR ->
+                        [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc1
+                        , ADD_X86 (REG_ARGLOC EAX) pureVarLoc2
+                        , RET_X86
+                        ]
+                    SUB_IR ->
+                        [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc1
+                        , SUB_X86 (REG_ARGLOC EAX) pureVarLoc2
+                        , RET_X86
+                        ]
+                    MUL_IR ->
+                        [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc1
+                        , IMUL_X86 (REG_ARGLOC EAX) pureVarLoc2
+                        , RET_X86
+                        ]
         PURE_UNOP_IR (PureUnopIr cat ty base) ->
-            let pureVarLoc = 
+            let pureVarLoc =
                     case base of
                         CONST_IR const ->
                             case const of
@@ -305,12 +297,12 @@ retToX86 coloring retPure initAlloc =
                         VAR_IR pureVar ->
                             case Map.lookup (variableIrName pureVar) coloring of
                                 Just color -> getColorReg color initAlloc
-            in case cat of
-                NEG_IR ->
-                    [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc
-                    , NEG_X86 (REG_ARGLOC EAX)
-                    , RET_X86
-                    ]
+             in case cat of
+                    NEG_IR ->
+                        [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc
+                        , NEG_X86 (REG_ARGLOC EAX)
+                        , RET_X86
+                        ]
 
 -- HELPERS
 data AllocState = AllocState
@@ -321,31 +313,33 @@ data AllocState = AllocState
 
 -- explicitly allocate a register/stack loc for new color on assignment
 allocColor :: Int -> AllocState -> (ArgLocation, AllocState)
-allocColor color initAlloc = 
+allocColor color initAlloc =
     case (allocStateAvailableReg initAlloc) of
-        [] -> 
+        [] ->
             let argLoc = STACK_ARGLOC (allocStateStackCtr initAlloc)
-                newAlloc = AllocState
-                            (Map.insert color argLoc (allocStateRegMap initAlloc))
-                            ((allocStateStackCtr initAlloc) + 4) 
-                            (allocStateAvailableReg initAlloc)
-            in (argLoc, newAlloc)
+                newAlloc =
+                    AllocState
+                        (Map.insert color argLoc (allocStateRegMap initAlloc))
+                        ((allocStateStackCtr initAlloc) + 4)
+                        (allocStateAvailableReg initAlloc)
+             in (argLoc, newAlloc)
         reg : _ ->
             let argLoc = REG_ARGLOC reg
-                newAlloc = AllocState 
-                            (Map.insert color argLoc (allocStateRegMap initAlloc))
-                            (allocStateStackCtr initAlloc) 
-                            (tail (allocStateAvailableReg initAlloc))
-            in (argLoc, newAlloc)
+                newAlloc =
+                    AllocState
+                        (Map.insert color argLoc (allocStateRegMap initAlloc))
+                        (allocStateStackCtr initAlloc)
+                        (tail (allocStateAvailableReg initAlloc))
+             in (argLoc, newAlloc)
 
 -- lookup previously allocated color in reg alloc (errors if not found)
 getColorReg :: Int -> AllocState -> ArgLocation
-getColorReg color alloc = 
+getColorReg color alloc =
     case Map.lookup color (allocStateRegMap alloc) of
-            Just argLoc -> argLoc
-        
+        Just argLoc -> argLoc
+
 bbToLabel :: Int -> Label
-bbToLabel bbIndex = 
-    if bbIndex == 0 
+bbToLabel bbIndex =
+    if bbIndex == 0
         then "__c0_main"
         else "l" ++ (show bbIndex)
