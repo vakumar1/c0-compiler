@@ -56,7 +56,7 @@ compiler code =
         maxSSAIr = irToMaximalSSA ir
         coloring = regAllocColoring maxSSAIr
         x86instr = irToX86 coloring maxSSAIr
-    in foldr (\instr interCode -> interCode ++ (show instr)) "" x86instr
+    in foldl (\interCode instr -> interCode ++ (show instr)) "" x86instr
 
 main :: IO ()
 main = do

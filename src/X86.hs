@@ -32,7 +32,7 @@ instance Show X86Instruction where
             instrStr = 
                 case instr of
                     LABEL_X86 l -> 
-                        Printf.printf "%s:" (show l)
+                        Printf.printf "%s:" l
                     MOV_X86 r1 r2 -> 
                         Printf.printf "mov %s, %s" (show r1) (show r2)
                     ADD_X86 r1 r2 ->
@@ -50,7 +50,7 @@ instance Show X86Instruction where
                     PUSH_X86 r ->
                         Printf.printf "push %s" (show r)
                     JMP_X86 l ->
-                        Printf.printf "jmp %s" (show l)
+                        Printf.printf "jmp %s" l
                     RET_X86 ->
                         "ret"
         in prefix ++ instrStr ++ suffix

@@ -88,10 +88,8 @@ prependCtr var incr varCtr =
             case Map.lookup (variableIrName var) varCtr of
                 Just ctr -> ctr
                 Nothing -> 0
-        newName = (show ctr) ++ ":" ++ (variableIrName var)
+        newCtr = if incr then ctr + 1 else ctr
+        newName = (show newCtr) ++ ":" ++ (variableIrName var)
         newVar = VariableIr newName (variableIrType var) (variableIrTemp var)
-        newMap = 
-            if incr
-                then Map.insert (variableIrName var) (ctr + 1) varCtr
-                else varCtr
+        newMap = Map.insert (variableIrName var) newCtr varCtr
     in (newVar, newMap)

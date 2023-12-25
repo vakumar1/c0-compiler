@@ -45,7 +45,12 @@ constructIFGCommand (liveVars, initIFG) comm =
         ASN_PURE_IR asnVar asnPure ->
             let liveVarsAddedUsed = Set.union liveVars (getUsedVarsPure asnPure)
                 liveVarsRemovedAsn = Set.delete (variableIrName asnVar) liveVarsAddedUsed
-                ifgAddedAsnEdges = foldr (\liveVar interIFG -> addEdgeToIFG (liveVar, (variableIrName asnVar)) interIFG) 
+                ifgAddedAsnEdges = foldr 
+                                        (\liveVar interIFG -> 
+                                            if (liveVar == (variableIrName asnVar))
+                                                then interIFG
+                                                else addEdgeToIFG (liveVar, (variableIrName asnVar)) interIFG
+                                        ) 
                                         initIFG 
                                         liveVars
                 ifgAddedAsnNode = addNodeToIFG (variableIrName asnVar) ifgAddedAsnEdges
@@ -53,7 +58,12 @@ constructIFGCommand (liveVars, initIFG) comm =
         ASN_IMPURE_IR asnVar asnImpure ->
             let liveVarsAddedUsed = Set.union liveVars (getUsedVarsImpure asnImpure)
                 liveVarsRemovedAsn = Set.delete (variableIrName asnVar) liveVarsAddedUsed
-                ifgAddedAsnEdges = foldr (\liveVar interIFG -> addEdgeToIFG (liveVar, (variableIrName asnVar)) interIFG) 
+                ifgAddedAsnEdges = foldr 
+                                        (\liveVar interIFG -> 
+                                            if (liveVar == (variableIrName asnVar))
+                                                then interIFG
+                                                else addEdgeToIFG (liveVar, (variableIrName asnVar)) interIFG
+                                        ) 
                                         initIFG 
                                         liveVars
                 ifgAddedAsnNode = addNodeToIFG (variableIrName asnVar) ifgAddedAsnEdges
@@ -110,11 +120,9 @@ simplicialElimOrderHelper ifg weights =
                         Nothing -> Set.empty
                 incrWeights = foldr
                     (\neighbor interWeights ->
-                        let newWeight = 
-                                case Map.lookup neighbor interWeights of
-                                    Just w -> w + 1
-                                    Nothing -> 0
-                        in Map.insert neighbor newWeight interWeights
+                        case Map.lookup neighbor interWeights of
+                            Just w -> Map.insert neighbor (w + 1) interWeights
+                            Nothing -> interWeights
                     )
                     weights
                     neighbors
@@ -152,6 +160,7 @@ data IFG = IFG
     { ifgNodes :: Set.Set String
     , ifgEdges :: Map.Map String (Set.Set String)
     }
+    deriving (Show)
 
 addNodeToIFG :: String -> IFG -> IFG
 addNodeToIFG var ifg = 
