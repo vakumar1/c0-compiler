@@ -4,6 +4,7 @@ module X86 (
     ArgLocation (..),
     Register (..),
     availableRegisters,
+    registerSize,
 )
 where
 
@@ -41,7 +42,7 @@ instance Show X86Instruction where
                     IMUL_X86 r1 r2 ->
                         Printf.printf "imul %s, %s" (show r1) (show r2)
                     IDIV_X86 r ->
-                        Printf.printf "div %s" (show r)
+                        Printf.printf "idiv dword %s" (show r)
                     XOR_X86 r1 r2 ->
                         Printf.printf "xor %s, %s" (show r1) (show r2)
                     NEG_X86 r ->
@@ -94,3 +95,7 @@ instance Show Register where
 -- returns registers initially available for arguments
 availableRegisters :: [Register]
 availableRegisters = [BX, CX, SI, DI]
+
+
+registerSize :: Int
+registerSize = 8

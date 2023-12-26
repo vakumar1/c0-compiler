@@ -201,7 +201,7 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                         , MOV_X86 (REG_ARGLOC AX) pureVarLoc1 -- mov dividend to AX
                                         , PUSH_X86 pureVarLoc2 -- push divisor to stack
                                         , IDIV_X86 (STACK_ARGLOC 0) -- divide AX / S[0]
-                                        , ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC 4) -- pop divisor from stack
+                                        , ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC registerSize) -- pop divisor from stack
                                         , MOV_X86 asnVarLoc (REG_ARGLOC AX) -- move quotient to result
                                         ]
                                     -- o/w use existing location
@@ -219,7 +219,7 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                         , MOV_X86 (REG_ARGLOC AX) pureVarLoc1 -- mov dividend to AX
                                         , PUSH_X86 pureVarLoc2 -- push divisor to stack
                                         , IDIV_X86 (STACK_ARGLOC 0) -- divide AX / S[0]
-                                        , ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC 4) -- pop divisor from stack
+                                        , ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC registerSize) -- pop divisor from stack
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX) -- move remainder to result
                                         ]
                                     -- o/w use existing location
@@ -320,7 +320,7 @@ allocColor color initAlloc =
                 newAlloc =
                     AllocState
                         (Map.insert color argLoc (allocStateRegMap initAlloc))
-                        ((allocStateStackCtr initAlloc) + 4)
+                        ((allocStateStackCtr initAlloc) + registerSize)
                         (allocStateAvailableReg initAlloc)
              in (argLoc, newAlloc)
         reg : _ ->
