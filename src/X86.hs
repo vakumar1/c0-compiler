@@ -64,30 +64,33 @@ instance Show ArgLocation where
     show argLoc =
         case argLoc of
             REG_ARGLOC reg -> show reg
-            STACK_ARGLOC stackPtr -> (show (-stackPtr)) ++ "(" ++ (show ESP) ++ ")"
-            CONST_ARGLOC const -> "$" ++ (show const)
+            STACK_ARGLOC stackPtr -> 
+                if (stackPtr >= 0)
+                    then Printf.printf "[%s + %s]" (show SP) (show stackPtr)
+                    else Printf.printf "[%s - %s]" (show SP) (show (-stackPtr))
+            CONST_ARGLOC const -> show const
 
 data Register
-    = EAX
-    | EBX
-    | ECX
-    | EDX
-    | ESI
-    | EDI
-    | ESP
-    | EBP
+    = AX
+    | BX
+    | CX
+    | DX
+    | SI
+    | DI
+    | SP
+    | BP
 instance Show Register where
     show reg =
         case reg of
-            EAX -> "%eax"
-            EBX -> "%ebx"
-            ECX -> "%ecx"
-            EDX -> "%edx"
-            ESI -> "%esi"
-            EDI -> "%edi"
-            ESP -> "%esp"
-            EBP -> "%ebp"
+            AX -> "rax"
+            BX -> "rbx"
+            CX -> "rcx"
+            DX -> "rdx"
+            SI -> "rsi"
+            DI -> "rdi"
+            SP -> "rsp"
+            BP -> "rbp"
 
 -- returns registers initially available for arguments
 availableRegisters :: [Register]
-availableRegisters = [EBX, ECX, ESI, EDI]
+availableRegisters = [BX, CX, SI, DI]

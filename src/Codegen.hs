@@ -88,8 +88,8 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                         [ MOV_X86 asnVarLoc pureVarLoc
                                         ]
                                     STACK_ARGLOC pureVarStackLoc ->
-                                        [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc
-                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         ]
                 -- x = y ? z
                 PURE_BINOP_IR (PureBinopIr cat ty base1 base2) ->
@@ -117,11 +117,11 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                         [ MOV_X86 asnVarLoc pureVarLoc1
                                         , ADD_X86 asnVarLoc pureVarLoc2
                                         ]
-                                    -- S[i] = y + z -> perform binop in EDX and move to S[i]
+                                    -- S[i] = y + z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
-                                        [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc1
-                                        , ADD_X86 (REG_ARGLOC EDX) pureVarLoc2
-                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , ADD_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         ]
                             SUB_IR ->
                                 case asnVarLoc of
@@ -130,11 +130,11 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                         [ MOV_X86 asnVarLoc pureVarLoc1
                                         , SUB_X86 asnVarLoc pureVarLoc2
                                         ]
-                                    -- S[i] = y - z -> perform binop in EDX and move to S[i]
+                                    -- S[i] = y - z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
-                                        [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc1
-                                        , SUB_X86 (REG_ARGLOC EDX) pureVarLoc2
-                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         ]
                             MUL_IR ->
                                 case asnVarLoc of
@@ -143,11 +143,11 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                         [ MOV_X86 asnVarLoc pureVarLoc1
                                         , IMUL_X86 asnVarLoc pureVarLoc2
                                         ]
-                                    -- S[i] = y * z -> perform binop in EDX and move to S[i]
+                                    -- S[i] = y * z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
-                                        [ MOV_X86 (REG_ARGLOC EDX) pureVarLoc1
-                                        , IMUL_X86 (REG_ARGLOC EDX) pureVarLoc2
-                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX)
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , IMUL_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         ]
                 PURE_UNOP_IR (PureUnopIr cat ty base) ->
                     let pureVarLoc =
@@ -197,37 +197,37 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                 case pureVarLoc2 of
                                     -- if divisor is a const temporarily push onto stack
                                     CONST_ARGLOC int ->
-                                        [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
-                                        , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1 -- mov dividend to EAX
+                                        [ XOR_X86 (REG_ARGLOC DX) (REG_ARGLOC DX) -- 0 out DX
+                                        , MOV_X86 (REG_ARGLOC AX) pureVarLoc1 -- mov dividend to AX
                                         , PUSH_X86 pureVarLoc2 -- push divisor to stack
-                                        , IDIV_X86 (STACK_ARGLOC 0) -- divide EAX / S[0]
-                                        , ADD_X86 (REG_ARGLOC ESP) (CONST_ARGLOC 4) -- pop divisor from stack
-                                        , MOV_X86 asnVarLoc (REG_ARGLOC EAX) -- move quotient to result
+                                        , IDIV_X86 (STACK_ARGLOC 0) -- divide AX / S[0]
+                                        , ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC 4) -- pop divisor from stack
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC AX) -- move quotient to result
                                         ]
                                     -- o/w use existing location
                                     _ ->
-                                        [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
-                                        , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1 -- mov dividend to EAX
-                                        , IDIV_X86 pureVarLoc2 -- divide EAX / divisor (in reg/on stack)
-                                        , MOV_X86 asnVarLoc (REG_ARGLOC EAX) -- move quotient to result
+                                        [ XOR_X86 (REG_ARGLOC DX) (REG_ARGLOC DX) -- 0 out DX
+                                        , MOV_X86 (REG_ARGLOC AX) pureVarLoc1 -- mov dividend to AX
+                                        , IDIV_X86 pureVarLoc2 -- divide AX / divisor (in reg/on stack)
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC AX) -- move quotient to result
                                         ]
                             MOD_IR ->
                                 case pureVarLoc2 of
                                     -- if divisor is a const temporarily push onto stack
                                     CONST_ARGLOC int ->
-                                        [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
-                                        , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1 -- mov dividend to EAX
+                                        [ XOR_X86 (REG_ARGLOC DX) (REG_ARGLOC DX) -- 0 out DX
+                                        , MOV_X86 (REG_ARGLOC AX) pureVarLoc1 -- mov dividend to AX
                                         , PUSH_X86 pureVarLoc2 -- push divisor to stack
-                                        , IDIV_X86 (STACK_ARGLOC 0) -- divide EAX / S[0]
-                                        , ADD_X86 (REG_ARGLOC ESP) (CONST_ARGLOC 4) -- pop divisor from stack
-                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX) -- move remainder to result
+                                        , IDIV_X86 (STACK_ARGLOC 0) -- divide AX / S[0]
+                                        , ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC 4) -- pop divisor from stack
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX) -- move remainder to result
                                         ]
                                     -- o/w use existing location
                                     _ ->
-                                        [ XOR_X86 (REG_ARGLOC EDX) (REG_ARGLOC EDX) -- 0 out EDX
-                                        , MOV_X86 (REG_ARGLOC EAX) pureVarLoc1 -- mov dividend to EAX
-                                        , IDIV_X86 pureVarLoc2 -- divide EAX / divisor (in reg/on stack)
-                                        , MOV_X86 asnVarLoc (REG_ARGLOC EDX) -- move remainder to result
+                                        [ XOR_X86 (REG_ARGLOC DX) (REG_ARGLOC DX) -- 0 out DX
+                                        , MOV_X86 (REG_ARGLOC AX) pureVarLoc1 -- mov dividend to AX
+                                        , IDIV_X86 pureVarLoc2 -- divide AX / divisor (in reg/on stack)
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX) -- move remainder to result
                                         ]
      in (inst, asnAlloc)
 
@@ -243,7 +243,7 @@ retToX86 coloring retPure initAlloc =
                 CONST_IR const ->
                     case const of
                         INT_CONST int ->
-                            [ MOV_X86 (REG_ARGLOC EAX) (CONST_ARGLOC int)
+                            [ MOV_X86 (REG_ARGLOC AX) (CONST_ARGLOC int)
                             , RET_X86
                             ]
                 -- ret VAR
@@ -251,7 +251,7 @@ retToX86 coloring retPure initAlloc =
                     let pureVarLoc =
                             case Map.lookup (variableIrName pureVar) coloring of
                                 Just color -> getColorReg color initAlloc
-                     in [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc
+                     in [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
                         , RET_X86
                         ]
         -- ret y ? z
@@ -274,18 +274,18 @@ retToX86 coloring retPure initAlloc =
                                 Just color -> getColorReg color initAlloc
              in case cat of
                     ADD_IR ->
-                        [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc1
-                        , ADD_X86 (REG_ARGLOC EAX) pureVarLoc2
+                        [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
+                        , ADD_X86 (REG_ARGLOC AX) pureVarLoc2
                         , RET_X86
                         ]
                     SUB_IR ->
-                        [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc1
-                        , SUB_X86 (REG_ARGLOC EAX) pureVarLoc2
+                        [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
+                        , SUB_X86 (REG_ARGLOC AX) pureVarLoc2
                         , RET_X86
                         ]
                     MUL_IR ->
-                        [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc1
-                        , IMUL_X86 (REG_ARGLOC EAX) pureVarLoc2
+                        [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
+                        , IMUL_X86 (REG_ARGLOC AX) pureVarLoc2
                         , RET_X86
                         ]
         PURE_UNOP_IR (PureUnopIr cat ty base) ->
@@ -299,8 +299,8 @@ retToX86 coloring retPure initAlloc =
                                 Just color -> getColorReg color initAlloc
              in case cat of
                     NEG_IR ->
-                        [ MOV_X86 (REG_ARGLOC EAX) pureVarLoc
-                        , NEG_X86 (REG_ARGLOC EAX)
+                        [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
+                        , NEG_X86 (REG_ARGLOC AX)
                         , RET_X86
                         ]
 
@@ -341,5 +341,5 @@ getColorReg color alloc =
 bbToLabel :: Int -> Label
 bbToLabel bbIndex =
     if bbIndex == 0
-        then "__c0_main"
+        then "main"
         else "l" ++ (show bbIndex)
