@@ -38,7 +38,9 @@ data BasicBlockIr = BasicBlockIr
     { bbIndex :: Int
     , bbIrCommands :: [CommandIr]
     }
-    deriving (Show)
+instance Show BasicBlockIr where
+    show bb = 
+        foldr (\comm interStr -> interStr ++ (show comm) ++ "\n") "\n" (bbIrCommands bb)
 
 data CommandIr
     = INIT_IR VariableIr

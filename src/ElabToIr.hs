@@ -306,21 +306,21 @@ binopOpTranslate cat ty p1 p2 state =
     let (expandComms1, expandPureBase1, expandState1) = expandPureIr p1 state
         (expandComms2, expandPureBase2, expandState2) = expandPureIr p2 expandState1
      in case cat of
-            ADD_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr ADD_IR ty expandPureBase1 expandPureBase2), expandState2)
-            SUB_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr SUB_IR ty expandPureBase1 expandPureBase2), expandState2)
-            MUL_EXP_ELAB -> (expandComms2 ++ expandComms2, PURE_BINOP_IR (PureBinopIr MUL_IR ty expandPureBase1 expandPureBase2), expandState2)
+            ADD_EXP_ELAB -> (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr ADD_IR ty expandPureBase1 expandPureBase2), expandState2)
+            SUB_EXP_ELAB -> (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr SUB_IR ty expandPureBase1 expandPureBase2), expandState2)
+            MUL_EXP_ELAB -> (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr MUL_IR ty expandPureBase1 expandPureBase2), expandState2)
             DIV_EXP_ELAB ->
                 let (tempName, newState) = addTemp state
                     temp = VariableIr tempName ty True
                     binop = IMPURE_BINOP_IR (ImpureBinopIr DIV_IR ty expandPureBase1 expandPureBase2)
                     comm = ASN_IMPURE_IR temp binop
-                 in (comm : (expandComms2 ++ expandComms2), PURE_BASE_IR (VAR_IR temp), newState)
+                 in (comm : (expandComms2 ++ expandComms1), PURE_BASE_IR (VAR_IR temp), newState)
             MOD_EXP_ELAB ->
                 let (tempName, newState) = addTemp state
                     temp = VariableIr tempName ty True
                     binop = IMPURE_BINOP_IR (ImpureBinopIr MOD_IR ty expandPureBase1 expandPureBase2)
                     comm = ASN_IMPURE_IR temp binop
-                 in (comm : (expandComms2 ++ expandComms2), PURE_BASE_IR (VAR_IR temp), newState)
+                 in (comm : (expandComms2 ++ expandComms1), PURE_BASE_IR (VAR_IR temp), newState)
 
 unopTypeInf :: UnopCatElab -> TypeCategory -> Maybe TypeCategory
 unopTypeInf cat t1 =
