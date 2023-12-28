@@ -57,21 +57,26 @@ compiler code =
         maxSSAIr = irToMaximalSSA ir
         coloring = regAllocColoring maxSSAIr
         x86asm = foldl (\interCode instr -> interCode ++ (show instr)) "" (irToX86 coloring maxSSAIr)
-    in x86asm
+     in if not (null lexerErrors)
+            then prettyPrintList lexerErrors
+            else
+                if not (null verErrors)
+                    then prettyPrintList verErrors
+                    else x86asm
 
 main :: IO ()
 main = do
     args <- getArgs
     case args of
-        (filename : rem) -> 
-            let runtimeAsm = 
+        (filename : rem) ->
+            let runtimeAsm =
                     case rem of
-                        "debug" : _ -> 
+                        "debug" : _ ->
                             "src/asm/debug_runtime.asm"
-                        _ -> 
+                        _ ->
                             "src/asm/runtime.asm"
-            in do
-                cCode <- readFile filename
-                runtime <- readFile runtimeAsm
-                putStrLn (runtime ++ (compiler cCode))
+             in do
+                    cCode <- readFile filename
+                    runtime <- readFile runtimeAsm
+                    putStrLn (runtime ++ (compiler cCode))
         _ -> putStrLn "Usage: programname filename [debug]"

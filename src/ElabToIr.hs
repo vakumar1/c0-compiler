@@ -112,7 +112,7 @@ irDecl (DeclElab varElab Nothing) state =
     let name = extractIdentifierName (variableElabIdentifier varElab)
         varState = insertToTopScope state name varElab
      in case Map.lookup name (scopeMap (head (scopes state))) of
-            Just prevVarElab ->
+            Just (prevVarElab, _) ->
                 let err = (DOUBLE_DECL (DoubleDeclarationError (variableElabIdentifier prevVarElab) (variableElabIdentifier varElab)))
                  in ([], state, [err])
             Nothing ->
@@ -131,17 +131,21 @@ irAsn (AsnElab tok e) state =
         m_varElab = identifierLookup tok (scopes state)
      in case m_varElab of
             -- check that varElab is declared
-            Just (varElab, varScopeId) ->
-                case m_expPT of
-                    Just (expPu, expTy) ->
-                        -- check that var and exp have the same type
-                        let varTy = (typeElabType (variableElabType varElab))
-                            asnComm = ASN_PURE_IR (varElabToIr varElab varScopeId) expPu
-                         in if varTy == expTy
-                                then ((asnComm : expComms), expState, expErrs)
-                                else ([], state, (ASN_TYPE_MISMATCH (AsnTypeMismatch tok varTy expTy)) : expErrs)
-                    Nothing ->
-                        ([], state, expErrs)
+            Just (varElab, _, varScopeId) ->
+                let varName = extractIdentifierName (variableElabIdentifier varElab)
+                    asnErrState = setAssignedInScope state varName varElab varScopeId
+                 in case m_expPT of
+                        Just (expPu, expTy) ->
+                            -- check that var and exp have the same type
+                            let varTy = (typeElabType (variableElabType varElab))
+                                asnComm = ASN_PURE_IR (varElabToIr varElab varScopeId) expPu
+                             in if varTy == expTy
+                                    then
+                                        let asnState = setAssignedInScope expState varName varElab varScopeId
+                                         in ((asnComm : expComms), asnState, expErrs)
+                                    else ([], asnErrState, (ASN_TYPE_MISMATCH (AsnTypeMismatch tok varTy expTy)) : expErrs)
+                        Nothing ->
+                            ([], asnErrState, expErrs)
             -- fail if varElab is not declared
             Nothing ->
                 ([], state, (USE_BEFORE_DECL (UseBeforeDeclarationError tok)) : expErrs)
@@ -175,10 +179,13 @@ irConst const state = ([], Just (PURE_BASE_IR (CONST_IR const), constToType cons
 irIdentifier :: Token -> State -> ([CommandIr], Maybe (PureIr, TypeCategory), State, [VerificationError])
 irIdentifier tok state =
     case identifierLookup tok (scopes state) of
-        Just (varElab, varScopeId) ->
-            let varIr = varElabToIr varElab varScopeId
-                varTypeCat = (typeElabType (variableElabType varElab))
-             in ([], Just (PURE_BASE_IR (VAR_IR varIr), varTypeCat), state, [])
+        Just (varElab, varAssigned, varScopeId) ->
+            if varAssigned
+                then
+                    let varIr = varElabToIr varElab varScopeId
+                        varTypeCat = (typeElabType (variableElabType varElab))
+                     in ([], Just (PURE_BASE_IR (VAR_IR varIr), varTypeCat), state, [])
+                else ([], Nothing, state, [(USE_BEFORE_ASN (UseBeforeAssignmentError tok))])
         Nothing ->
             ([], Nothing, state, [(USE_BEFORE_DECL (UseBeforeDeclarationError tok))])
 
@@ -231,7 +238,7 @@ data State = State
     }
 
 data Scope = Scope
-    { scopeMap :: Map.Map String VariableElab
+    { scopeMap :: Map.Map String (VariableElab, Bool)
     , scopeId :: Int
     }
 
@@ -253,19 +260,33 @@ addBb state =
 insertToTopScope :: State -> String -> VariableElab -> State
 insertToTopScope state name varElab =
     let topScope = head (scopes state)
-        varScope = Scope (Map.insert name varElab (scopeMap topScope)) (scopeId topScope)
+        varScope = Scope (Map.insert name (varElab, False) (scopeMap topScope)) (scopeId topScope)
      in State (varScope : (tail (scopes state))) (regCtr state) (mapCtr state) (bbCtr state)
+
+setAssignedInScope :: State -> String -> VariableElab -> Int -> State
+setAssignedInScope state varName varElab varScopeId =
+    let newScopes =
+            map
+                ( \scope ->
+                    if (scopeId scope) == varScopeId
+                        then
+                            let newScopeMap = Map.insert varName (varElab, True) (scopeMap scope)
+                             in Scope newScopeMap (scopeId scope)
+                        else scope
+                )
+                (scopes state)
+     in State newScopes (regCtr state) (mapCtr state) (bbCtr state)
 
 popScopeMap :: State -> State
 popScopeMap state = State (tail (scopes state)) (regCtr state) (mapCtr state) (bbCtr state)
 
-identifierLookup :: Token -> [Scope] -> Maybe (VariableElab, Int)
+identifierLookup :: Token -> [Scope] -> Maybe (VariableElab, Bool, Int)
 identifierLookup tok scopes =
     case scopes of
         [] -> Nothing
         scope : _ ->
             case (Map.lookup (extractIdentifierName tok) (scopeMap scope)) of
-                Just var -> Just (var, (scopeId scope))
+                Just (var, assigned) -> Just (var, assigned, (scopeId scope))
                 Nothing -> identifierLookup tok (tail scopes)
 
 varElabToIr :: VariableElab -> Int -> VariableIr
@@ -274,24 +295,6 @@ varElabToIr varElab varScopeId =
         ((show varScopeId) ++ ":" ++ (extractIdentifierName (variableElabIdentifier varElab)))
         (typeElabType (variableElabType varElab))
         False
-
--- HELPERS: BB ARGUMENT EXTRACTION
-
--- merges all scopes (from right to left to prioritize higher scopes)
--- maps all varElabs (with corresponding scope id) to varIr
-getIrArgs :: [Scope] -> [VariableIr]
-getIrArgs scopes =
-    let singleMap = foldr getIrArgsFoldFn Map.empty scopes
-     in map getIrArgsTranslateFn (Map.toList singleMap)
-
--- iterates through all elements in SCOPE and inserts (with scope id) into INIT_MAP
-getIrArgsFoldFn :: Scope -> Map.Map String (Int, VariableElab) -> Map.Map String (Int, VariableElab)
-getIrArgsFoldFn scope initMap =
-    let currScopeId = (scopeId scope)
-     in foldr (\(s, v) interMap -> Map.insert s (currScopeId, v) interMap) initMap (Map.toList (scopeMap scope))
-
-getIrArgsTranslateFn :: (String, (Int, VariableElab)) -> VariableIr
-getIrArgsTranslateFn (_, (varScopeId, varElab)) = varElabToIr varElab varScopeId
 
 -- HELPERS: OP TRANSLATION
 

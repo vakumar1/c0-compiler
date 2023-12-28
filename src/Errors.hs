@@ -5,6 +5,7 @@ module Errors (
     ParserErrorCategory (..),
     UseBeforeDeclarationError (..),
     DoubleDeclarationError (..),
+    UseBeforeAssignmentError (..),
     OpTypeMismatch (..),
     AsnTypeMismatch (..),
     RetTypeMismatch (..),
@@ -107,6 +108,20 @@ instance Show DoubleDeclarationError where
             ++ " token="
             ++ ((show . tokenCat . doubleInitializationErrorSecondInit) e)
 
+data UseBeforeAssignmentError = UseBeforeAssignmentError
+    { useBeforeAssignmentErrorUse :: Token
+    }
+instance Show UseBeforeAssignmentError where
+    show e =
+        "UseBeforeAssignmentError"
+            ++ " --\n"
+            ++ " lineNo="
+            ++ ((show . tokenLineNo . tokenData . useBeforeAssignmentErrorUse) e)
+            ++ " linePos="
+            ++ ((show . tokenLinePos . tokenData . useBeforeAssignmentErrorUse) e)
+            ++ " token="
+            ++ ((show . tokenCat . useBeforeAssignmentErrorUse) e)
+
 data OpTypeMismatch = OpTypeMismatch
     { opTypeMismatchOp :: Token
     , opTypeMismatchArgTypes :: [TypeCategory]
@@ -140,6 +155,7 @@ instance Show InvalidReturnError where
 data VerificationError
     = USE_BEFORE_DECL UseBeforeDeclarationError
     | DOUBLE_DECL DoubleDeclarationError
+    | USE_BEFORE_ASN UseBeforeAssignmentError
     | OP_TYPE_MISMATCH OpTypeMismatch
     | ASN_TYPE_MISMATCH AsnTypeMismatch
     | RET_TYPE_MISMATCH RetTypeMismatch
