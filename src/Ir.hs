@@ -36,10 +36,11 @@ data FunctionIr = FunctionIr
 
 data BasicBlockIr = BasicBlockIr
     { bbIndex :: Int
+    , bbIrPhiFn :: PhiFnIr
     , bbIrCommands :: [CommandIr]
     }
 instance Show BasicBlockIr where
-    show bb = 
+    show bb =
         foldr (\comm interStr -> interStr ++ (show comm) ++ "\n") "\n" (bbIrCommands bb)
 
 data CommandIr
@@ -48,8 +49,9 @@ data CommandIr
     | ASN_IMPURE_IR VariableIr ImpureIr
     | GOTO_BB_IR Int
     | RET_PURE_IR PureIr
-    | PHI_FN_IR String (Map.Map Int String)
     deriving (Show)
+
+type PhiFnIr = Map.Map VariableIr (Map.Map Int VariableIr)
 
 -- pure operations
 data PureIr
@@ -108,10 +110,14 @@ data ImpureBinopCatIr
 
 data VariableIr = VariableIr
     { variableIrName :: String
+    , variableIrSSAId :: Int
     , variableIrType :: TypeCategory
     , variableIrTemp :: Bool
     }
     deriving (Show)
+instance Eq VariableIr where
+    (var1 == var2) = ((variableIrName var1) == (variableIrName var2)) 
+                        && ((variableIrSSAId var1) == (variableIrSSAId var2))
 
 -- HELPERS
 addBbsToFunction :: FunctionIr -> [BasicBlockIr] -> FunctionIr

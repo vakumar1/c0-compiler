@@ -65,7 +65,7 @@ instance Show ArgLocation where
     show argLoc =
         case argLoc of
             REG_ARGLOC reg -> show reg
-            STACK_ARGLOC stackPtr -> 
+            STACK_ARGLOC stackPtr ->
                 if (stackPtr >= 0)
                     then Printf.printf "[%s + %s]" (show SP) (show stackPtr)
                     else Printf.printf "[%s - %s]" (show SP) (show (-stackPtr))
@@ -95,7 +95,6 @@ instance Show Register where
 -- returns registers initially available for arguments
 availableRegisters :: [Register]
 availableRegisters = [BX, CX, SI, DI]
-
 
 registerSize :: Int
 registerSize = 8
