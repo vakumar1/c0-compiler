@@ -42,7 +42,17 @@ data BasicBlockIr = BasicBlockIr
     }
 instance Show BasicBlockIr where
     show bb =
-        foldr (\comm interStr -> interStr ++ (show comm) ++ "\n") "\n" (bbIrCommands bb)
+        "\nINDEX=" ++ (show (bbIndex bb)) ++
+        "\nPHI-FN=" ++ (show (bbIrPhiFn bb)) ++ 
+        "\nCOMMANDS=" ++
+        foldr 
+            (\comm interStr -> 
+                interStr ++ "\n" ++ (show comm)
+            ) 
+            "" 
+            (bbIrCommands bb)
+            ++
+        "\n"
 
 data CommandIr
     = INIT_IR VariableIr

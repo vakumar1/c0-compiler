@@ -7,6 +7,7 @@ import Ir
 import Liveness
 import Types
 import X86
+import Errors
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -16,28 +17,82 @@ irToX86 coloring fnIr =
     let blocks = bfsSuccessors fnIr
         -- initialize function spillover at SP - 8 and w/ all available registers
         initAlloc = AllocState Map.empty 8 availableRegisters
-        (finalInstr, _) =
+        (instBlockMap, _) =
             foldl
-                ( \(interInstr, interAlloc) bbIndex ->
+                ( \(interBlockMap, interAlloc) bbIndex ->
                     case Map.lookup bbIndex (functionIrBlocks fnIr) of
-                        Just bb ->
-                            let (bbInstr, newAlloc) = bbIrToX86 coloring bb interAlloc
-                             in (interInstr ++ bbInstr, newAlloc)
-                        Nothing -> (interInstr, interAlloc)
+                        Just bb -> bbIrToX86 coloring bb interBlockMap interAlloc
+                        Nothing -> (interBlockMap, interAlloc)
                 )
-                ([], initAlloc)
+                (Map.empty, initAlloc)
+                blocks
+        finalInstr = 
+            foldl
+                (\interInstr index ->
+                    case Map.lookup index instBlockMap of
+                        Just inst -> interInstr ++ inst
+                        Nothing -> interInstr
+                )
+                []
                 blocks
      in finalInstr
 
-bbIrToX86 :: Map.Map VariableIr Int -> BasicBlockIr -> AllocState -> ([X86Instruction], AllocState)
-bbIrToX86 coloring bb initAlloc =
+bbIrToX86 :: Map.Map VariableIr Int -> BasicBlockIr -> Map.Map Int [X86Instruction] -> AllocState -> (Map.Map Int [X86Instruction], AllocState)
+bbIrToX86 coloring bb initBlockMap initAlloc =
+    let (updatePhiBlockMap, updatePhiAlloc) = phiFnIrToX86 coloring (bbIrPhiFn bb) initBlockMap initAlloc
+        (bbInst, updateBbAlloc) = 
+            foldr
+                ( \comm (interInstr, interAlloc) ->
+                    let (commInstr, newAlloc) = commIrToX86 coloring comm interAlloc
+                    in (interInstr ++ commInstr, newAlloc)
+                )
+                ([LABEL_X86 (bbToLabel (bbIndex bb))], updatePhiAlloc)
+                (bbIrCommands bb)
+        updateBbBlockMap = Map.insert (bbIndex bb) bbInst updatePhiBlockMap
+    in (updateBbBlockMap, updateBbAlloc)
+
+phiFnIrToX86 :: Map.Map VariableIr Int -> PhiFnIr -> Map.Map Int [X86Instruction] -> AllocState -> (Map.Map Int [X86Instruction], AllocState)
+phiFnIrToX86 coloring phi initBlockMap initAlloc = 
     foldr
-        ( \comm (interInstr, interAlloc) ->
-            let (commInstr, newAlloc) = commIrToX86 coloring comm interAlloc
-             in (interInstr ++ commInstr, newAlloc)
+        (\(var, varPredMap) (interBlockMap, interAlloc) ->
+            foldr
+                (\(predIndex, predVar) (predInterBlockMap, predInterAlloc)->
+                    phiFnArgToX86 coloring var (predIndex, predVar) predInterBlockMap predInterAlloc
+                )
+                (interBlockMap, interAlloc)
+                (Map.toList varPredMap)
         )
-        ([LABEL_X86 (bbToLabel (bbIndex bb))], initAlloc)
-        (bbIrCommands bb)
+        (initBlockMap, initAlloc)
+        (Map.toList phi)
+
+phiFnArgToX86 :: Map.Map VariableIr Int -> VariableIr -> (Int, VariableIr) -> Map.Map Int [X86Instruction] -> AllocState -> (Map.Map Int [X86Instruction], AllocState)
+phiFnArgToX86 coloring asnVar (predIndex, predVar) initBlockMap initAlloc = 
+    case Map.lookup predIndex initBlockMap of
+        Just currInst ->
+            let (asnVarLoc, asnAlloc) =
+                    case Map.lookup asnVar coloring of
+                        Just color ->
+                            case Map.lookup color (allocStateRegMap initAlloc) of
+                                Just argLoc -> (argLoc, initAlloc)
+                                Nothing -> allocColor color initAlloc
+                predVarLoc =
+                    case Map.lookup predVar coloring of
+                        Just color -> getColorReg color asnAlloc
+                asnInst = 
+                    case predVarLoc of
+                        REG_ARGLOC pureVarReg ->
+                            [ MOV_X86 asnVarLoc predVarLoc
+                            ]
+                        STACK_ARGLOC pureVarStackLoc ->
+                            [ MOV_X86 (REG_ARGLOC DX) predVarLoc
+                            , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                            ]
+                
+                newInst = (init currInst) ++ asnInst ++ [(last currInst)]
+                newBlockMap = Map.insert predIndex newInst initBlockMap
+            in (newBlockMap, asnAlloc)
+        Nothing -> error (compilerError ("Invalid phi-function generated for predecessor without translation. " ++
+                        "Predecessor" ++ (show predIndex) ++ " Successor var=" ++ (show asnVar)))
 
 commIrToX86 :: Map.Map VariableIr Int -> CommandIr -> AllocState -> ([X86Instruction], AllocState)
 commIrToX86 coloring comm initAlloc =

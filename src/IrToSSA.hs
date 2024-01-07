@@ -148,7 +148,7 @@ bbInjectPhiFn fnIr liveMap versions predBbIndex =
 succBbInjectPhiFn :: BasicBlockIr -> LiveMap -> VariableIrVersion -> Int -> BasicBlockIr
 succBbInjectPhiFn bbIr liveMap versions predBbIndex = 
     let liveVars = 
-            case Map.lookup (predBbIndex) liveMap of
+            case Map.lookup (bbIndex bbIr) liveMap of
                 Just s -> s
                 Nothing -> Set.empty
         newPhiFn = 
