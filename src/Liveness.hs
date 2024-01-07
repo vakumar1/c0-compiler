@@ -1,5 +1,7 @@
 module Liveness (
-    updateLiveVars,
+    updateLiveVarsPhi,
+    getUsedVarsPredMap,
+    updateLiveVarsComm,
     getUsedVarsCommand,
     getAssignedVarsCommand,
 )
@@ -11,12 +13,34 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-updateLiveVars :: Set.Set VariableIr -> CommandIr -> Set.Set VariableIr
-updateLiveVars liveVars comm = 
+-- PHI FN LIVENESS ANALYSIS
+
+updateLiveVarsPhi :: Set.Set VariableIr -> PhiFnIr -> Set.Set VariableIr
+updateLiveVarsPhi liveVars phi = 
+    foldr 
+        (\(var, varPredMap) interLiveVars -> 
+            Set.delete var (Set.union (getUsedVarsPredMap varPredMap) interLiveVars)
+        )
+        liveVars
+        (Map.toList phi)
+
+getUsedVarsPredMap :: Map.Map Int VariableIr -> Set.Set VariableIr
+getUsedVarsPredMap predMap = 
+    foldr
+        (\(_, argVar) interLiveVars -> 
+            Set.insert argVar interLiveVars
+        )
+        Set.empty
+        (Map.toList predMap)
+
+-- COMMAND LIVENESS ANALYSIS
+
+updateLiveVarsComm :: Set.Set VariableIr -> CommandIr -> Set.Set VariableIr
+updateLiveVarsComm liveVars comm = 
     let liveVarsAddedUsed = Set.union liveVars (getUsedVarsCommand comm)
         liveVarsRemovedAsn = 
             case (getAssignedVarsCommand comm) of
-                Just name -> Set.delete name liveVarsAddedUsed
+                Just var -> Set.delete var liveVarsAddedUsed
                 Nothing -> liveVarsAddedUsed
     in liveVarsRemovedAsn
 

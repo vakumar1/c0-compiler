@@ -4,9 +4,14 @@ module RegAlloc (
 
 where
 
+import Ir
 import Liveness
 
-regAllocColoring :: FunctionIr -> Map.Map String Int
+import qualified Data.List as List
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+
+regAllocColoring :: FunctionIr -> Map.Map VariableIr Int
 regAllocColoring fnIr =
     let ifg = constructIFG fnIr
         order = simplicialElimOrder ifg
@@ -15,28 +20,46 @@ regAllocColoring fnIr =
 -- IFG CONSTRUCTION
 
 constructIFG :: FunctionIr -> IFG
-constructIFG fnIr = constructIFGHelper fnIr (bfsPredecessors fnIr) Set.empty (IFG Set.empty Map.empty)
-
-constructIFGHelper :: FunctionIr -> [Int] -> Set.Set VariableIr -> IFG -> IFG
-constructIFGHelper fnIr blocks liveVars initIFG =
+constructIFG fnIr = 
     let (_, finalIFG) =
             foldl
                 ( \(interLiveVars, interIFG) index ->
                     case Map.lookup index (functionIrBlocks fnIr) of
                         Just bb -> constructIFGBasicBlock (interLiveVars, interIFG) bb
-                        Nothing -> (liveVars, initIFG)
+                        Nothing -> (interLiveVars, interIFG)
                 )
-                (liveVars, initIFG)
-                blocks
+                (Set.empty, (IFG Set.empty Map.empty))
+                (bfsPredecessors fnIr)
      in finalIFG
 
 constructIFGBasicBlock :: (Set.Set VariableIr, IFG) -> BasicBlockIr -> (Set.Set VariableIr, IFG)
 constructIFGBasicBlock (liveVars, initIFG) bb =
-    foldl constructIFGCommand (liveVars, initIFG) (bbIrCommands bb)
+    let (liveVarsUpdatedComms, ifgUpdatedComms) = foldl constructIFGCommand (liveVars, initIFG) (bbIrCommands bb)
+        (liveVarsUpdatedPhi, ifgUpdatedPhi) = constructIFGPhi (liveVarsUpdatedComms, ifgUpdatedComms) (bbIrPhiFn bb)
+    in (liveVarsUpdatedPhi, ifgUpdatedPhi)
+
+constructIFGPhi :: (Set.Set VariableIr, IFG) -> PhiFnIr -> (Set.Set VariableIr, IFG)
+constructIFGPhi (liveVars, initIFG) phi = 
+    let newLiveVars = updateLiveVarsPhi liveVars phi
+        ifgUpdatedWithAsn = 
+            foldr
+                (\(var, varPredMap) interIFG ->
+                    foldr
+                        (\liveVar predInterIFG ->
+                            if (var == liveVar)
+                                then predInterIFG
+                                else addEdgeToIFG (liveVar, var) predInterIFG
+                        )
+                        (addNodeToIFG var interIFG)
+                        liveVars
+                )
+                initIFG
+                (Map.toList phi)
+    in (newLiveVars, ifgUpdatedWithAsn)
 
 constructIFGCommand :: (Set.Set VariableIr, IFG) -> CommandIr -> (Set.Set VariableIr, IFG)
 constructIFGCommand (liveVars, initIFG) comm =
-    let newLiveVars = updateLiveVars liveVars comm
+    let newLiveVars = updateLiveVarsComm liveVars comm
         ifgUpdatedWithAsn =
             case (getAssignedVarsCommand comm) of
                 Just asnVar ->
@@ -44,7 +67,7 @@ constructIFGCommand (liveVars, initIFG) comm =
                         ( \liveVar interIFG ->
                             if (liveVar == asnVar)
                                 then interIFG
-                                else addEdgeToIFG (liveVar, (variableIrName asnVar)) interIFG
+                                else addEdgeToIFG (liveVar, asnVar) interIFG
                         )
                         (addNodeToIFG asnVar initIFG)
                         liveVars
@@ -53,7 +76,7 @@ constructIFGCommand (liveVars, initIFG) comm =
 
 -- SIMPLICIAL ELIM ORDERING
 
-simplicialElimOrder :: IFG -> [String]
+simplicialElimOrder :: IFG -> [VariableIr]
 simplicialElimOrder ifg =
     let initWeights =
             foldr
@@ -62,7 +85,7 @@ simplicialElimOrder ifg =
                 (ifgNodes ifg)
      in reverse (simplicialElimOrderHelper ifg initWeights)
 
-simplicialElimOrderHelper :: IFG -> Map.Map String Int -> [String]
+simplicialElimOrderHelper :: IFG -> Map.Map VariableIr Int -> [VariableIr]
 simplicialElimOrderHelper ifg weights =
     if (Map.null weights)
         then []
@@ -74,8 +97,8 @@ simplicialElimOrderHelper ifg weights =
                                 then (node, weight)
                                 else (currNode, currWeight)
                         )
-                        ("", -1)
-                        (Map.toList weights)
+                        (head (Map.toList weights))
+                        (tail (Map.toList weights))
                 neighbors =
                     case Map.lookup maxVar (ifgEdges ifg) of
                         Just s -> s
@@ -94,10 +117,10 @@ simplicialElimOrderHelper ifg weights =
 
 -- GREEDY GRAPH COLORING
 
-greedyGraphColoring :: IFG -> [String] -> Map.Map String Int
+greedyGraphColoring :: IFG -> [VariableIr] -> Map.Map VariableIr Int
 greedyGraphColoring ifg order = greedyGraphColoringHelper ifg order Map.empty
 
-greedyGraphColoringHelper :: IFG -> [String] -> Map.Map String Int -> Map.Map String Int
+greedyGraphColoringHelper :: IFG -> [VariableIr] -> Map.Map VariableIr Int -> Map.Map VariableIr Int
 greedyGraphColoringHelper ifg order initColoring =
     case order of
         [] -> initColoring

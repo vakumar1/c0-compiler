@@ -11,6 +11,7 @@ import IrToSSA
 import Lexer
 import Liveness
 import Parser
+import RegAlloc
 import X86
 
 -- import Parser

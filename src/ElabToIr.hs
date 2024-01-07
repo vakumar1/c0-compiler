@@ -11,7 +11,6 @@ import Types
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Debug.Trace as Trace
 
 -- IR TRANSLATION
 -- + DECLARATION VERIFICATION
@@ -254,7 +253,7 @@ addScope state =
 
 addBb :: State -> (BasicBlockIr, State)
 addBb state =
-    let newBb = BasicBlockIr (bbCtr state) []
+    let newBb = BasicBlockIr (bbCtr state) Map.empty []
      in (newBb, State (scopes state) (regCtr state) (mapCtr state) ((bbCtr state) + 1))
 
 insertToTopScope :: State -> String -> VariableElab -> State
@@ -293,6 +292,7 @@ varElabToIr :: VariableElab -> Int -> VariableIr
 varElabToIr varElab varScopeId =
     VariableIr
         ((show varScopeId) ++ ":" ++ (extractIdentifierName (variableElabIdentifier varElab)))
+        0
         (typeElabType (variableElabType varElab))
         False
 
@@ -314,13 +314,13 @@ binopOpTranslate cat ty p1 p2 state =
             MUL_EXP_ELAB -> (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr MUL_IR ty expandPureBase1 expandPureBase2), expandState2)
             DIV_EXP_ELAB ->
                 let (tempName, newState) = addTemp state
-                    temp = VariableIr tempName ty True
+                    temp = VariableIr tempName 0 ty True
                     binop = IMPURE_BINOP_IR (ImpureBinopIr DIV_IR ty expandPureBase1 expandPureBase2)
                     comm = ASN_IMPURE_IR temp binop
                  in (comm : (expandComms2 ++ expandComms1), PURE_BASE_IR (VAR_IR temp), newState)
             MOD_EXP_ELAB ->
                 let (tempName, newState) = addTemp state
-                    temp = VariableIr tempName ty True
+                    temp = VariableIr tempName 0 ty True
                     binop = IMPURE_BINOP_IR (ImpureBinopIr MOD_IR ty expandPureBase1 expandPureBase2)
                     comm = ASN_IMPURE_IR temp binop
                  in (comm : (expandComms2 ++ expandComms1), PURE_BASE_IR (VAR_IR temp), newState)
@@ -345,11 +345,11 @@ expandPureIr pu state =
         PURE_BASE_IR base -> ([], base, state)
         PURE_BINOP_IR binop ->
             let (tempName, newState) = addTemp state
-                binopTemp = VariableIr tempName (pureBinopInfType binop) True
+                binopTemp = VariableIr tempName 0 (pureBinopInfType binop) True
                 binopComm = ASN_PURE_IR binopTemp pu
              in ([binopComm], VAR_IR binopTemp, newState)
         PURE_UNOP_IR unop ->
             let (tempName, newState) = addTemp state
-                unopTemp = VariableIr tempName (pureUnopInfType unop) True
+                unopTemp = VariableIr tempName 0 (pureUnopInfType unop) True
                 unopComm = ASN_PURE_IR unopTemp pu
              in ([unopComm], VAR_IR unopTemp, newState)

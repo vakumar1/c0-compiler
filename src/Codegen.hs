@@ -11,7 +11,7 @@ import X86
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-irToX86 :: Map.Map String Int -> FunctionIr -> [X86Instruction]
+irToX86 :: Map.Map VariableIr Int -> FunctionIr -> [X86Instruction]
 irToX86 coloring fnIr =
     let blocks = bfsSuccessors fnIr
         -- initialize function spillover at SP - 8 and w/ all available registers
@@ -29,7 +29,7 @@ irToX86 coloring fnIr =
                 blocks
      in finalInstr
 
-bbIrToX86 :: Map.Map String Int -> BasicBlockIr -> AllocState -> ([X86Instruction], AllocState)
+bbIrToX86 :: Map.Map VariableIr Int -> BasicBlockIr -> AllocState -> ([X86Instruction], AllocState)
 bbIrToX86 coloring bb initAlloc =
     foldr
         ( \comm (interInstr, interAlloc) ->
@@ -39,7 +39,7 @@ bbIrToX86 coloring bb initAlloc =
         ([LABEL_X86 (bbToLabel (bbIndex bb))], initAlloc)
         (bbIrCommands bb)
 
-commIrToX86 :: Map.Map String Int -> CommandIr -> AllocState -> ([X86Instruction], AllocState)
+commIrToX86 :: Map.Map VariableIr Int -> CommandIr -> AllocState -> ([X86Instruction], AllocState)
 commIrToX86 coloring comm initAlloc =
     case comm of
         INIT_IR var -> ([], initAlloc)
@@ -52,18 +52,10 @@ commIrToX86 coloring comm initAlloc =
             let instr = retToX86 coloring retPure initAlloc
              in (instr, initAlloc)
 
--- initIrToX86 :: Map.Map String Int -> VariableIr -> AllocState -> (AllocState, [X86Instruction])
--- initIrToX86 coloring var initAlloc =
---     case Map.lookup (variableIrName var) coloring of
---         Just color ->
---             case Map.lookup color (allocStateRegMap initAlloc) of
---                 Just _ -> (initAlloc, [])
---                 Nothing -> (allocColor color initAlloc, [])
-
-asnPureIrToX86 :: Map.Map String Int -> VariableIr -> PureIr -> AllocState -> ([X86Instruction], AllocState)
+asnPureIrToX86 :: Map.Map VariableIr Int -> VariableIr -> PureIr -> AllocState -> ([X86Instruction], AllocState)
 asnPureIrToX86 coloring asnVar asnPure initAlloc =
     let (asnVarLoc, asnAlloc) =
-            case Map.lookup (variableIrName asnVar) coloring of
+            case Map.lookup asnVar coloring of
                 Just color ->
                     case Map.lookup color (allocStateRegMap initAlloc) of
                         Just argLoc -> (argLoc, initAlloc)
@@ -81,7 +73,7 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                         -- x = VAR
                         VAR_IR pureVar ->
                             let pureVarLoc =
-                                    case Map.lookup (variableIrName pureVar) coloring of
+                                    case Map.lookup pureVar coloring of
                                         Just color -> getColorReg color asnAlloc
                              in case pureVarLoc of
                                     REG_ARGLOC pureVarReg ->
@@ -99,7 +91,7 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                     case const of
                                         INT_CONST int -> CONST_ARGLOC int
                                 VAR_IR pureVar ->
-                                    case Map.lookup (variableIrName pureVar) coloring of
+                                    case Map.lookup pureVar coloring of
                                         Just color -> getColorReg color asnAlloc
                         pureVarLoc2 =
                             case base2 of
@@ -107,7 +99,7 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                     case const of
                                         INT_CONST int -> CONST_ARGLOC int
                                 VAR_IR pureVar ->
-                                    case Map.lookup (variableIrName pureVar) coloring of
+                                    case Map.lookup pureVar coloring of
                                         Just color -> getColorReg color asnAlloc
                      in case cat of
                             ADD_IR ->
@@ -156,7 +148,7 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                     case const of
                                         INT_CONST int -> CONST_ARGLOC int
                                 VAR_IR pureVar ->
-                                    case Map.lookup (variableIrName pureVar) coloring of
+                                    case Map.lookup pureVar coloring of
                                         Just color -> getColorReg color asnAlloc
                      in case cat of
                             NEG_IR ->
@@ -165,10 +157,10 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                 ]
      in (inst, asnAlloc)
 
-asnImpureIrToX86 :: Map.Map String Int -> VariableIr -> ImpureIr -> AllocState -> ([X86Instruction], AllocState)
+asnImpureIrToX86 :: Map.Map VariableIr Int -> VariableIr -> ImpureIr -> AllocState -> ([X86Instruction], AllocState)
 asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
     let (asnVarLoc, asnAlloc) =
-            case Map.lookup (variableIrName asnVar) coloring of
+            case Map.lookup asnVar coloring of
                 Just color ->
                     case Map.lookup color (allocStateRegMap initAlloc) of
                         Just argLoc -> (argLoc, initAlloc)
@@ -182,7 +174,7 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                     case const of
                                         INT_CONST int -> CONST_ARGLOC int
                                 VAR_IR pureVar ->
-                                    case Map.lookup (variableIrName pureVar) coloring of
+                                    case Map.lookup pureVar coloring of
                                         Just color -> getColorReg color asnAlloc
                         pureVarLoc2 =
                             case base2 of
@@ -190,7 +182,7 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                     case const of
                                         INT_CONST int -> CONST_ARGLOC int
                                 VAR_IR pureVar ->
-                                    case Map.lookup (variableIrName pureVar) coloring of
+                                    case Map.lookup pureVar coloring of
                                         Just color -> getColorReg color asnAlloc
                      in case cat of
                             DIV_IR ->
@@ -234,7 +226,7 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
 gotoToX86 :: Int -> [X86Instruction]
 gotoToX86 bbIndex = [JMP_X86 (bbToLabel bbIndex)]
 
-retToX86 :: Map.Map String Int -> PureIr -> AllocState -> [X86Instruction]
+retToX86 :: Map.Map VariableIr Int -> PureIr -> AllocState -> [X86Instruction]
 retToX86 coloring retPure initAlloc =
     case retPure of
         PURE_BASE_IR base ->
@@ -249,7 +241,7 @@ retToX86 coloring retPure initAlloc =
                 -- ret VAR
                 VAR_IR pureVar ->
                     let pureVarLoc =
-                            case Map.lookup (variableIrName pureVar) coloring of
+                            case Map.lookup pureVar coloring of
                                 Just color -> getColorReg color initAlloc
                      in [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
                         , RET_X86
@@ -262,7 +254,7 @@ retToX86 coloring retPure initAlloc =
                             case const of
                                 INT_CONST int -> CONST_ARGLOC int
                         VAR_IR pureVar ->
-                            case Map.lookup (variableIrName pureVar) coloring of
+                            case Map.lookup pureVar coloring of
                                 Just color -> getColorReg color initAlloc
                 pureVarLoc2 =
                     case base2 of
@@ -270,7 +262,7 @@ retToX86 coloring retPure initAlloc =
                             case const of
                                 INT_CONST int -> CONST_ARGLOC int
                         VAR_IR pureVar ->
-                            case Map.lookup (variableIrName pureVar) coloring of
+                            case Map.lookup pureVar coloring of
                                 Just color -> getColorReg color initAlloc
              in case cat of
                     ADD_IR ->
@@ -295,7 +287,7 @@ retToX86 coloring retPure initAlloc =
                             case const of
                                 INT_CONST int -> CONST_ARGLOC int
                         VAR_IR pureVar ->
-                            case Map.lookup (variableIrName pureVar) coloring of
+                            case Map.lookup pureVar coloring of
                                 Just color -> getColorReg color initAlloc
              in case cat of
                     NEG_IR ->

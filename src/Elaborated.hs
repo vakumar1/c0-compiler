@@ -99,4 +99,4 @@ extractIdentifierName :: Token -> String
 extractIdentifierName token =
     case (tokenCat token) of
         IDENTIFIER name -> name
-        _ -> compilerError "Expected an identifer token but got token=" ++ (show token)
+        _ -> error (compilerError "Expected an identifer token but got token=" ++ (show token))

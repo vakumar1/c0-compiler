@@ -2,6 +2,7 @@ module IrToSSA (
     irToMaximalSSA,
 ) where
 
+import Errors
 import Ir
 import Liveness
 
@@ -13,8 +14,8 @@ import qualified Data.Set as Set
 -- - updates SSA Id for each variable (in phi-functions and commands) to conform to SSA form 
 -- - injects live vars into successor phi-functions
 
-fnIrToMaximalSSA :: FunctionIr -> FunctionIr
-fnIrToMaximalSSA fnIr liveMap =
+irToMaximalSSA :: FunctionIr -> FunctionIr
+irToMaximalSSA fnIr =
     let order = bfsSuccessors fnIr
         liveMap = livenessPass fnIr
         (newFnIr, _) = 
@@ -22,7 +23,7 @@ fnIrToMaximalSSA fnIr liveMap =
                 (\(interFnIr, interVersions) index ->
                     case Map.lookup index (functionIrBlocks interFnIr) of
                         Just bb -> 
-                            let (updatedBb, newVersions) = bbIrToMaximalSSA phiUpdatedBb interVersions
+                            let (updatedBb, newVersions) = bbIrToMaximalSSA bb interVersions
                                 currUpdatedFnIr = addBbsToFunction interFnIr [updatedBb]
                                 succUpdatedFnIr = bbInjectPhiFn currUpdatedFnIr liveMap newVersions (bbIndex updatedBb)
                             in (succUpdatedFnIr, newVersions)
@@ -36,21 +37,23 @@ fnIrToMaximalSSA fnIr liveMap =
 livenessPass :: FunctionIr -> LiveMap
 livenessPass fnIr = 
     let order = bfsPredecessors fnIr
-    in foldl 
-        (\(interLiveMap interLiveVars) index ->
-            case Map.lookup index (functionIrBlocks fnIr) of
-                Just bb -> 
-                    let newLiveVars = bbLivenessPass interLiveVars bb
-                        newLiveMap = Map.insert index newLiveVars
-                    in (newLiveMap, newLiveVars)
-                Nothing -> (interLiveMap interLiveVars)
-        )
-        (Map.empty, Set.empty)
-        order
+        (liveMap, _) = 
+            foldl 
+                (\(interLiveMap, interLiveVars) index ->
+                    case Map.lookup index (functionIrBlocks fnIr) of
+                        Just bb -> 
+                            let newLiveVars = bbLivenessPass interLiveVars bb
+                                newLiveMap = Map.insert index newLiveVars interLiveMap
+                            in (newLiveMap, newLiveVars)
+                        Nothing -> (interLiveMap, interLiveVars)
+                )
+                (Map.empty, Set.empty)
+                order
+    in liveMap
 
-bbLivenessPass :: Set.Set String -> BasicBlockIr -> Set.Set String
+bbLivenessPass :: Set.Set VariableIr -> BasicBlockIr -> Set.Set VariableIr
 bbLivenessPass liveVars bb = 
-    foldl updateLiveVars liveVars (bbIrCommands bb)
+    foldl updateLiveVarsComm liveVars (bbIrCommands bb)
 
 -- MAXIMAL SSA PASS ON BB -> updates BB (phi functions and commands) to conform to SSA form
 
@@ -119,21 +122,21 @@ pureBaseIrToMaximalSSA base versions =
         VAR_IR baseVar -> 
             case Map.lookup (variableIrName baseVar) versions of
                 Just currVar -> VAR_IR currVar
-                -- variable use in a pure IR must succeed the initialization of the variable
-                Nothing -> compilerError "Uncaught use of variable before assignment: " ++ (show baseVar)
+                -- variable use in a pure IR must succeed the assignment of the variable
+                Nothing -> error (compilerError ("Uncaught use of variable before assignment: " ++ (show baseVar)))
 
 -- PHI FUNCTION INJECTION: inject variable passage from bb to all successors
 
 bbInjectPhiFn :: FunctionIr -> LiveMap -> VariableIrVersion -> Int -> FunctionIr
 bbInjectPhiFn fnIr liveMap versions predBbIndex = 
     let succBbIndices = 
-            case Map.lookup predBbIndex functionIrSuccessorMap of
+            case Map.lookup predBbIndex (functionIrSuccessorMap fnIr) of
                 Just succs -> succs
                 Nothing -> Set.empty
     in foldr
             (\id interFnIr ->
                 case Map.lookup id (functionIrBlocks interFnIr) of
-                    Just bb -> addBbsToFunction 
+                    Just bb ->  
                         let newBb = succBbInjectPhiFn bb liveMap versions predBbIndex
                         in addBbsToFunction interFnIr [newBb]
                     Nothing -> interFnIr
@@ -158,8 +161,8 @@ succBbInjectPhiFn bbIr liveMap versions predBbIndex =
                         newPredMap = 
                             case Map.lookup (variableIrName baseVar) versions of
                                 Just currVar -> Map.insert predBbIndex currVar initPredMap
-                                Nothing -> compilerError "Incorrect liveness analysis resulted in variable " ++ (show baseVar) ++ 
-                                                " that is live-in at successor and not live-out from predecessor"
+                                Nothing -> error (compilerError ("Incorrect liveness analysis resulted in variable " ++ (show baseVar) ++ 
+                                                " that is live-in at successor and not live-out from predecessor"))
                     in Map.insert baseVar newPredMap interPhiFn
                 )
                 (bbIrPhiFn bbIr)
@@ -168,8 +171,8 @@ succBbInjectPhiFn bbIr liveMap versions predBbIndex =
 
 -- SSA Data Types and Helpers
 
--- map from bb index to variable names that are live-in at start of bb
-type LiveMap = Map.Map Int (Set.Set String)
+-- map from bb index to (base; i.e., SSAId = 0) variables that are live-in at start of bb
+type LiveMap = Map.Map Int (Set.Set VariableIr)
 
 -- map from variable name to most recent VariableIr version of variable
 type VariableIrVersion = Map.Map String VariableIr
@@ -177,7 +180,7 @@ type VariableIrVersion = Map.Map String VariableIr
 updateVarVersion :: VariableIr -> VariableIrVersion -> (VariableIr, VariableIrVersion)
 updateVarVersion (VariableIr name _ ty tmp) versions = 
     let currCount = 
-            case Map.lookup (variableIrName var) versions of
+            case Map.lookup name versions of
                 Just currVar -> (variableIrSSAId currVar)
                 Nothing -> 0
         newVar = VariableIr name (currCount + 1) ty tmp

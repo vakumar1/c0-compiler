@@ -2,6 +2,7 @@ module Ir (
     FunctionIr (..),
     BasicBlockIr (..),
     CommandIr (..),
+    PhiFnIr (..),
     PureIr (..),
     PureBaseIr (..),
     PureBinopIr (..),
@@ -116,8 +117,11 @@ data VariableIr = VariableIr
     }
     deriving (Show)
 instance Eq VariableIr where
-    (var1 == var2) = ((variableIrName var1) == (variableIrName var2)) 
+    var1 == var2 = ((variableIrName var1) == (variableIrName var2)) 
                         && ((variableIrSSAId var1) == (variableIrSSAId var2))
+instance Ord VariableIr where
+    var1 <= var2 = ((variableIrName var1) < (variableIrName var2))
+                        || (((variableIrName var1) == (variableIrName var2)) && ((variableIrSSAId var1) <= (variableIrSSAId var2)))
 
 -- HELPERS
 addBbsToFunction :: FunctionIr -> [BasicBlockIr] -> FunctionIr
@@ -147,7 +151,7 @@ addEdgeToCFG fn source dest =
      in FunctionIr (functionIrBlocks fn) newPredsMap newSuccsMap (functionIrTerminators fn)
 
 appendCommsToBb :: BasicBlockIr -> [CommandIr] -> BasicBlockIr
-appendCommsToBb bb comms = BasicBlockIr (bbIndex bb) (comms ++ (bbIrCommands bb))
+appendCommsToBb bb comms = BasicBlockIr (bbIndex bb) (bbIrPhiFn bb) (comms ++ (bbIrCommands bb))
 
 bbTerminates :: BasicBlockIr -> Bool
 bbTerminates bb =
