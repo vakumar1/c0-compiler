@@ -58,6 +58,10 @@ irSeq fnElab seq state currBb fnIr errs =
                 let (asnComms, asnState, asnErrs) = irAsn asnElab state
                     asnBb = appendCommsToBb currBb asnComms
                  in irSeq fnElab (tail seq) asnState asnBb fnIr (asnErrs ++ errs)
+            EXP_ELAB expElab : _ ->
+                let (expComms, expState, expErrs) = irExpStmt expElab state
+                    expBb = appendCommsToBb currBb expComms
+                in irSeq fnElab (tail seq) expState expBb fnIr (expErrs ++ errs)
             -- iii. start new basic block
             SEQ_ELAB innerSeq : _ ->
                 -- create inner block; create new scope; and evaluate for inner seq (then clean up top scope)
@@ -148,6 +152,11 @@ irAsn (AsnElab tok e) state =
             -- fail if varElab is not declared
             Nothing ->
                 ([], state, (USE_BEFORE_DECL (UseBeforeDeclarationError tok)) : expErrs)
+
+irExpStmt :: ExpElab -> State -> ([CommandIr], State, [VerificationError])
+irExpStmt e state = 
+    let (expComms, _, expState, expErrs) = irExp e state
+    in (expComms, expState, expErrs)
 
 irRet :: RetElab -> FunctionElab -> State -> ([CommandIr], State, [VerificationError])
 irRet (RetElab e) (FunctionElab _ (TypeElab retTy _) _) state =
@@ -300,18 +309,91 @@ varElabToIr varElab varScopeId =
 
 binopTypeInf :: BinopCatElab -> TypeCategory -> TypeCategory -> Maybe TypeCategory
 binopTypeInf cat t1 t2 =
-    case (t1, t2) of
-        (INT_TYPE, INT_TYPE) -> Just INT_TYPE
-        _ -> Nothing
+    case cat of
+        ADD_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just INT_TYPE
+                _ -> Nothing
+        SUB_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just INT_TYPE
+                _ -> Nothing
+        MUL_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just INT_TYPE
+                _ -> Nothing
+        DIV_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just INT_TYPE
+                _ -> Nothing
+        MOD_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just INT_TYPE
+                _ -> Nothing
+        AND_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just INT_TYPE
+                _ -> Nothing
+        XOR_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just INT_TYPE
+                _ -> Nothing
+        OR_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just INT_TYPE
+                _ -> Nothing
+        SLA_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just INT_TYPE
+                _ -> Nothing
+        SRA_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just INT_TYPE
+                _ -> Nothing
+        LT_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just BOOL_TYPE
+                _ -> Nothing
+        GT_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just BOOL_TYPE
+                _ -> Nothing
+        LTE_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just BOOL_TYPE
+                _ -> Nothing
+        GTE_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just BOOL_TYPE
+                _ -> Nothing
+        EQ_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just BOOL_TYPE
+                _ -> Nothing
+        NEQ_EXP_ELAB ->
+            case (t1, t2) of
+                (INT_TYPE, INT_TYPE) -> Just BOOL_TYPE
+                _ -> Nothing
+        LOGAND_EXP_ELAB ->
+            case (t1, t2) of
+                (BOOL_TYPE, BOOL_TYPE) -> Just BOOL_TYPE
+                _ -> Nothing
+        LOGOR_EXP_ELAB ->
+            case (t1, t2) of
+                (BOOL_TYPE, BOOL_TYPE) -> Just BOOL_TYPE
+                _ -> Nothing
 
 binopOpTranslate :: BinopCatElab -> TypeCategory -> PureIr -> PureIr -> State -> ([CommandIr], PureIr, State)
 binopOpTranslate cat ty p1 p2 state =
     let (expandComms1, expandPureBase1, expandState1) = expandPureIr p1 state
         (expandComms2, expandPureBase2, expandState2) = expandPureIr p2 expandState1
      in case cat of
-            ADD_EXP_ELAB -> (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr ADD_IR ty expandPureBase1 expandPureBase2), expandState2)
-            SUB_EXP_ELAB -> (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr SUB_IR ty expandPureBase1 expandPureBase2), expandState2)
-            MUL_EXP_ELAB -> (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr MUL_IR ty expandPureBase1 expandPureBase2), expandState2)
+            ADD_EXP_ELAB -> 
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr ADD_IR ty expandPureBase1 expandPureBase2), expandState2)
+            SUB_EXP_ELAB -> 
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr SUB_IR ty expandPureBase1 expandPureBase2), expandState2)
+            MUL_EXP_ELAB -> 
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr MUL_IR ty expandPureBase1 expandPureBase2), expandState2)
             DIV_EXP_ELAB ->
                 let (tempName, newState) = addTemp state
                     temp = VariableIr tempName 0 ty True
@@ -324,18 +406,59 @@ binopOpTranslate cat ty p1 p2 state =
                     binop = IMPURE_BINOP_IR (ImpureBinopIr MOD_IR ty expandPureBase1 expandPureBase2)
                     comm = ASN_IMPURE_IR temp binop
                  in (comm : (expandComms2 ++ expandComms1), PURE_BASE_IR (VAR_IR temp), newState)
+            AND_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr AND_IR ty expandPureBase1 expandPureBase2), expandState2)
+            XOR_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr XOR_IR ty expandPureBase1 expandPureBase2), expandState2)
+            OR_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr OR_IR ty expandPureBase1 expandPureBase2), expandState2)
+            SLA_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr SLA_IR ty expandPureBase1 expandPureBase2), expandState2)
+            SRA_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr SRA_IR ty expandPureBase1 expandPureBase2), expandState2)
+            LT_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr LT_IR ty expandPureBase1 expandPureBase2), expandState2)
+            GT_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr GT_IR ty expandPureBase1 expandPureBase2), expandState2)
+            LTE_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr LTE_IR ty expandPureBase1 expandPureBase2), expandState2)
+            GTE_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr GTE_IR ty expandPureBase1 expandPureBase2), expandState2)
+            EQ_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr EQ_IR ty expandPureBase1 expandPureBase2), expandState2)
+            NEQ_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr NEQ_IR ty expandPureBase1 expandPureBase2), expandState2)
+            LOGAND_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr LOGAND_IR ty expandPureBase1 expandPureBase2), expandState2)
+            LOGOR_EXP_ELAB ->
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr LOGOR_IR ty expandPureBase1 expandPureBase2), expandState2)            
 
 unopTypeInf :: UnopCatElab -> TypeCategory -> Maybe TypeCategory
 unopTypeInf cat t1 =
-    case t1 of
-        INT_TYPE -> Just INT_TYPE
-        _ -> Nothing
+    case cat of
+        NEG_EXP_ELAB ->
+            case t1 of
+                INT_TYPE -> Just INT_TYPE
+                _ -> Nothing
+        NOT_EXP_ELAB ->
+            case t1 of
+                INT_TYPE -> Just INT_TYPE
+                _ -> Nothing
+        LOGNOT_EXP_ELAB ->
+            case t1 of
+                BOOL_TYPE -> Just BOOL_TYPE
+                _ -> Nothing
 
 unopOpTranslate :: UnopCatElab -> TypeCategory -> PureIr -> State -> ([CommandIr], PureIr, State)
 unopOpTranslate cat ty p1 state =
     let (expandComms, expandPureBase, expandState) = expandPureIr p1 state
      in case cat of
-            NEG_EXP_ELAB -> (expandComms, PURE_UNOP_IR (PureUnopIr NEG_IR ty expandPureBase), expandState)
+            NEG_EXP_ELAB -> 
+                (expandComms, PURE_UNOP_IR (PureUnopIr NEG_IR ty expandPureBase), expandState)
+            NOT_EXP_ELAB ->
+                (expandComms, PURE_UNOP_IR (PureUnopIr NOT_IR ty expandPureBase), expandState)
+            LOGNOT_EXP_ELAB ->
+                (expandComms, PURE_UNOP_IR (PureUnopIr LOGNOT_IR ty expandPureBase), expandState)
 
 -- applies an extra level of processing to convert potentially recursive PureIr into
 -- [CommandIr] + Const/VariableIr

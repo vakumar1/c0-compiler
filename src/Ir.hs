@@ -88,6 +88,19 @@ data PureBinopCatIr
     = ADD_IR
     | SUB_IR
     | MUL_IR
+    | AND_IR
+    | XOR_IR
+    | OR_IR
+    | SLA_IR
+    | SRA_IR
+    | LT_IR
+    | GT_IR
+    | LTE_IR
+    | GTE_IR
+    | EQ_IR
+    | NEQ_IR
+    | LOGAND_IR
+    | LOGOR_IR
     deriving (Show)
 
 data PureUnopIr = PureUnopIr
@@ -99,6 +112,8 @@ data PureUnopIr = PureUnopIr
 
 data PureUnopCatIr
     = NEG_IR
+    | NOT_IR
+    | LOGNOT_IR
     deriving (Show)
 
 -- impure operations

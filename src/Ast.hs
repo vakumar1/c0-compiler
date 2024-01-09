@@ -27,11 +27,22 @@ type Block = Statements
 type Statements = [Statement]
 
 data Statement
-    = DECL_STMT Decl
-    | SIMP_STMT Simp
+    = SIMP_STMT Simp
     | RET_STMT Exp
     | BLOCK_STMT Block
     deriving (Show)
+
+data Simp 
+    = ASN_SIMP Asn
+    | DECL_SIMP Decl
+    | POST_SIMP Post
+    | EXP_SIMP Exp
+
+data Asn = Asn
+    { asnAsnop :: Token
+    , asnLvalue :: Lval
+    , asnExp :: Exp
+    }
 
 data Decl = Decl
     { declIdentifier :: Token
@@ -41,12 +52,10 @@ data Decl = Decl
     }
     deriving (Show)
 
-data Simp = Simp
-    { simpAsnop :: Token
-    , simpLvalue :: Lval
-    , simpExp :: Exp
+data Post = Post
+    { postSimpOp :: Token
+    , postSimpLvalue :: Lval,
     }
-    deriving (Show)
 
 data Lval = Lval
     { lvalIdent :: Token
@@ -56,9 +65,11 @@ data Lval = Lval
 data Exp
     = HEXNUM_EXP Token
     | DECNUM_EXP Token
+    | BOOL_EXP Token
     | IDENTIFIER_EXP Token
     | BINOP_EXP Binop
     | UNOP_EXP Unop
+    | TERN_EXP Exp Exp Exp
     deriving (Show)
 
 data Unop = Unop

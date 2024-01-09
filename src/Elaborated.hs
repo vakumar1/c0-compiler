@@ -31,6 +31,7 @@ data StatementElab
     = DECL_ELAB DeclElab
     | ASN_ELAB AsnElab
     | RET_ELAB RetElab
+    | EXP_ELAB ExpElab
     | SEQ_ELAB SeqElab
 
 data DeclElab = DeclElab
@@ -54,6 +55,7 @@ data ExpElab
     | IDENTIFIER_ELAB Token
     | BINOP_ELAB BinopElab
     | UNOP_ELAB UnopElab
+    | TERN_ELAB ExpElab ExpElab ExpElab
 
 data BinopElab = BinopElab
     { binopElabCat :: BinopCatElab
@@ -68,6 +70,19 @@ data BinopCatElab
     | MUL_EXP_ELAB
     | DIV_EXP_ELAB
     | MOD_EXP_ELAB
+    | AND_EXP_ELAB
+    | XOR_EXP_ELAB
+    | OR_EXP_ELAB
+    | SLA_EXP_ELAB
+    | SRA_EXP_ELAB
+    | LT_EXP_ELAB
+    | GT_EXP_ELAB
+    | LTE_EXP_ELAB
+    | GTE_EXP_ELAB
+    | EQ_EXP_ELAB
+    | NEQ_EXP_ELAB
+    | LOGAND_EXP_ELAB
+    | LOGOR_EXP_ELAB
 
 data UnopElab = UnopElab
     { unopElabCat :: UnopCatElab
@@ -77,10 +92,8 @@ data UnopElab = UnopElab
 
 data UnopCatElab
     = NEG_EXP_ELAB
-
-data OpElabCat
-    = BINOP_CAT_ELAB BinopCatElab
-    | UNOP_CAT_ELAB UnopCatElab
+    | NOT_EXP_ELAB
+    | LOGNOT_EXP_ELAB
 
 data VariableElab = VariableElab
     { variableElabIdentifier :: Token
