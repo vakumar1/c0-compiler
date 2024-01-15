@@ -110,13 +110,13 @@ Stmt : Simp ';'         { SIMP_STMT $1 }
 
 Simp : Asn              { ASN_SIMP $1 }
     | Decl              { DECL_SIMP $1 }
-    | Post              { POSTOP_SIMP $1 }
+    | Post              { POST_SIMP $1 }
     | Exp               { EXP_SIMP $1 }
 
 Asn : Lval Asnop Exp    { Asn $2 $1 $3 }
 
-Decl : Type ident        { Decl $2 (Type INT_TYPE $1) Nothing Nothing }
-    | Type ident '=' Exp { Decl $2 (Type INT_TYPE $1) (Just $3) (Just $4) }
+Decl : Type ident        { Decl $2 $1 Nothing Nothing }
+    | Type ident '=' Exp { Decl $2 $1 (Just $3) (Just $4) }
 
 Type : int          { Type INT_TYPE $1 }
     | bool          { Type BOOL_TYPE $1 }
@@ -148,7 +148,7 @@ Exp : '(' Exp ')'   { $2 }
     | ident         { IDENTIFIER_EXP $1 }
     | Exp Binop Exp { BINOP_EXP (Binop $2 $1 $3) }
     | Unop Exp      { UNOP_EXP (Unop $1 $2) }
-    | Exp '?' Exp ':' Exp   { TERN_EXP $1 $2 $3 }
+    | Exp '?' Exp ':' Exp   { TERN_EXP $1 $3 $5 }
 
 Binop : '+' { $1 }
     | '-'   { $1 }

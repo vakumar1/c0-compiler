@@ -4,8 +4,10 @@ module Ast (
     Statements,
     Statement (..),
     Simp (..),
-    Lval (..),
+    Asn (..),
     Decl (..),
+    Post (..),
+    Lval (..),
     Exp (..),
     Const (..),
     Unop (..),
@@ -37,12 +39,14 @@ data Simp
     | DECL_SIMP Decl
     | POST_SIMP Post
     | EXP_SIMP Exp
+    deriving (Show)
 
 data Asn = Asn
     { asnAsnop :: Token
     , asnLvalue :: Lval
     , asnExp :: Exp
     }
+    deriving (Show)
 
 data Decl = Decl
     { declIdentifier :: Token
@@ -54,8 +58,9 @@ data Decl = Decl
 
 data Post = Post
     { postSimpOp :: Token
-    , postSimpLvalue :: Lval,
+    , postSimpLvalue :: Lval
     }
+    deriving (Show)
 
 data Lval = Lval
     { lvalIdent :: Token

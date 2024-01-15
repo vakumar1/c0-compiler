@@ -5,6 +5,7 @@ module Lexer (
 import Errors
 import Tokens
 
+import qualified Data.Maybe as Maybe
 import qualified Data.Char as C
 import qualified Data.Foldable as F
 
@@ -23,7 +24,7 @@ lexerHelper finishedTokens openerStack errors currToken remainingStr lineNo line
         let errorsAddDangler = foldr (\o l -> (LexerError ((tokenLineNo . tokenData) o) ((tokenLinePos . tokenData) o) DanglingOpenEncloserError) : l) errors openerStack
          in (finishedTokens, errorsAddDangler)
     -- delimiters
-    | (isDelim . head) remainingStr =
+    | isDelim remainingStr =
         -- try to process current token and delimiter
         let (delimTokenCat, delimLength) = case classifyDelim remainingStr of
                 Just (c, l) -> (Just c, l)
@@ -114,19 +115,22 @@ closerMatchesLastOpener openerStack closer =
 
 -- DELIM HELPERS
 
+isDelim :: String -> Bool
+isDelim s = 
+    if null s
+        then error (compilerError "Expected delimiter at EOF.")
+        else elem (head s) whitespaceDelims || Maybe.isJust (classifyDelim s)
+
 whitespaceDelims :: String
 whitespaceDelims = " \n\t\v\r\f"
-
-reservedCharDelims :: String
-reservedCharDelims = ";()[]{}+-*/%="
-
-isDelim :: Char -> Bool
-isDelim d = elem d whitespaceDelims || elem d reservedCharDelims
 
 classifyDelim :: String -> Maybe (TokenCategory, Int)
 classifyDelim remainingStr =
     F.asum
-        [ case reservedDoubleTok remainingStr of
+        [ case reservedTripleTok remainingStr of
+            Just t -> Just (t, 3)
+            _ -> Nothing
+        , case reservedDoubleTok remainingStr of
             Just t -> Just (t, 2)
             _ -> Nothing
         , case reservedCharTok remainingStr of
@@ -134,14 +138,34 @@ classifyDelim remainingStr =
             _ -> Nothing
         ]
 
+reservedTripleTok :: String -> Maybe TokenCategory
+reservedTripleTok s = 
+    case s of
+        '<' : '<' : '=' : _ -> Just LEFT_LEFT_EQ
+        '>' : '>' : '=' : _ -> Just RIGHT_RIGHT_EQ
+        _ -> Nothing
+
 reservedDoubleTok :: String -> Maybe TokenCategory
 reservedDoubleTok s =
     case s of
+        '<' : '<' : _ -> Just LEFT_LEFT
+        '>' : '>' : _ -> Just RIGHT_RIGHT
+        '<' : '=' : _ -> Just LEFT_EQ
+        '>' : '=' : _ -> Just RIGHT_EQ
+        '=' : '=' : _ -> Just EQ_EQ
+        '!' : '=' : _ -> Just EXCL_EQ
+        '&' : '&' : _ -> Just AMP_AMP
+        '|' : '|' : _ -> Just PIPE_PIPE
         '+' : '=' : _ -> Just PLUS_EQ
         '-' : '=' : _ -> Just DASH_EQ
         '*' : '=' : _ -> Just STAR_EQ
         '/' : '=' : _ -> Just SLASH_EQ
         '%' : '=' : _ -> Just PERC_EQ
+        '&' : '=' : _ -> Just AMP_EQ
+        '^' : '=' : _ -> Just CARET_EQ
+        '|' : '=' : _ -> Just PIPE_EQ
+        '+' : '+' : _ -> Just PLUS_PLUS
+        '-' : '-' : _ -> Just DASH_DASH
         _ -> Nothing
 
 reservedCharTok :: String -> Maybe TokenCategory
@@ -160,6 +184,15 @@ reservedCharTok s =
         '/' : _ -> Just SLASH
         '%' : _ -> Just PERC
         '=' : _ -> Just EQUAL
+        '!' : _ -> Just EXCL
+        '~' : _ -> Just TILDE
+        '<' : _ -> Just LEFT
+        '>' : _ -> Just RIGHT
+        '&' : _ -> Just AMP
+        '^' : _ -> Just CARET
+        '|' : _ -> Just PIPE
+        '?' : _ -> Just QUEST
+        ':' : _ -> Just COLON
         _ -> Nothing
 
 classifyToken :: String -> Maybe TokenCategory
@@ -174,7 +207,7 @@ classifyToken s =
         , case hexnumTok s of
             Just t -> Just t
             _ -> Nothing
-        , case idenifierTok s of
+        , case identifierTok s of
             Just t -> Just t
             _ -> Nothing
         ]
@@ -219,8 +252,8 @@ hexnumTok s =
                 Just (HEXNUM s)
         _ -> Nothing
 
-idenifierTok :: String -> Maybe TokenCategory
-idenifierTok s =
+identifierTok :: String -> Maybe TokenCategory
+identifierTok s =
     let alphaUnder = \c -> C.isLetter c || c == '_'
      in case s of
             f : _

@@ -10,7 +10,9 @@ data Token = Token
     }
     deriving (Eq, Show)
 data TokenCategory
-    = SEMICOLON
+    = 
+    -- single-char delims 
+    SEMICOLON
     | OPEN_PAREN
     | OPEN_BRACK
     | OPEN_BRACE
@@ -22,12 +24,39 @@ data TokenCategory
     | STAR
     | SLASH
     | PERC
+    | EQUAL
+    | EXCL
+    | TILDE
+    | LEFT
+    | RIGHT
+    | AMP
+    | CARET
+    | PIPE
+    | QUEST
+    | COLON
+    -- double-char delims
+    | LEFT_LEFT
+    | RIGHT_RIGHT
+    | LEFT_EQ
+    | RIGHT_EQ
+    | EQ_EQ
+    | EXCL_EQ
+    | AMP_AMP
+    | PIPE_PIPE
     | PLUS_EQ
     | DASH_EQ
     | STAR_EQ
     | SLASH_EQ
     | PERC_EQ
-    | EQUAL
+    | AMP_EQ
+    | CARET_EQ
+    | PIPE_EQ
+    | PLUS_PLUS
+    | DASH_DASH
+    -- three-char delims
+    | LEFT_LEFT_EQ
+    | RIGHT_RIGHT_EQ
+    -- keywords/identifiers/numerals
     | IDENTIFIER String
     | DECNUM String
     | HEXNUM String
