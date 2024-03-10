@@ -1,4 +1,4 @@
-module Errors (
+module Common.Errors (
     LexerError (..),
     LexerErrorCategory (..),
     ParserError (..),
@@ -14,8 +14,8 @@ module Errors (
     compilerError,
 ) where
 
-import Tokens
-import Types
+import Model.Tokens
+import Model.Types
 
 compilerError :: String -> String
 compilerError msg = "[INTERNAL COMPILER ERROR OCCURRED.]: " ++ msg

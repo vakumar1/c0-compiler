@@ -1,4 +1,4 @@
-module Tokens (
+module Model.Tokens (
     Token (..),
     TokenCategory (..),
     TokenData (..),

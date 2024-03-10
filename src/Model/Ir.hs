@@ -1,4 +1,4 @@
-module Ir (
+module Model.Ir (
     FunctionIr (..),
     BasicBlockIr (..),
     CommandIr (..),
@@ -22,7 +22,7 @@ module Ir (
 )
 where
 
-import Types
+import Model.Types
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set

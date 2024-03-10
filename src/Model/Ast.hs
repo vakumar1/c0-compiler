@@ -1,4 +1,4 @@
-module Ast (
+module Model.Ast (
     Function (..),
     Block,
     Statements,
@@ -15,8 +15,8 @@ module Ast (
     Type (..),
 ) where
 
-import Tokens
-import Types
+import Model.Tokens
+import Model.Types
 
 data Function = Function
     { functionName :: Token

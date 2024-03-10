@@ -1,4 +1,4 @@
-module X86 (
+module Model.X86 (
     Label,
     X86Instruction (..),
     ArgLocation (..),

@@ -1,10 +1,10 @@
-module Types (
+module Model.Types (
     TypeCategory (..),
     Const (..),
     constToType,
 ) where
 
-import Tokens
+import Model.Tokens
 
 data TypeCategory
     = INT_TYPE

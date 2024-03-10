@@ -1,11 +1,11 @@
-module RegAlloc (
+module Backend.RegAlloc (
     regAllocColoring,
 )
 
 where
 
-import Ir
-import Liveness
+import Model.Ir
+import Common.Liveness
 
 import qualified Data.List as List
 import qualified Data.Map as Map

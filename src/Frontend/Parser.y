@@ -1,11 +1,11 @@
 {
-module Parser (
+module Frontend.Parser (
     parser,
 ) where
 
-import Tokens
-import Types
-import Ast
+import Model.Tokens
+import Model.Types
+import Model.Ast
 
 }
 

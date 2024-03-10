@@ -1,14 +1,15 @@
-module AstToElab (
+module Middleend.AstToElab (
     elaborate,
 ) where
 
-import Ast
+import Model.Ast
+import Model.Elaborated
+import Common.Errors
+import Model.Tokens
+import Model.Types
+
 import qualified Data.Map as Map
-import Elaborated
-import Errors
 import qualified Numeric
-import Tokens
-import Types
 
 {-
 

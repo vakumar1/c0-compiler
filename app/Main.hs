@@ -2,17 +2,17 @@ module Main (main) where
 
 -- import Ast
 
-import AstToElab
-import Codegen
-import ElabToIr
-import Errors
-import Ir
-import IrToSSA
-import Lexer
-import Liveness
-import Parser
-import RegAlloc
-import X86
+import Middleend.AstToElab
+import Backend.Codegen
+import Middleend.ElabToIr
+import Common.Errors
+import Model.Ir
+import Middleend.IrToSSA
+import Frontend.Lexer
+import Common.Liveness
+import Frontend.Parser
+import Backend.RegAlloc
+import Model.X86
 
 -- import Parser
 import qualified Data.Map as Map
@@ -21,23 +21,11 @@ import System.Environment
 
 handleLexerErrors :: [LexerError] -> String
 handleLexerErrors errors =
-    ( foldl
-        ( \s e ->
-            s ++ (show e) ++ "\n"
-        )
-        "Lexer Error(s) occurred: "
-        errors
-    )
+    "Lexer Error(s) occurred: " ++ (prettyPrintList errors)
 
 handleParserErrors :: [ParserError] -> String
 handleParserErrors errors =
-    ( foldl
-        ( \s e ->
-            s ++ (show e) ++ "\n"
-        )
-        "Parser Error(s) occurred: \n"
-        errors
-    )
+    "Parser Error(s) occurred: \n" ++ (prettyPrintList errors)
 
 prettyPrintList :: (Show a) => [a] -> String
 prettyPrintList l =

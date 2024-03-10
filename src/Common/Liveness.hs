@@ -1,4 +1,4 @@
-module Liveness (
+module Common.Liveness (
     updateLiveVarsPhi,
     getUsedVarsPredMap,
     updateLiveVarsComm,
@@ -7,7 +7,7 @@ module Liveness (
 )
 where
 
-import Ir
+import Model.Ir
 
 import qualified Data.List as List
 import qualified Data.Map as Map

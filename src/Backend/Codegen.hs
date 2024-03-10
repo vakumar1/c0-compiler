@@ -1,13 +1,13 @@
-module Codegen (
+module Backend.Codegen (
     irToX86,
 )
 where
 
-import Ir
-import Liveness
-import Types
-import X86
-import Errors
+import Model.Ir
+import Common.Liveness
+import Model.Types
+import Model.X86
+import Common.Errors
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set

@@ -1,10 +1,10 @@
-module IrToSSA (
+module Middleend.IrToSSA (
     irToMaximalSSA,
 ) where
 
-import Errors
-import Ir
-import Liveness
+import Common.Errors
+import Model.Ir
+import Common.Liveness
 
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe

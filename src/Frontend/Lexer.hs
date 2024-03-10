@@ -1,9 +1,9 @@
-module Lexer (
+module Frontend.Lexer (
     lexer,
 ) where
 
-import Errors
-import Tokens
+import Common.Errors
+import Model.Tokens
 
 import qualified Data.Maybe as Maybe
 import qualified Data.Char as C

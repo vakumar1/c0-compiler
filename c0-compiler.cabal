@@ -25,21 +25,21 @@ source-repository head
 
 library
   exposed-modules:
-      Ast
-      AstToElab
-      Codegen
-      Elaborated
-      ElabToIr
-      Errors
-      Ir
-      IrToSSA
-      Lexer
-      Liveness
-      Parser
-      RegAlloc
-      Tokens
-      Types
-      X86
+      Backend.Codegen
+      Backend.RegAlloc
+      Common.Errors
+      Common.Liveness
+      Frontend.Lexer
+      Frontend.Parser
+      Middleend.AstToElab
+      Middleend.ElabToIr
+      Middleend.IrToSSA
+      Model.Ast
+      Model.Elaborated
+      Model.Ir
+      Model.Tokens
+      Model.Types
+      Model.X86
   other-modules:
       Paths_c0_compiler
   autogen-modules:

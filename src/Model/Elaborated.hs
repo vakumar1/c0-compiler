@@ -1,4 +1,4 @@
-module Elaborated (
+module Model.Elaborated (
     FunctionElab (..),
     StatementElab (..),
     DeclElab (..),
@@ -15,9 +15,9 @@ module Elaborated (
     extractIdentifierName,
 ) where
 
-import Errors
-import Tokens
-import Types
+import Common.Errors
+import Model.Tokens
+import Model.Types
 
 import qualified Data.Map as Map
 

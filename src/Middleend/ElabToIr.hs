@@ -1,13 +1,13 @@
-module ElabToIr (
+module Middleend.ElabToIr (
     irFunction,
 )
 where
 
-import Elaborated
-import Errors
-import Ir
-import Tokens
-import Types
+import Model.Elaborated
+import Common.Errors
+import Model.Ir
+import Model.Tokens
+import Model.Types
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -428,6 +428,7 @@ binopOpTranslate cat ty p1 p2 state =
                 (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr EQ_IR ty expandPureBase1 expandPureBase2), expandState2)
             NEQ_EXP_ELAB ->
                 (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr NEQ_IR ty expandPureBase1 expandPureBase2), expandState2)
+            -- TODO: add short-circuiting for logical and/or
             LOGAND_EXP_ELAB ->
                 (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr LOGAND_IR ty expandPureBase1 expandPureBase2), expandState2)
             LOGOR_EXP_ELAB ->
