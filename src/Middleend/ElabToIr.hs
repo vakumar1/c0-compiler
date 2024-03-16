@@ -18,11 +18,10 @@ import qualified Data.Set as Set
 
 data IrProcessingState = IrProcessingState
     {
-    -- current state of function ir
       irProcStateCurrBb :: BasicBlockIr             -- current BasicBlock to add statement commands to (Nothing on return)
     , irProcStateFunctionIr :: FunctionIr           -- current Function
     , irProcStateErrors :: [VerificationError]      -- current errors
-    , irProcStateBbCtr :: Int                            -- BasicBlock id counter
+    , irProcStateBbCtr :: Int                       -- BasicBlock id counter
     , irProcScopeState :: IrProcessingScopeState    -- current scope state
     }
 
@@ -56,96 +55,40 @@ irStatement stmtElab fnElab state =
         DECL_ELAB declElab -> irDecl declElab state
         ASN_ELAB asnElab -> irAsn asnElab state
         EXP_ELAB expElab -> irExpStmt expElab state
-        SEQ_ELAB seqElab ->
+        SEQ_ELAB seqElab -> irSeq seqElab fnElab state
         IF_ELAB ifElab ->
         WHILE_ELAB whileElab ->
 
--- Seq Elab -> IR is responsible for:
--- i. constructing all new BasicBlocks (except the initial BB)
--- ii. appending commands to the current BB
--- iii. adding all BBs it terminates to function-wide BB tracker map
--- iv. adding edges between BBs in function-wide CFG (and adding corresponding instructions)
--- v. returning the indices of the ENTRY BB and EXIT BB of the Seq
-irSeq ::
-    FunctionElab ->
-    SeqElab ->
-    State ->
-    BasicBlockIr ->
-    FunctionIr ->
-    [VerificationError] ->
-    ((Int, Int), State, FunctionIr, [VerificationError])
-irSeq fnElab seq state currBb fnIr errs =
-    let currIndex = bbIndex currBb
-     in case seq of
-            -- i. terminate current basic block and add to fnIr
-            [] ->
-                let termFnIr = addBbsToFunction fnIr [currBb]
-                 in ((currIndex, currIndex), state, termFnIr, errs)
-            RET_ELAB retElab : _ ->
-                let (retComms, retState, retErrs) = irRet retElab fnElab state
-                    retBb = appendCommsToBb currBb retComms
-                    retFnIr = addBbsToFunction fnIr [retBb]
-                 in ((currIndex, currIndex), retState, retFnIr, retErrs ++ errs)
-            -- ii. extend current basic block
-            DECL_ELAB declElab : _ ->
-                let (declComms, declState, declErrs) = irDecl declElab state
-                    declBb = appendCommsToBb currBb declComms
-                 in irSeq fnElab (tail seq) declState declBb fnIr (declErrs ++ errs)
-            ASN_ELAB asnElab : _ ->
-                let (asnComms, asnState, asnErrs) = irAsn asnElab state
-                    asnBb = appendCommsToBb currBb asnComms
-                 in irSeq fnElab (tail seq) asnState asnBb fnIr (asnErrs ++ errs)
-            EXP_ELAB expElab : _ ->
-                let (expComms, expState, expErrs) = irExpStmt expElab state
-                    expBb = appendCommsToBb currBb expComms
-                in irSeq fnElab (tail seq) expState expBb fnIr (expErrs ++ errs)
-            -- iii. start new basic block
-            SEQ_ELAB innerSeq : _ ->
-                -- create inner block; create new scope; and evaluate for inner seq (then clean up top scope)
-                let (innerBb, createInnerState) = addBb state
-                    addScopeState = addScope createInnerState
-                    ((innerStartIndex, innerEndIndex), innerState, innerFnIr, innerErrs) = irSeq fnElab innerSeq addScopeState innerBb fnIr []
-                    removeScopeState = popScopeMap innerState
-
-                    -- curr => inner blocks: add goto command and CFG edges
-                    currInnerComm = GOTO_BB_IR innerStartIndex
-                    currInnerBb = appendCommsToBb currBb [currInnerComm]
-                    currInnerFnIr = addEdgeToCFG innerFnIr currIndex innerStartIndex
-                    innerFinishedBb =
-                        -- note: the innerEndIndex BB must be in the latest fnIr since it terminates the BB
-                        -- and is responsible for adding it to the fnIr it returns
-                        case (Map.lookup innerEndIndex (functionIrBlocks currInnerFnIr)) of
-                            Just bb -> bb
-                 in -- o/w create tail block
-                    if (bbTerminates innerFinishedBb)
-                        then -- ignore tail block if inner BB terminates
-
-                            let
-                                -- add updated curr block to fnIr
-                                finalFnIr = addBbsToFunction currInnerFnIr [currInnerBb]
-                                finalErrs = innerErrs ++ errs
-                             in
-                                ((currIndex, innerEndIndex), removeScopeState, finalFnIr, finalErrs)
-                        else -- o/w create tail block
-
-                            let
-                                -- create next block; and evaluate for tail seq
-                                nextSeq = tail seq
-                                (nextBb, createNextState) = addBb removeScopeState
-                                ((nextStartIndex, nextEndIndex), nextState, nextFnIr, nextErrs) = irSeq fnElab nextSeq createNextState nextBb currInnerFnIr []
-
-                                -- inner => next blocks: add goto command and CFG edges
-                                innerNextComm = GOTO_BB_IR nextStartIndex
-                                innerNextBb = appendCommsToBb innerFinishedBb [innerNextComm]
-                                innerNextFnIr = addEdgeToCFG nextFnIr innerEndIndex nextStartIndex
-
-                                -- add updated curr/inner blocks to fnIr
-                                finalFnIr = addBbsToFunction innerNextFnIr [currInnerBb, innerNextBb]
-                                finalErrs = nextErrs ++ innerErrs ++ errs
-                             in
-                                ((currIndex, nextEndIndex), nextState, finalFnIr, finalErrs)
-
 -- STATEMENT ELAB->IR
+irSeq :: SeqElab -> FunctionElab -> IrProcessingState -> (Bool, PredecessorCommands, IrProcessingState)
+irSeq seq fnElab state = 
+    let 
+        -- insert inner scope for block
+        innerScopeState = addScope (irProcScopeState state)
+        innerState = (irProcessingStateUpdateScopeState innerScopeState state)
+
+        -- apply each statement in block and
+        -- i. check if statement terminates
+        -- ii. apply predecessor command injection
+        (finalTerm, finalState) =
+            foldl
+                (\(interTerm, interState) stmt ->
+                    if interTerm
+                        then (interTerm, interState)
+                        else
+                            let (stmtTerm, stmtPredComms, stmtState) = irStatement stmt fnElab interState
+                            in if stmtTerm
+                                then (True, stmtState)
+                                else (False, (applyPredecessorCommands stmtState stmtPredComms))
+                )
+                (False, innerState)
+                seq
+
+        -- remove inner scope
+        outerScopeState = popScopeMap (irProcScopeState finalState)
+        outerState = (irProcessingStateUpdateScopeState outerScopeState finalState)
+    in (finalTerm, predecessorCommandsEmpty, outerState)
+
 irDecl :: DeclElab -> IrProcessingState -> (Bool, PredecessorCommands, IrProcessingState)
 irDecl (DeclElab varElab Nothing) state =
     let name = extractIdentifierName (variableElabIdentifier varElab)
