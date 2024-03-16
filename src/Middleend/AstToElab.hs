@@ -36,7 +36,7 @@ elaborateStmts ss =
                 DECL_SIMP d -> (DECL_ELAB (elaborateDecl d)) : (elaborateStmts (tail ss))
                 POST_SIMP p -> (ASN_ELAB (elaboratePost p)) : (elaborateStmts (tail ss))
                 EXP_SIMP e -> (EXP_ELAB (elaborateExp e)) : (elaborateStmts (tail ss))
-        RET_STMT e : _ -> (RET_ELAB (RetElab (elaborateExp e))) : (elaborateStmts (tail ss))
+        CONTROL_STMT (RET_CTRL e) : _ -> (RET_ELAB (RetElab (elaborateExp e))) : (elaborateStmts (tail ss))
         BLOCK_STMT b : _ -> (SEQ_ELAB (elaborateBlock b)) : (elaborateStmts (tail ss))
 
 -- TODO: fix comb assignment operators

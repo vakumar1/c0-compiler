@@ -4,9 +4,13 @@ module Model.Ast (
     Statements,
     Statement (..),
     Simp (..),
+    Control (..),
     Asn (..),
     Decl (..),
     Post (..),
+    If (..),
+    While (..),
+    For (..),
     Lval (..),
     Exp (..),
     Const (..),
@@ -28,9 +32,10 @@ type Block = Statements
 
 type Statements = [Statement]
 
+-- high-level statement operations
 data Statement
     = SIMP_STMT Simp
-    | RET_STMT Exp
+    | CONTROL_STMT Control
     | BLOCK_STMT Block
     deriving (Show)
 
@@ -41,6 +46,14 @@ data Simp
     | EXP_SIMP Exp
     deriving (Show)
 
+data Control
+    = IF_CTRL If
+    | WHILE_CTRL While
+    | FOR_CTRL For
+    | RET_CTRL Exp
+    deriving (Show)
+
+-- low-level statement operations
 data Asn = Asn
     { asnAsnop :: Token
     , asnLvalue :: Lval
@@ -62,6 +75,28 @@ data Post = Post
     }
     deriving (Show)
 
+data If = If
+    { ifExp :: Exp
+    , ifStmt :: Statement
+    , ifElseoptStmt :: Maybe Statement
+    }
+    deriving (Show)
+
+data While = While
+    { whileExp :: Exp
+    , whileStmt :: Statement
+    }
+    deriving (Show)
+
+data For = For
+    { forInitSimp :: Maybe Simp
+    , forTermExp :: Exp
+    , forInterSimp :: Maybe Simp
+    , forStmt :: Statement
+    }
+    deriving (Show)
+
+-- statement objects
 data Lval = Lval
     { lvalIdent :: Token
     }

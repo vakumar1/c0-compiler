@@ -64,6 +64,8 @@ import Model.Ast
     ident           { Token (IDENTIFIER _) _ }
     dec             { Token (DECNUM _) _ }
     hex             { Token (HEXNUM _) _ }
+    if              { Token IF _ }
+    else            { Token ELSE _ }
     while           { Token WHILE _ }
     for             { Token FOR _ }
     continue        { Token CONTINUE _ }
@@ -97,7 +99,8 @@ import Model.Ast
 %left '=' '+=' '-=' '*=' '/=' '%=' '&=' '^=' '|=' '<<=' '>>='
 %%
 
-Function : int main '(' void ')' Block   { Function $2 (Type INT_TYPE $1) $6 }
+Function : int main '(' void ')' Block   
+                        { Function $2 (Type INT_TYPE $1) $6 }
 
 Block : '{' Stmts '}'   { $2 }
 
@@ -106,22 +109,42 @@ Stmts :                 { [] }
 
 Stmt : Simp ';'         { SIMP_STMT $1 }
     | Block             { BLOCK_STMT $1 }
-    | return Exp ';'    { RET_STMT $2 }
+    | Control           { CONTROL_STMT $1 }
 
 Simp : Asn              { ASN_SIMP $1 }
     | Decl              { DECL_SIMP $1 }
     | Post              { POST_SIMP $1 }
     | Exp               { EXP_SIMP $1 }
 
+Control : If            { IF_CTRL $1 }
+    | While             { WHILE_CTRL $1 }
+    | For               { FOR_CTRL $1 }
+    | return Exp ';'    { RET_CTRL $2 }
+
 Asn : Lval Asnop Exp    { Asn $2 $1 $3 }
 
 Decl : Type ident        { Decl $2 $1 Nothing Nothing }
     | Type ident '=' Exp { Decl $2 $1 (Just $3) (Just $4) }
 
-Type : int          { Type INT_TYPE $1 }
-    | bool          { Type BOOL_TYPE $1 }
+Type : int              { Type INT_TYPE $1 }
+    | bool              { Type BOOL_TYPE $1 }
 
 Post : Lval Postop      { Post $2 $1 }
+
+If : if '(' Exp ')' Stmt Elseopt    
+                        { If $3 $5 $6 }
+
+While : while '(' Exp ')' Stmt
+                        { While $3 $5 }
+
+For : for '(' Simpopt ';' Exp ';' Simpopt ')' Stmt
+                        { For $3 $5 $7 $9 }
+
+Elseopt :               { Nothing }
+    | else Stmt         { Just $2 }
+
+Simpopt :               { Nothing }
+    | Simp              { Just $1 }
 
 Lval : ident            { Lval $1 }
     | '(' Lval ')'      { $2 }

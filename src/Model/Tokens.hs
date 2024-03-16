@@ -60,6 +60,8 @@ data TokenCategory
     | IDENTIFIER String
     | DECNUM String
     | HEXNUM String
+    | IF
+    | ELSE
     | WHILE
     | FOR
     | CONTINUE

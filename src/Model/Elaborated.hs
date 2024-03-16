@@ -30,6 +30,8 @@ data FunctionElab = FunctionElab
 data StatementElab
     = DECL_ELAB DeclElab
     | ASN_ELAB AsnElab
+    | IF_ELAB IfElab
+    | WHILE_ELAB WhileElab
     | RET_ELAB RetElab
     | EXP_ELAB ExpElab
     | SEQ_ELAB SeqElab
@@ -42,6 +44,17 @@ data DeclElab = DeclElab
 data AsnElab = AsnElab
     { asnElabIdentifier :: Token
     , asnElabExpression :: ExpElab
+    }
+
+data IfElab = IfElab
+    { ifElabExp :: ExpElab
+    , ifElabStmt :: StatementElab
+    , ifElabElseoptStmt :: Maybe StatementElab
+    }
+
+data WhileElab = WhileElab
+    { whileElabExp :: ExpElab
+    , whileElabStmt :: StatementElab
     }
 
 data RetElab = RetElab

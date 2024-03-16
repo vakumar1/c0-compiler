@@ -215,6 +215,8 @@ classifyToken s =
 reservedKeywordTok :: String -> Maybe TokenCategory
 reservedKeywordTok s =
     case s of
+        "if" -> Just IF
+        "else" -> Just ELSE
         "while" -> Just WHILE
         "for" -> Just FOR
         "continue" -> Just CONTINUE

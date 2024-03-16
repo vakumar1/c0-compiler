@@ -59,6 +59,7 @@ data CommandIr
     | ASN_PURE_IR VariableIr PureIr
     | ASN_IMPURE_IR VariableIr ImpureIr
     | GOTO_BB_IR Int
+    | SPLIT_BB_IR PureBaseIr Int Int
     | RET_PURE_IR PureIr
     deriving (Show)
 
