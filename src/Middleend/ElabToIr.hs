@@ -43,32 +43,39 @@ data Scope = Scope
 
 irFunction :: FunctionElab -> (FunctionIr, [VerificationError])
 irFunction fnElab =
-    let (initBb, initState) = addBb (addScope (State [] 0 0 0))
+    let initBbIr = BasicBlockIr 0 Map.empty []
         initFnIr = FunctionIr Map.empty Map.empty Map.empty Set.empty
-        (_, _, finalFnIr, errs) = irSeq fnElab (functionElabBlock fnElab) initState initBb initFnIr []
-     in (finalFnIr, errs)
+        initScopeState = IrProcessingScopeState [] 0 0
+        initState = IrProcessingState initBbIr initFnIr [] 1 initScopeState
+        (finalTerm, _, finalState) = irSeq (functionElabBlock fnElab) fnElab initState
+        errs = 
+            if finalTerm
+                then (irProcStateErrors finalState)
+                else (INVALID_RET (InvalidReturnError (functionElabName fnElab))):(irProcStateErrors finalState)
+        fnIr = (irProcStateFunctionIr finalState)
+    in (fnIr, errs)
 
 irStatement :: StatementElab -> FunctionElab -> IrProcessingState -> (Bool, PredecessorCommands, IrProcessingState)
 irStatement stmtElab fnElab state = 
-    case stmt of
+    case stmtElab of
         RET_ELAB retElab -> irRet retElab fnElab state
         DECL_ELAB declElab -> irDecl declElab state
         ASN_ELAB asnElab -> irAsn asnElab state
         EXP_ELAB expElab -> irExpStmt expElab state
         SEQ_ELAB seqElab -> irSeq seqElab fnElab state
-        IF_ELAB ifElab ->
-        WHILE_ELAB whileElab ->
+        -- IF_ELAB ifElab ->
+        -- WHILE_ELAB whileElab ->
 
 -- STATEMENT ELAB->IR
 irSeq :: SeqElab -> FunctionElab -> IrProcessingState -> (Bool, PredecessorCommands, IrProcessingState)
 irSeq seq fnElab state = 
     let 
         -- insert inner scope for block
-        innerScopeState = addScope (irProcScopeState state)
+        innerScopeState = irProcessingScopeStateAddScope (irProcScopeState state)
         innerState = (irProcessingStateUpdateScopeState innerScopeState state)
 
         -- apply each statement in block and
-        -- i. check if statement terminates
+        -- i. check if statement terminates (then add basic block to fnIr)
         -- ii. apply predecessor command injection
         (finalTerm, finalState) =
             foldl
@@ -78,14 +85,17 @@ irSeq seq fnElab state =
                         else
                             let (stmtTerm, stmtPredComms, stmtState) = irStatement stmt fnElab interState
                             in if stmtTerm
-                                then (True, stmtState)
+                                then 
+                                    let termFnIr = addBbsToFunction (irProcStateFunctionIr stmtState) [(irProcStateCurrBb stmtState)]
+                                        termState = (irProcessingStateUpdateFn termFnIr stmtState)
+                                    in (True, termState)
                                 else (False, (applyPredecessorCommands stmtState stmtPredComms))
                 )
                 (False, innerState)
                 seq
 
         -- remove inner scope
-        outerScopeState = popScopeMap (irProcScopeState finalState)
+        outerScopeState = irProcessingScopeStatePopScopeMap (irProcScopeState finalState)
         outerState = (irProcessingStateUpdateScopeState outerScopeState finalState)
     in (finalTerm, predecessorCommandsEmpty, outerState)
 
@@ -102,9 +112,9 @@ irDecl (DeclElab varElab Nothing) state =
                 in (False, predecessorCommandsEmpty, declState)
             -- insert the variable into the top scope if it does not exist
             Nothing ->
-                let var = varElabToIr varElab (scopeId (head (scopes state)))
+                let var = varElabToIr varElab (scopeId (head (scopes scopeState)))
                     comm = INIT_IR var
-                    declBbIr = appendCommsToBb (irProcStateFunctionIr state) [comm]
+                    declBbIr = appendCommsToBb (irProcStateCurrBb state) [comm]
                     declScopeState = irProcessingScopeStateInsertToTopScope scopeState name varElab
                     declState = 
                         ((irProcessingStateUpdateBB declBbIr) .
@@ -112,58 +122,63 @@ irDecl (DeclElab varElab Nothing) state =
                         state
                 in (False, predecessorCommandsEmpty, declState)
 irDecl (DeclElab varElab (Just asn)) state =
-    let (declComms, declState, declErrs) = irDecl (DeclElab varElab Nothing) state
-        (asnComms, asnState, asnErrs) = irAsn asn declState
-
-        (_, _, declState) = irDecl (DeclElab varElab Nothing) state
+    let (_, _, declState) = irDecl (DeclElab varElab Nothing) state
         (_, _, asnState) = irAsn asn declState
     in (False, predecessorCommandsEmpty, asnState)    
 
 irAsn :: AsnElab -> IrProcessingState -> (Bool, PredecessorCommands, IrProcessingState)
 irAsn (AsnElab tok e) state =
-    let (expComms, m_expPT, expState, expErrs) = irExp e state
-        scopeState = (irProcScopeState state)
-        m_varElab = identifierLookup tok (scopes scopeState)
+    let scopeState = (irProcScopeState state)
+        (expComms, m_expPT, expScopeState, expErrs) = irExp e scopeState
+        m_varElab = identifierLookup tok (scopes expScopeState)
      in case m_varElab of
             -- fail if varElab is not declared
             Nothing ->
                 let errs = (USE_BEFORE_DECL (UseBeforeDeclarationError tok)) : expErrs
-                    asnState = (irProcessingStateAppendErrs errs state)
+                    asnState = 
+                        ((irProcessingStateAppendErrs errs) .
+                        (irProcessingStateUpdateScopeState expScopeState))
+                        state
                 in (False, predecessorCommandsEmpty, asnState)
             -- check that varElab is declared
             Just (varElab, _, varScopeId) ->
                 let varName = extractIdentifierName (variableElabIdentifier varElab)
-                    asnErrState = setAssignedInScope state varName varElab varScopeId
+                    setScopeState = irProcessingScopeStateSetAssignedInScope expScopeState varName varElab varScopeId
                  in case m_expPT of
                         -- fail if exp is malformed
                         Nothing ->
-                            let asnState = (irProcessingStateAppendErrs expErrs asnErrState)
+                            let asnState = 
+                                    ((irProcessingStateAppendErrs expErrs) .
+                                    (irProcessingStateUpdateScopeState setScopeState))
+                                    state
                             in (False, predecessorCommandsEmpty, asnState)
                         Just (expPu, expTy) ->
                             -- check that var and exp have the same type
                             let varTy = (typeElabType (variableElabType varElab))
                                 asnComm = ASN_PURE_IR (varElabToIr varElab varScopeId) expPu
-                             in if varTy != expTy
+                             in if varTy /= expTy
                                     -- fail on type mismatch
                                     then
                                         let errs = (ASN_TYPE_MISMATCH (AsnTypeMismatch tok varTy expTy)) : expErrs
-                                            asnState = (irProcessingStateAppendErrs errs asnErrState)
+                                            asnState = 
+                                                ((irProcessingStateAppendErrs errs) .
+                                                (irProcessingStateUpdateScopeState setScopeState))
+                                                state
                                         in (False, predecessorCommandsEmpty, asnState)
-                                    -- mark the var as assigned
+                                    -- success - add asn statement to basic block
                                     else
-                                        let asnScopeState = setAssignedInScope expState varName varElab varScopeId
-                                            asnBbIr = appendCommsToBb (irProcStateFunctionIr state) (asnComm : expComms)
+                                        let asnBbIr = appendCommsToBb (irProcStateCurrBb state) (asnComm : expComms)
                                             asnState = 
                                                 ((irProcessingStateUpdateBB asnBbIr) .
-                                                (irProcessingStateUpdateScopeState asnScopeState) .
-                                                (irProcessingStateAppendErrs expErrs))
-                                                asnErrState
+                                                (irProcessingStateAppendErrs expErrs) .
+                                                (irProcessingStateUpdateScopeState setScopeState))
+                                                state
                                          in (False, predecessorCommandsEmpty, asnState)            
 
 irExpStmt :: ExpElab -> IrProcessingState -> (Bool, PredecessorCommands, IrProcessingState)
 irExpStmt e state =
     let (expComms, _, expScopeState, expErrs) = irExp e (irProcScopeState state)
-        expBbIr = appendCommsToBb (irProcStateFunctionIr state) expComms
+        expBbIr = appendCommsToBb (irProcStateCurrBb state) expComms
         expState = 
             ((irProcessingStateUpdateBB expBbIr) .
             (irProcessingStateUpdateScopeState expScopeState) .
@@ -173,29 +188,41 @@ irExpStmt e state =
 
 irRet :: RetElab -> FunctionElab -> IrProcessingState -> (Bool, PredecessorCommands, IrProcessingState)
 irRet (RetElab e) (FunctionElab _ (TypeElab retTy _) _) state =
-    let (expComms, m_expPT, expScopeState, expErrs) = irExp e (irProcScopeState state)
-        (retComms, retErrs) = 
-            case m_expPT of
-                Just (expPu, expTy) ->
-                    if (retTy == expTy)
-                        then
-                            let retComm = RET_PURE_IR expPu
-                            in (retComm : expComms, expErrs)
-                        else ([], (RET_TYPE_MISMATCH (RetTypeMismatch retTy expTy)) : expErrs)
-                Nothing ->
-                    ([], expErrs)
-        retBbIr = appendCommsToBb (irProcStateCurrBb state) retComms
-        retState = 
-            ((irProcessingStateUpdateBB retBbIr) .
-            (irProcessingStateAppendErrs retErrs) .
-            (irProcessingStateUpdateScopeState expScopeState))
-            expScopeState
-    in (True, predecessorCommandsEmpty, retState)
+    let scopeState = (irProcScopeState state)
+        (expComms, m_expPT, expScopeState, expErrs) = irExp e scopeState
+    in case m_expPT of
+            -- fail if exp is malformed
+            Nothing ->
+                let retState = 
+                        ((irProcessingStateAppendErrs expErrs) .
+                        (irProcessingStateUpdateScopeState expScopeState))
+                        state
+                in (True, predecessorCommandsEmpty, retState)
+            Just (expPu, expTy) ->
+                if (retTy /= expTy)
+                    -- fail on ret/exp type mismatch
+                    then 
+                        let errs = (RET_TYPE_MISMATCH (RetTypeMismatch retTy expTy)) : expErrs
+                            retState = 
+                                ((irProcessingStateAppendErrs errs) .
+                                (irProcessingStateUpdateScopeState expScopeState))
+                                state
+                        in (True, predecessorCommandsEmpty, retState)
+                    -- success - add ret statement to basic block
+                    else
+                        let comms = (RET_PURE_IR expPu) : expComms
+                            retBbIr = (appendCommsToBb (irProcStateCurrBb state) comms)
+                            retState = 
+                                ((irProcessingStateUpdateBB retBbIr) .
+                                (irProcessingStateAppendErrs expErrs) .
+                                (irProcessingStateUpdateScopeState expScopeState))
+                                state
+                        in (True, predecessorCommandsEmpty, retState)
 
 
 -- EXP ELAB->IR
 
-irExp :: ExpElab -> IrProcessingState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingState, [VerificationError])
+irExp :: ExpElab -> IrProcessingScopeState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingScopeState, [VerificationError])
 irExp e state =
     case e of
         CONST_ELAB c -> irConst c state
@@ -203,10 +230,10 @@ irExp e state =
         BINOP_ELAB b -> irBinop b state
         UNOP_ELAB u -> irUnop u state
 
-irConst :: Const -> IrProcessingState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingState, [VerificationError])
+irConst :: Const -> IrProcessingScopeState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingScopeState, [VerificationError])
 irConst const state = ([], Just (PURE_BASE_IR (CONST_IR const), constToType const), state, [])
 
-irIdentifier :: Token -> IrProcessingState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingState, [VerificationError])
+irIdentifier :: Token -> IrProcessingScopeState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingScopeState, [VerificationError])
 irIdentifier tok state =
     case identifierLookup tok (scopes state) of
         Just (varElab, varAssigned, varScopeId) ->
@@ -219,7 +246,7 @@ irIdentifier tok state =
         Nothing ->
             ([], Nothing, state, [(USE_BEFORE_DECL (UseBeforeDeclarationError tok))])
 
-irBinop :: BinopElab -> IrProcessingState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingState, [VerificationError])
+irBinop :: BinopElab -> IrProcessingScopeState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingScopeState, [VerificationError])
 irBinop (BinopElab cat op e1 e2) state =
     let (expComms1, m_expPT1, expState1, expErrs1) = irExp e1 state
         (expComms2, m_expPT2, expState2, expErrs2) = irExp e2 expState1
@@ -239,7 +266,7 @@ irBinop (BinopElab cat op e1 e2) state =
             _ ->
                 ([], Nothing, state, expErrs2 ++ expErrs1)
 
-irUnop :: UnopElab -> IrProcessingState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingState, [VerificationError])
+irUnop :: UnopElab -> IrProcessingScopeState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingScopeState, [VerificationError])
 irUnop (UnopElab cat op e) state =
     let (expComms, m_expPT, expState, expErrs) = irExp e state
      in case m_expPT of
@@ -270,7 +297,7 @@ irProcessingStateUpdateBB bb state =
         (irProcScopeState state)
 
 irProcessingStateUpdateFn :: FunctionIr -> IrProcessingState -> IrProcessingState
-irProcessingStateUpdateBB bb state = 
+irProcessingStateUpdateFn fnIr state = 
     IrProcessingState
         (irProcStateCurrBb state)
         fnIr
@@ -283,12 +310,12 @@ irProcessingStateAppendErrs errs state =
     IrProcessingState
         (irProcStateCurrBb state)
         (irProcStateFunctionIr state)
-        (errs:(irProcStateErrors state))
+        (errs ++ (irProcStateErrors state))
         (irProcStateBbCtr state)
         (irProcScopeState state)
 
 irProcessingStateUpdateScopeState :: IrProcessingScopeState -> IrProcessingState -> IrProcessingState
-irProcessingStateUpdateBB scopeState state = 
+irProcessingStateUpdateScopeState scopeState state = 
     IrProcessingState
         (irProcStateCurrBb state)
         (irProcStateFunctionIr state)
@@ -298,7 +325,7 @@ irProcessingStateUpdateBB scopeState state =
 
 irProcessingStateAddBB :: IrProcessingState -> (BasicBlockIr, IrProcessingState)
 irProcessingStateAddBB state = 
-    let newBb = BasicBlockIr (bbCtr state) Map.empty []
+    let newBb = BasicBlockIr (irProcStateBbCtr state) Map.empty []
         newIrProcState = 
             IrProcessingState
                 (irProcStateCurrBb state)
@@ -317,18 +344,19 @@ predecessorCommandsEmpty =
 predecessorCommandsAddGoto :: PredecessorCommands -> Int -> PredecessorCommands
 predecessorCommandsAddGoto predComms succIndex = 
     PredecessorCommands 
-        (succIndex:(predecessorCommandsGotoBlocks (irProcStatePredComms state)))
-        (predecessorCommandsSplitBlocks (irProcStatePredComms state))
+        (succIndex:(predecessorCommandsGotoBlocks predComms))
+        (predecessorCommandsSplitBlocks predComms)
         
 predecessorCommandsAddSplit :: PredecessorCommands -> Int -> Int -> PredecessorCommands
-irProcessingStateAddSplit predComms succIndex splitPos = 
+predecessorCommandsAddSplit predComms succIndex splitPos = 
     PredecessorCommands 
-        (predecessorCommandsGotoBlocks (irProcStatePredComms state))
-        ((succIndex, splitPos):(predecessorCommandsSplitBlocks (irProcStatePredComms state)))
+        (predecessorCommandsGotoBlocks predComms)
+        ((succIndex, splitPos):(predecessorCommandsSplitBlocks predComms))
 
 applyPredecessorCommands :: IrProcessingState -> PredecessorCommands -> IrProcessingState
 applyPredecessorCommands state predComms = 
-    let fnIrAddedGotos = 
+    let successorBbIndex = (bbIndex (irProcStateCurrBb state))
+        fnIrAddedGotos = 
             foldr
                 (\(predBlockIndex) interFnIr ->
                     case Map.lookup predBlockIndex (functionIrBlocks interFnIr) of
@@ -352,7 +380,7 @@ applyPredecessorCommands state predComms =
                 )
                 fnIrAddedGotos
                 (predecessorCommandsSplitBlocks predComms)
-    in irProcessingStateUpdateFn state fnIrAddedSplits
+    in irProcessingStateUpdateFn fnIrAddedSplits state
     
 applyPredecessorGoto :: BasicBlockIr -> Int -> BasicBlockIr
 applyPredecessorGoto predBlock succIndex = 
@@ -372,7 +400,7 @@ applyPredecessorSplit predBlock succIndex splitPos =
                     case splitPos of
                         0 -> SPLIT_BB_IR base succIndex right
                         1 -> SPLIT_BB_IR base left succIndex
-                        _ -> error (compilerError ("Attempted to insert successor after predecessor BasicBlock with invalid split index: BasicBlockIr=" ++ (show predBlock) ++ " Index=" ++ splitPos))
+                        _ -> error (compilerError ("Attempted to insert successor after predecessor BasicBlock with invalid split index: BasicBlockIr=" ++ (show predBlock) ++ " Index=" ++ (show splitPos)))
                 newCommands = newSplit:(tail (bbIrCommands predBlock))
                 newBBIr = BasicBlockIr (bbIndex predBlock) (bbIrPhiFn predBlock) newCommands
             in newBBIr
@@ -541,13 +569,13 @@ binopOpTranslate cat ty p1 p2 state =
             MUL_EXP_ELAB -> 
                 (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr MUL_IR ty expandPureBase1 expandPureBase2), expandState2)
             DIV_EXP_ELAB ->
-                let (tempName, newState) = addTemp state
+                let (tempName, newState) = irProcessingScopeStateAddTemp state
                     temp = VariableIr tempName 0 ty True
                     binop = IMPURE_BINOP_IR (ImpureBinopIr DIV_IR ty expandPureBase1 expandPureBase2)
                     comm = ASN_IMPURE_IR temp binop
                  in (comm : (expandComms2 ++ expandComms1), PURE_BASE_IR (VAR_IR temp), newState)
             MOD_EXP_ELAB ->
-                let (tempName, newState) = addTemp state
+                let (tempName, newState) = irProcessingScopeStateAddTemp state
                     temp = VariableIr tempName 0 ty True
                     binop = IMPURE_BINOP_IR (ImpureBinopIr MOD_IR ty expandPureBase1 expandPureBase2)
                     comm = ASN_IMPURE_IR temp binop
@@ -614,12 +642,12 @@ expandPureIr pu state =
     case pu of
         PURE_BASE_IR base -> ([], base, state)
         PURE_BINOP_IR binop ->
-            let (tempName, newState) = addTemp state
+            let (tempName, newState) = irProcessingScopeStateAddTemp state
                 binopTemp = VariableIr tempName 0 (pureBinopInfType binop) True
                 binopComm = ASN_PURE_IR binopTemp pu
              in ([binopComm], VAR_IR binopTemp, newState)
         PURE_UNOP_IR unop ->
-            let (tempName, newState) = addTemp state
+            let (tempName, newState) = irProcessingScopeStateAddTemp state
                 unopTemp = VariableIr tempName 0 (pureUnopInfType unop) True
                 unopComm = ASN_PURE_IR unopTemp pu
              in ([unopComm], VAR_IR unopTemp, newState)
