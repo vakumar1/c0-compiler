@@ -8,6 +8,7 @@ module Common.Errors (
     UseBeforeAssignmentError (..),
     OpTypeMismatch (..),
     AsnTypeMismatch (..),
+    IfCondTypeMismatch (..),
     RetTypeMismatch (..),
     InvalidReturnError (..),
     VerificationError (..),
@@ -135,7 +136,11 @@ data AsnTypeMismatch = AsnTypeMismatch
     }
     deriving (Show)
 
--- TODO: add token identifying return statement location
+data IfCondTypeMismatch = IfCondTypeMismatch
+    { ifCondTypeMismatchExpType :: TypeCategory
+    }
+    deriving (Show)
+
 data RetTypeMismatch = RetTypeMismatch
     { retTypeMismatchRetType :: TypeCategory
     , retTypeMismatchExpType :: TypeCategory
@@ -158,6 +163,7 @@ data VerificationError
     | USE_BEFORE_ASN UseBeforeAssignmentError
     | OP_TYPE_MISMATCH OpTypeMismatch
     | ASN_TYPE_MISMATCH AsnTypeMismatch
+    | IF_COND_TYPE_MISMATCH IfCondTypeMismatch
     | RET_TYPE_MISMATCH RetTypeMismatch
     | INVALID_RET InvalidReturnError
     deriving (Show)

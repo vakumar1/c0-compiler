@@ -3,6 +3,8 @@ module Model.Elaborated (
     StatementElab (..),
     DeclElab (..),
     AsnElab (..),
+    IfElab (..),
+    WhileElab (..),
     RetElab (..),
     SeqElab,
     ExpElab (..),
