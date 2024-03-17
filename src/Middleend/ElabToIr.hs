@@ -83,21 +83,16 @@ irSeq seq fnElab state =
                         else
                             let (stmtTerm, stmtStartBb, stmtPreds, stmtState) = irStatement stmt fnElab interState
                             in if stmtTerm
-                                -- statement terminates the function --> add basic block to fnIr
+                                -- statement terminates the function
                                 then
-                                    let termFnIr = addBbsToFunction (irProcStateFunctionIr stmtState) [(irProcStateCurrBb stmtState)]
-                                        termState = (irProcessingStateUpdateFn termFnIr stmtState)
-                                    in (True, termState)
+                                    (True, stmtState)
                                 else
                                     if stmtStartBb
                                         -- statement terminates the basic block -->
-                                        -- i. add basic block to fnIr
-                                        -- ii. create new basic block
-                                        -- iii. apply pred injection
+                                        -- i. create new basic block
+                                        -- ii. apply pred injection
                                         then
-                                            let termFnIr = addBbsToFunction (irProcStateFunctionIr stmtState) [(irProcStateCurrBb stmtState)]
-                                                termState = (irProcessingStateUpdateFn termFnIr stmtState)
-                                                (startBb, initStartState) = irProcessingStateAddBB termState
+                                            let (startBb, initStartState) = irProcessingStateAddBB stmtState
                                                 startState = (irProcessingStateUpdateBB startBb initStartState)
                                                 injectState = applyPredecessorCommands stmtPreds startState
                                             in (False, injectState)
@@ -165,8 +160,8 @@ irIf (IfElab condExp ifStmt (Just elseStmt)) fnElab state =
         termBbIndex = bbIndex termBbIr
 
         -- evalute if/else stmts and merge results
-        (ifTerm, ifStartBb, ifPreds, ifState) = irStatement ifStmt fnElab termState
-        (elseTerm, elseStartBb, elsePreds, elseState) = irStatement elseStmt fnElab ifState
+        (ifTerm, ifStartBb, ifPreds, ifState) = irStatement ifStmt fnElab (irProcessingStateUpdateBB ifBbIr termState)
+        (elseTerm, elseStartBb, elsePreds, elseState) = irStatement elseStmt fnElab (irProcessingStateUpdateBB elseBbIr ifState)
     in (ifTerm && elseTerm, True, predecessorCommandsMerge ifPreds elsePreds, elseState)
 
 irCond :: ExpElab -> IrProcessingScopeState -> (PureBaseIr, [CommandIr], IrProcessingScopeState, [VerificationError])
@@ -289,7 +284,7 @@ irRet (RetElab e) (FunctionElab _ (TypeElab retTy _) _) state =
                         ((irProcessingStateAppendErrs expErrs) .
                         (irProcessingStateUpdateScopeState expScopeState))
                         state
-                in (True, False, predecessorCommandsSingleton retState, retState)
+                in (True, False, predecessorCommandEmpty, retState)
             Just (expPu, expTy) ->
                 if (retTy /= expTy)
                     -- fail on ret/exp type mismatch
@@ -299,17 +294,18 @@ irRet (RetElab e) (FunctionElab _ (TypeElab retTy _) _) state =
                                 ((irProcessingStateAppendErrs errs) .
                                 (irProcessingStateUpdateScopeState expScopeState))
                                 state
-                        in (True, False, predecessorCommandsSingleton retState, retState)
-                    -- success - add ret statement to basic block
+                        in (True, False, predecessorCommandEmpty, retState)
+                    -- success - add ret statement to basic block and terminate
                     else
                         let comms = (RET_PURE_IR expPu) : expComms
                             retBbIr = (appendCommsToBb (irProcStateCurrBb state) comms)
+                            retFnIr = addBbsToFunction (irProcStateFunctionIr state) [retBbIr]
                             retState = 
-                                ((irProcessingStateUpdateBB retBbIr) .
+                                ((irProcessingStateUpdateFn retFnIr) .
                                 (irProcessingStateAppendErrs expErrs) .
                                 (irProcessingStateUpdateScopeState expScopeState))
                                 state
-                        in (True, False, predecessorCommandsSingleton retState, retState)
+                        in (True, False, predecessorCommandEmpty, retState)
 
 -- EXP ELAB->IR
 
@@ -427,6 +423,9 @@ irProcessingStateAddBB state =
     in (newBb, newIrProcState)
 
 -- UPDATE AND APPLY PROCESSOR COMMANDS
+
+predecessorCommandEmpty :: PredecessorCommands
+predecessorCommandEmpty = PredecessorCommands [] []
 
 predecessorCommandsSingleton :: IrProcessingState -> PredecessorCommands
 predecessorCommandsSingleton state = 
