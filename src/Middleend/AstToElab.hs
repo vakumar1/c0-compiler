@@ -20,24 +20,39 @@ ELABORATION
 -- TODO: update program after adding functions + multiple statements allowed per program
 elaborate :: Function -> FunctionElab
 elaborate fn =
-    let seq = elaborateBlock (functionBlock fn)
+    let seq = elaborateStmts (functionBlock fn)
      in FunctionElab (functionName fn) (elaborateType (functionReturnType fn)) seq
 
-elaborateBlock :: Block -> SeqElab
-elaborateBlock = elaborateStmts
+elaborateStmt :: Statement -> StatementElab
+elaborateStmt st = 
+    case st of
+        SIMP_STMT s -> elaborateSimp s
+        CONTROL_STMT c -> elaborateControl c
+        BLOCK_STMT b -> elaborateBlock b
+
+elaborateSimp :: Simp -> StatementElab
+elaborateSimp s = 
+    case s of
+        ASN_SIMP a -> ASN_ELAB (elaborateAsn a)
+        DECL_SIMP d -> DECL_ELAB (elaborateDecl d)
+        POST_SIMP p -> ASN_ELAB (elaboratePost p)
+        EXP_SIMP e -> EXP_ELAB (elaborateExp e)
+
+elaborateControl :: Control -> StatementElab
+elaborateControl c = 
+    case c of
+        RET_CTRL e -> RET_ELAB (RetElab (elaborateExp e))
+        IF_CTRL i -> IF_ELAB (elaborateIf i)
+        WHILE_CTRL w -> WHILE_ELAB (elaborateWhile w)
+        FOR_CTRL f -> SEQ_ELAB (elaborateFor f)
+
+elaborateBlock :: Block -> StatementElab
+elaborateBlock b = SEQ_ELAB (elaborateStmts b)
+
+-- individual statement elaboration
 
 elaborateStmts :: Statements -> SeqElab
-elaborateStmts ss =
-    case ss of
-        [] -> []
-        SIMP_STMT s : _ -> 
-            case s of
-                ASN_SIMP a -> (ASN_ELAB (elaborateAsn a)) : (elaborateStmts (tail ss))
-                DECL_SIMP d -> (DECL_ELAB (elaborateDecl d)) : (elaborateStmts (tail ss))
-                POST_SIMP p -> (ASN_ELAB (elaboratePost p)) : (elaborateStmts (tail ss))
-                EXP_SIMP e -> (EXP_ELAB (elaborateExp e)) : (elaborateStmts (tail ss))
-        CONTROL_STMT (RET_CTRL e) : _ -> (RET_ELAB (RetElab (elaborateExp e))) : (elaborateStmts (tail ss))
-        BLOCK_STMT b : _ -> (SEQ_ELAB (elaborateBlock b)) : (elaborateStmts (tail ss))
+elaborateStmts ss = map elaborateStmt ss
 
 -- TODO: fix comb assignment operators
 elaborateAsn :: Asn -> AsnElab
@@ -62,6 +77,36 @@ elaboratePost (Post op (Lval id)) =
             (IDENTIFIER_EXP id) 
             (DECNUM_EXP (wrapConstExp "1" op))
         )))
+
+elaborateIf :: If -> IfElab
+elaborateIf ifAst = 
+    IfElab
+        (elaborateExp (ifExp ifAst))
+        (elaborateStmt (ifStmt ifAst))
+        (fmap elaborateStmt (ifElseoptStmt ifAst))
+
+elaborateWhile :: While -> WhileElab
+elaborateWhile while = 
+    WhileElab 
+        (elaborateExp (whileExp while))
+        (elaborateStmt (whileStmt while))
+
+elaborateFor :: For -> SeqElab
+elaborateFor for = 
+    let initStmtElabs = 
+            case (forInitSimp for) of
+                Nothing -> []
+                Just s -> [elaborateSimp s]
+        termExpElab = elaborateExp (forTermExp for)
+        innerStmtElab = 
+            let forStmtElabs = [elaborateStmt (forStmt for)]
+                forInterSimpElabs = 
+                    case (forInterSimp for) of
+                        Nothing -> []
+                        Just s -> [elaborateSimp s]
+            in SEQ_ELAB (forStmtElabs ++ forInterSimpElabs)
+        whileStmtElab = WhileElab termExpElab innerStmtElab
+    in initStmtElabs ++ [WHILE_ELAB whileStmtElab]
 
 elaborateExp :: Exp -> ExpElab
 elaborateExp e =
