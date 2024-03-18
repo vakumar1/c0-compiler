@@ -55,16 +55,27 @@ irFunction fnElab =
         fnIr = (irProcStateFunctionIr finalState)
     in (fnIr, errs)
 
-irStatement :: StatementElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
-irStatement stmtElab fnElab state = 
-    case stmtElab of
-        RET_ELAB retElab -> irRet retElab fnElab state
-        DECL_ELAB declElab -> irDecl declElab state
-        ASN_ELAB asnElab -> irAsn asnElab state
-        EXP_ELAB expElab -> irExpStmt expElab state
-        SEQ_ELAB seqElab -> irSeq seqElab fnElab state
-        IF_ELAB ifElab -> irIf ifElab fnElab state
-        -- WHILE_ELAB whileElab ->
+irStatement :: StatementElab -> FunctionElab -> (Bool, PredecessorCommands, IrProcessingState) -> (Bool, Bool, PredecessorCommands, IrProcessingState)
+irStatement stmtElab fnElab (startBb, preds, state) = 
+    let stmtState = 
+            if not startBb
+                then state
+                else
+                    -- commit current basic block + create new basic block + apply predecessor injection
+                    let termFnIr = addBbsToFunction (irProcStateFunctionIr state) [(irProcStateCurrBb state)]
+                        termState = irProcessingStateUpdateFn termFnIr state
+                        (startBb, _state) = irProcessingStateAddBB termState
+                        startState = irProcessingStateUpdateBB startBb _state
+                        injectState = applyPredecessorCommands preds startState
+                    in injectState
+    in case stmtElab of
+            RET_ELAB retElab -> irRet retElab fnElab stmtState
+            DECL_ELAB declElab -> irDecl declElab stmtState
+            ASN_ELAB asnElab -> irAsn asnElab stmtState
+            EXP_ELAB expElab -> irExpStmt expElab stmtState
+            SEQ_ELAB seqElab -> irSeq seqElab fnElab stmtState
+            IF_ELAB ifElab -> irIf ifElab fnElab stmtState
+            WHILE_ELAB whileElab -> irWhile whileElab fnElab stmtState
 
 -- STATEMENT ELAB->IR
 irSeq :: SeqElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
@@ -75,64 +86,48 @@ irSeq seq fnElab state =
         innerState = (irProcessingStateUpdateScopeState innerScopeState state)
 
         -- apply each statement in block
-        (finalTerm, finalState) =
+        (finalTerm, finalStartBb, finalPreds, finalState) =
             foldl
-                (\(interTerm, interState) stmt ->
+                (\(interTerm, interStartBb, interPreds, interState) stmt ->
                     if interTerm
-                        then (interTerm, interState)
+                        -- short-circuit once fn has already been terminated
+                        then 
+                            (interTerm, interStartBb, interPreds, interState)
                         else
-                            let (stmtTerm, stmtStartBb, stmtPreds, stmtState) = irStatement stmt fnElab interState
+                            let (stmtTerm, stmtStartBb, stmtPreds, stmtState) = irStatement stmt fnElab (interStartBb, interPreds, interState)
                             in if stmtTerm
                                 -- statement terminates the function
+                                -- ignore remaining state and assert no further basic block creation/injection
                                 then
-                                    (True, stmtState)
+                                    (True, False, predecessorCommandEmpty, stmtState)
                                 else
-                                    if stmtStartBb
-                                        -- statement terminates the basic block -->
-                                        -- i. create new basic block
-                                        -- ii. apply pred injection
-                                        then
-                                            let (startBb, initStartState) = irProcessingStateAddBB stmtState
-                                                startState = (irProcessingStateUpdateBB startBb initStartState)
-                                                injectState = applyPredecessorCommands stmtPreds startState
-                                            in (False, injectState)
-                                        else
-                                            (False, stmtState)
+                                    (stmtTerm, stmtStartBb, stmtPreds, stmtState)
                 )
-                (False, innerState)
+                (False, False, predecessorCommandEmpty, innerState)
                 seq
 
         -- remove inner scope
         outerScopeState = irProcessingScopeStatePopScopeMap (irProcScopeState finalState)
         outerState = (irProcessingStateUpdateScopeState outerScopeState finalState)
-    in (finalTerm, False, predecessorCommandsSingleton outerState, outerState)
+    in (finalTerm, finalStartBb, finalPreds, outerState)
 
 irIf :: IfElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
 irIf (IfElab condExp ifStmt Nothing) fnElab state = 
     let 
-        -- create new basic block
-        scopeState = irProcScopeState state
-        (innerBbIr, initState) = irProcessingStateAddBB state
-        innerBbIndex = bbIndex innerBbIr
-
-        -- evaluate if cond exp and add split comm (with index 1 unfilled)
-        -- i. terminate basic block (w/ cond + split comms)
-        -- ii. commit basic block to fn
-        -- iii. update basic block in state to new (inner) basic block
-        (condPu, initCondComms, condScopeState, condErrs) = irCond condExp scopeState
-        condComms = (SPLIT_BB_IR condPu innerBbIndex 0):initCondComms
+        -- evaluate if cond exp and add split comm (with both indices unfilled) to curr basic block
+        (condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
+        condComms = (SPLIT_BB_IR condPu 0 0):initCondComms
         termBbIr = appendCommsToBb (irProcStateCurrBb state) condComms
-        termFnIr = addBbsToFunction (irProcStateFunctionIr initState) [termBbIr]
         termState = 
-            ((irProcessingStateUpdateBB innerBbIr) .
+            ((irProcessingStateUpdateBB termBbIr) .
             (irProcessingStateAppendErrs condErrs) .
-            (irProcessingStateUpdateScopeState condScopeState) .
-            (irProcessingStateUpdateFn termFnIr))
-            initState
+            (irProcessingStateUpdateScopeState condScopeState))
+            state
         termBbIndex = bbIndex termBbIr
 
         -- evaluate inner stmt and return preds w/ split command for term block
-        (innerTerm, innerStartBb, innerPreds, innerState) = irStatement ifStmt fnElab termState
+        termInnerPreds = predecessorCommandsAddSplit predecessorCommandEmpty termBbIndex 0
+        (innerTerm, innerStartBb, innerPreds, innerState) = irStatement ifStmt fnElab (True, termInnerPreds, termState)
         outerPreds = predecessorCommandsAddSplit innerPreds termBbIndex 1
     in (False, True, outerPreds, innerState)
 
@@ -145,63 +140,70 @@ irIf (IfElab condExp ifStmt (Just elseStmt)) fnElab state =
         ifBbIndex = bbIndex ifBbIr
         elseBbIndex = bbIndex elseBbIr
 
-        -- evaluate if cond exp and add split comm (with both indices filled)
-        -- i. terminate basic block (w/ cond + split comms)
-        -- ii. commit basic block to fn
-        (condPu, initCondComms, condScopeState, condErrs) = irCond condExp scopeState
-        condComms = (SPLIT_BB_IR condPu ifBbIndex elseBbIndex):initCondComms
+        -- evaluate if cond exp and add split comm (with both indices unfilled) to curr basic block
+        (condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
+        condComms = (SPLIT_BB_IR condPu 0 0):initCondComms
         termBbIr = appendCommsToBb (irProcStateCurrBb state) condComms
-        termFnIr = addBbsToFunction (irProcStateFunctionIr initState) [termBbIr]
         termState = 
-            ((irProcessingStateAppendErrs condErrs) .
-            (irProcessingStateUpdateScopeState condScopeState) .
-            (irProcessingStateUpdateFn termFnIr))
-            initState
-        termBbIndex = bbIndex termBbIr
+            ((irProcessingStateUpdateBB termBbIr) .
+            (irProcessingStateAppendErrs condErrs) .
+            (irProcessingStateUpdateScopeState condScopeState))
+            state
 
-        -- evalute if/else stmts and merge results
-        (ifTerm, ifStartBb, ifPreds, ifState) = irStatement ifStmt fnElab (irProcessingStateUpdateBB ifBbIr termState)
-        (elseTerm, elseStartBb, elsePreds, elseState) = irStatement elseStmt fnElab (irProcessingStateUpdateBB elseBbIr ifState)
+        -- evaluate if stmt
+        termIfPreds = predecessorCommandsAddSplit predecessorCommandEmpty (bbIndex termBbIr) 0
+        (ifTerm, ifStartBb, ifPreds, ifState) = irStatement ifStmt fnElab (True, termIfPreds, termState)
+
+        -- evaluate else stmt
+        termElsePreds = predecessorCommandsAddSplit predecessorCommandEmpty (bbIndex termBbIr) 1
+        (elseTerm, elseStartBb, elsePreds, elseState) = irStatement elseStmt fnElab (True, termElsePreds, ifState)
     in (ifTerm && elseTerm, True, predecessorCommandsMerge ifPreds elsePreds, elseState)
 
 irWhile :: WhileElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
 irWhile (WhileElab condExp whileStmt) fnElab state = 
     let 
-        -- create 2 new basic blocks
-        scopeState = irProcScopeState state
-        (condBbIr, _state) = irProcessingStateAddBB state
-        (stmtBbIr, initState) = irProcessingStateAddBB _state
+        -- PART I. cond block preparation
+
+        -- manually prepare the cond basic block
+        -- i. create the basic block
+        -- ii. add all cond commands + terminate with a split (with both indices unfilled)
+        (condBbIr, initState) = irProcessingStateAddBB state
+        (condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
+        condComms = (SPLIT_BB_IR condPu 0 0):initCondComms
+        condTermBbIr = appendCommsToBb condBbIr condComms
         condBbIndex = bbIndex condBbIr
-        stmtBbIndex = bbIndex stmtBbIr
 
         -- terminate the current basic block w/ a direct GOTO to cond basic block
-        termBbIr = appendCommsToBb (irProcStateCurrBb state) [(GOTO_BB_IR condBbIndex)]
-        termFnIr = addBbsToFunction (irProcStateFunctionIr initState) [termBbIr]
-        termState = 
-            (irProcessingStateUpdateFn termFnIr)
-            initState
+        termBbIr = appendCommsToBb (irProcStateCurrBb initState) [(GOTO_BB_IR condBbIndex)]
 
-        -- evaluate stmt basic block and inject all GOTO preds to cond basic block
-        (_, _, stmtPreds, stmtState) = irStatement whileStmt fnElab (irProcessingStateUpdateBB condBbIr termState)
-        injectedState = applyPredecessorCommands stmtPreds (irProcessingStateUpdateBB condBbIr termState)
-
-        -- evaluate cond basic block and 
-        -- i. add cond evaluation commands
-        -- ii. add SPLIT to cond basic block (with index 1 unfilled)
-        -- iii. then terminate cond basic block
-        (condPu, initCondComms, condScopeState, condErrs) = irCond condExp scopeState
-        condComms = (SPLIT_BB_IR condPu stmtBbIndex 0):initCondComms
-        condTermBbIr = appendCommsToBb (irProcStateCurrBb injectedState) condComms
-        condTermFnIr = addBbsToFunction (irProcStateFunctionIr injectedState) [condTermBbIr]
+        -- commit the original term and cond basic blocks to fn
+        condTermFnIr = addBbsToFunction (irProcStateFunctionIr initState) [termBbIr, condTermBbIr]
         condTermState = 
             ((irProcessingStateAppendErrs condErrs) .
             (irProcessingStateUpdateScopeState condScopeState) .
             (irProcessingStateUpdateFn condTermFnIr))
-            injectedState
+            initState
 
-        -- return with single pred (to SPLIT in cond basic block)
-    in (False, True, predecessorCommandsAddSplit predecessorCommandEmpty condBbIndex 1, condTermState)
+        -- PART II. stmt block evaluation + manual injection
+        
+        -- evaluate stmt basic block (with cond->stmt SPLIT injection)
+        condToStmtPreds = predecessorCommandsAddSplit predecessorCommandEmpty condBbIndex 0
+        (_, _, stmtToCondPreds, stmtState) = irStatement whileStmt fnElab (True, condToStmtPreds, condTermState)
 
+        -- apply stmt->cond injection:
+        -- i. commit the current basic block (whatever it is)
+        -- ii. set the current basic block to be the cond block
+        -- iii. manually apply stmt->cond injection
+        stmtTermFnIr = addBbsToFunction (irProcStateFunctionIr stmtState) [(irProcStateCurrBb stmtState)]
+        stmtTermState = 
+            ((irProcessingStateUpdateBB condTermBbIr) .
+            (irProcessingStateUpdateFn stmtTermFnIr))
+            stmtState
+        injectedState = applyPredecessorCommands stmtToCondPreds stmtTermState
+
+        -- PART III. pass params to upcoming basic block
+        condToNextPreds = predecessorCommandsAddSplit predecessorCommandEmpty condBbIndex 1
+    in (False, True, condToNextPreds, injectedState)
 
 irCond :: ExpElab -> IrProcessingScopeState -> (PureBaseIr, [CommandIr], IrProcessingScopeState, [VerificationError])
 irCond e scopeState = 
