@@ -107,7 +107,11 @@ Block : '{' Stmts '}'   { $2 }
 Stmts :                 { [] }
     | Stmt Stmts        { ($1):($2) }
 
-Stmt : Simp ';'         { SIMP_STMT $1 }
+Stmt : RestrictedStmt   { $1 }
+    | UnrestrictedIf    { CONTROL_STMT (IF_CTRL $1) }
+
+RestrictedStmt : 
+    Simp ';'            { SIMP_STMT $1 }
     | Block             { BLOCK_STMT $1 }
     | Control           { CONTROL_STMT $1 }
 
@@ -116,7 +120,7 @@ Simp : Asn              { ASN_SIMP $1 }
     | Post              { POST_SIMP $1 }
     | Exp               { EXP_SIMP $1 }
 
-Control : If            { IF_CTRL $1 }
+Control : RestrictedIf  { IF_CTRL $1 }
     | While             { WHILE_CTRL $1 }
     | For               { FOR_CTRL $1 }
     | return Exp ';'    { RET_CTRL $2 }
@@ -131,17 +135,21 @@ Type : int              { Type INT_TYPE $1 }
 
 Post : Lval Postop      { Post $2 $1 }
 
-If : if '(' Exp ')' Stmt Elseopt    
-                        { If $3 $5 $6 }
+UnrestrictedIf : 
+    if '(' Exp ')' Stmt
+                        { If $3 $5 Nothing }
+    | if '(' Exp ')' RestrictedIf else Stmt
+                        { If $3 $5 (Just $7) }
+
+RestrictedIf : 
+    if '(' Exp ')' RestrictedIf else RestrictedIf
+                        { If $3 $5 (Just $7) }
 
 While : while '(' Exp ')' Stmt
                         { While $3 $5 }
 
 For : for '(' Simpopt ';' Exp ';' Simpopt ')' Stmt
                         { For $3 $5 $7 $9 }
-
-Elseopt :               { Nothing }
-    | else Stmt         { Just $2 }
 
 Simpopt :               { Nothing }
     | Simp              { Just $1 }
