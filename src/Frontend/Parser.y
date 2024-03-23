@@ -84,19 +84,73 @@ import Model.Ast
     string          { Token STRING _ }
     eof             { Token EOF _ }
 
-%right '-' '!' '~' '++' '--'
-%left '*' '/' '%'
-%left '+' '-'
-%left '<<' '>>'
-%left '<' '<=' '>' '>='
-%left '==' '!='
-%left '&'
-%left '^'
-%left '|'
-%left '&&'
-%left '||'
 
-%left '=' '+=' '-=' '*=' '/=' '%=' '&=' '^=' '|=' '<<=' '>>='
+-- PRECEDENCE RULES: predence rules are applied to DEFINITIONS and TOKENS
+-- i.e., the parser will compare the precedence of the in-progress definition
+-- against the precedence of the lookahead token
+-- - definition > token --> reduce using the definition rule
+-- - definition < token --> shift the token
+-- (GENERALLY) APPLYING PRECEDENCE RULES:
+-- - if a definition associates RIGHT --> the infix token operator takes precedence over the definition
+--   e.g. the ternary operator . ? . : . associates right --> the '?' token takes precedence 
+--   over the ternary definition (TERN)
+-- - if a definition associates LEFT --> the definition takes precedence over the infix token
+--   e.g. the addition operation . + . associates left --> the addition definition (BINOP2) takes precedence
+--   over the '+' token
+-- ** note this is only a general rule for infix operators (see UNOP prefix operators below)
+
+
+-- else token (takes precendence over lone if statement)
+%nonassoc LONE_IF
+%nonassoc else
+
+-- assignment operators
+%nonassoc ASNOP
+%nonassoc '=' '+=' '-=' '*=' '/=' '%=' '&=' '^=' '|=' '<<=' '>>='
+
+-- ternary operator
+%nonassoc TERN
+%nonassoc '?'
+
+-- binop operators
+%nonassoc '||'
+%nonassoc BINOP10
+
+%nonassoc '&&'
+%nonassoc BINOP9
+
+%nonassoc '|'
+%nonassoc BINOP8
+
+%nonassoc '^'
+%nonassoc BINOP7
+
+%nonassoc '&'
+%nonassoc BINOP6
+
+%nonassoc '==' '!='
+%nonassoc BINOP5
+
+%nonassoc '<' '<=' '>' '>='
+%nonassoc BINOP4
+
+%nonassoc '<<' '>>'
+%nonassoc BINOP3
+
+%nonassoc '+' '-'
+%nonassoc BINOP2
+
+%nonassoc '*' '/' '%'
+%nonassoc BINOP1
+
+-- unary operators
+%nonassoc UNOP
+%right '!' '~' '++' '--'
+
+-- parentheses
+%right PAREN
+%left ')'
+%right '('
 %%
 
 Function : int main '(' void ')' Block   
@@ -107,10 +161,7 @@ Block : '{' Stmts '}'   { $2 }
 Stmts :                 { [] }
     | Stmt Stmts        { ($1):($2) }
 
-Stmt : RestrictedStmt   { $1 }
-    | UnrestrictedIf    { CONTROL_STMT (IF_CTRL $1) }
-
-RestrictedStmt : 
+Stmt : 
     Simp ';'            { SIMP_STMT $1 }
     | Block             { BLOCK_STMT $1 }
     | Control           { CONTROL_STMT $1 }
@@ -120,12 +171,12 @@ Simp : Asn              { ASN_SIMP $1 }
     | Post              { POST_SIMP $1 }
     | Exp               { EXP_SIMP $1 }
 
-Control : RestrictedIf  { IF_CTRL $1 }
+Control : If            { IF_CTRL $1 }
     | While             { WHILE_CTRL $1 }
     | For               { FOR_CTRL $1 }
     | return Exp ';'    { RET_CTRL $2 }
 
-Asn : Lval Asnop Exp    { Asn $2 $1 $3 }
+Asn : Lval Asnop Exp    %prec ASNOP { Asn $2 $1 $3 }
 
 Decl : Type ident        { Decl $2 $1 Nothing Nothing }
     | Type ident '=' Exp { Decl $2 $1 (Just $3) (Just $4) }
@@ -135,14 +186,10 @@ Type : int              { Type INT_TYPE $1 }
 
 Post : Lval Postop      { Post $2 $1 }
 
-UnrestrictedIf : 
-    if '(' Exp ')' Stmt
-                        { If $3 $5 Nothing }
-    | if '(' Exp ')' RestrictedIf else Stmt
-                        { If $3 $5 (Just $7) }
-
-RestrictedIf : 
-    if '(' Exp ')' RestrictedIf else RestrictedIf
+If :
+    if '(' Exp ')' Stmt 
+                        %prec LONE_IF { If $3 $5 Nothing }
+    | if '(' Exp ')' Stmt else Stmt
                         { If $3 $5 (Just $7) }
 
 While : while '(' Exp ')' Stmt
@@ -154,8 +201,8 @@ For : for '(' Simpopt ';' Exp ';' Simpopt ')' Stmt
 Simpopt :               { Nothing }
     | Simp              { Just $1 }
 
-Lval : ident            { Lval $1 }
-    | '(' Lval ')'      { $2 }
+Lval : '(' Lval ')'     %prec PAREN { $2 }
+    | ident             { Lval $1 }
 
 Asnop : '='             { $1 }
     | '+='              { $1 }
@@ -172,37 +219,45 @@ Asnop : '='             { $1 }
 Postop : '++'           { $1 }
     | '--'              { $1 }
 
-Exp : '(' Exp ')'   { $2 }
-    | hex           { HEXNUM_EXP $1 }
-    | dec           { DECNUM_EXP $1 }
-    | bool          { BOOL_EXP $1 }
-    | ident         { IDENTIFIER_EXP $1 }
-    | Exp Binop Exp { BINOP_EXP (Binop $2 $1 $3) }
-    | Unop Exp      { UNOP_EXP (Unop $1 $2) }
-    | Exp '?' Exp ':' Exp   { TERN_EXP $1 $3 $5 }
+Exp : 
+    '(' Exp ')'         %prec PAREN { $2 }
+    | hex               { HEXNUM_EXP $1 }
+    | dec               { DECNUM_EXP $1 }
+    | true              { BOOL_EXP $1 }
+    | false             { BOOL_EXP $1 }
+    | ident             { IDENTIFIER_EXP $1 }
+    | Unop              { $1 }
+    | Binop             { $1 }
+    | Ternary           { $1 }
 
-Binop : '+' { $1 }
-    | '-'   { $1 }
-    | '*'   { $1 }
-    | '/'   { $1 }
-    | '%'   { $1 }
-    | '<'   { $1 }
-    | '<='  { $1 }
-    | '>'   { $1 }
-    | '>='  { $1 }
-    | '=='  { $1 }
-    | '!='  { $1 }
-    | '&&'  { $1 }
-    | '||'  { $1 }
-    | '&'   { $1 }
-    | '^'   { $1 }
-    | '|'   { $1 }
-    | '>>'  { $1 }
-    | '<<'  { $1 }
+Unop :
+    '-' Exp             %prec UNOP { UNOP_EXP (Unop $1 $2) }
+    | '~' Exp           %prec UNOP { UNOP_EXP (Unop $1 $2) }
+    | '!' Exp           %prec UNOP { UNOP_EXP (Unop $1 $2) }
 
-Unop : '-'  { $1 }
-    | '~'   { $1 }
-    | '!'   { $1 }
+Binop :
+    Exp '*' Exp         %prec BINOP1 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '/' Exp       %prec BINOP1 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '%' Exp       %prec BINOP1 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '+' Exp       %prec BINOP2 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '-' Exp       %prec BINOP2 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '>>' Exp      %prec BINOP3 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '<<' Exp      %prec BINOP3 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '<' Exp       %prec BINOP4 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '<=' Exp      %prec BINOP4 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '>' Exp       %prec BINOP4 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '>=' Exp      %prec BINOP4 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '==' Exp      %prec BINOP5 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '!=' Exp      %prec BINOP5 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '&' Exp       %prec BINOP6 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '^' Exp       %prec BINOP7 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '|' Exp       %prec BINOP8 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '&&' Exp      %prec BINOP9 { BINOP_EXP (Binop $2 $1 $3) }
+    | Exp '||' Exp      %prec BINOP10 { BINOP_EXP (Binop $2 $1 $3) }
+
+Ternary :
+    Exp '?' Exp ':' Exp
+                        %prec TERN { TERN_EXP $1 $3 $5 }
 
 {
 parseError :: [Token] -> a
