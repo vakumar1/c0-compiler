@@ -150,6 +150,8 @@ instance Ord VariableIr where
                         || (((variableIrName var1) == (variableIrName var2)) && ((variableIrSSAId var1) <= (variableIrSSAId var2)))
 
 -- HELPERS
+-- adds basic block to function's collection
+-- records whether the basic block definitely terminates (ends in return)
 addBbsToFunction :: FunctionIr -> [BasicBlockIr] -> FunctionIr
 addBbsToFunction fn bbs =
     let newBlocks = foldr (\bb interMap -> Map.insert (bbIndex bb) bb interMap) (functionIrBlocks fn) bbs
@@ -160,6 +162,8 @@ addBbsToFunction fn bbs =
                 bbs
      in FunctionIr newBlocks (functionIrPredecessorMap fn) (functionIrSuccessorMap fn) newTerminators
 
+-- adds edge to function's CFG
+-- * may add loops in the CFG in the event of while statements
 addEdgeToCFG :: FunctionIr -> Int -> Int -> FunctionIr
 addEdgeToCFG fn source dest =
     let destPreds =

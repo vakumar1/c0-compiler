@@ -55,6 +55,8 @@ getUsedVarsCommand comm =
             getUsedVarsImpure asnImpure
         GOTO_BB_IR _ ->
             Set.empty
+        SPLIT_BB_IR splitPureBase _ _ ->
+            getUsedVarsPureBase splitPureBase
         RET_PURE_IR retPure ->
             getUsedVarsPure retPure
 
@@ -68,6 +70,8 @@ getAssignedVarsCommand comm =
         ASN_IMPURE_IR asnVar asnImpure ->
             Just asnVar
         GOTO_BB_IR _ ->
+            Nothing
+        SPLIT_BB_IR _ _ _ ->
             Nothing
         RET_PURE_IR retPure ->
             Nothing

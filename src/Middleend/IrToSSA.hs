@@ -45,7 +45,7 @@ livenessPass fnIr =
                             let newLiveVars = bbLivenessPass interLiveVars bb
                                 newLiveMap = Map.insert index newLiveVars interLiveMap
                             in (newLiveMap, newLiveVars)
-                        Nothing -> (interLiveMap, interLiveVars)
+                        Nothing -> error (compilerError ("Liveness pass encountered basic block index not in fnIr" ++ (show index)))
                 )
                 (Map.empty, Set.empty)
                 order
@@ -94,6 +94,8 @@ commandIrToMaximalSSA comm versions =
              in (newComm, newVersions)
         GOTO_BB_IR _ ->
             (comm, versions)
+        SPLIT_BB_IR _ _ _ ->
+            (comm, versions)
         RET_PURE_IR retPure ->
             let newPure = pureIrToMaximalSSA retPure versions
                 newComm = RET_PURE_IR newPure
@@ -139,7 +141,7 @@ bbInjectPhiFn fnIr liveMap versions predBbIndex =
                     Just bb ->  
                         let newBb = succBbInjectPhiFn bb liveMap versions predBbIndex
                         in addBbsToFunction interFnIr [newBb]
-                    Nothing -> interFnIr
+                    Nothing -> error (compilerError ("BB Phi-Fn injection succ map lookup encountered basic block index not in fnIr" ++ (show id)))
             )
             fnIr
             succBbIndices
