@@ -5,6 +5,8 @@ module Model.X86 (
     Register (..),
     availableRegisters,
     registerSize,
+    trueX86,
+    falseX86
 )
 where
 
@@ -21,6 +23,14 @@ data X86Instruction
     | NEG_X86 ArgLocation
     | PUSH_X86 ArgLocation
     | JMP_X86 Label
+    | CMP_X86 ArgLocation ArgLocation
+    | JZ_X86 Label
+    | JL_X86 Label
+    | JLE_X86 Label
+    | JG_X86 Label
+    | JGE_X86 Label
+    | JE_X86 Label
+    | JNE_X86 Label 
     | RET_X86
 instance Show X86Instruction where
     show instr =
@@ -51,6 +61,22 @@ instance Show X86Instruction where
                         Printf.printf "push %s" (show r)
                     JMP_X86 l ->
                         Printf.printf "jmp %s" l
+                    CMP_X86 r1 r2 ->
+                        Printf.printf "comp %s %s" (show r1) (show r2)
+                    JZ_X86 l ->
+                        Printf.printf "jz %s" l
+                    JL_X86 l ->
+                        Printf.printf "jl %s" l
+                    JLE_X86 l ->
+                        Printf.printf "jle %s" l
+                    JG_X86 l ->
+                        Printf.printf "jg %s" l
+                    JGE_X86 l ->
+                        Printf.printf "jge %s" l
+                    JE_X86 l ->
+                        Printf.printf "je %s" l
+                    JNE_X86 l ->
+                        Printf.printf "jne %s" l
                     RET_X86 ->
                         "ret"
          in prefix ++ instrStr ++ suffix
@@ -98,3 +124,10 @@ availableRegisters = [BX, CX, SI, DI]
 
 registerSize :: Int
 registerSize = 8
+
+-- constant x86 values
+trueX86 :: Int
+trueX86 = 1
+
+falseX86 :: Int
+falseX86 = 0

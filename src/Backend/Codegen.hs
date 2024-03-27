@@ -97,12 +97,18 @@ phiFnArgToX86 coloring asnVar (predIndex, predVar) initBlockMap initAlloc =
 commIrToX86 :: Map.Map VariableIr Int -> CommandIr -> AllocState -> ([X86Instruction], AllocState)
 commIrToX86 coloring comm initAlloc =
     case comm of
-        INIT_IR var -> ([], initAlloc)
-        ASN_PURE_IR asnVar asnPure -> asnPureIrToX86 coloring asnVar asnPure initAlloc
-        ASN_IMPURE_IR asnVar asnImpure -> asnImpureIrToX86 coloring asnVar asnImpure initAlloc
+        INIT_IR var -> 
+            ([], initAlloc)
+        ASN_PURE_IR asnVar asnPure -> 
+            asnPureIrToX86 coloring asnVar asnPure initAlloc
+        ASN_IMPURE_IR asnVar asnImpure -> 
+            asnImpureIrToX86 coloring asnVar asnImpure initAlloc
         GOTO_BB_IR bbIndex ->
             let instr = gotoToX86 bbIndex
              in (instr, initAlloc)
+        SPLIT_BB_IR condPure splitTrue splitFalse ->
+            let instr = splitToX86 coloring condPure splitTrue splitFalse initAlloc
+            in (instr, initAlloc)
         RET_PURE_IR retPure ->
             let instr = retToX86 coloring retPure initAlloc
              in (instr, initAlloc)
@@ -280,6 +286,153 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
 
 gotoToX86 :: Int -> [X86Instruction]
 gotoToX86 bbIndex = [JMP_X86 (bbToLabel bbIndex)]
+
+splitToX86 :: Map.Map VariableIr Int -> PureIr -> Int -> Int -> AllocState -> [X86Instruction]
+splitToX86 coloring condPure splitTrue splitFalse initAlloc = 
+    case condPure of
+        PURE_BASE_IR base ->
+            case base of
+                CONST_IR const ->
+                    case const of
+                        BOOL_CONST True ->
+                            [ JMP_X86 (bbToLabel splitTrue)
+                            ]
+                        BOOL_CONST False ->
+                            [ JMP_X86 (bbToLabel splitFalse)
+                            ]
+                VAR_IR pureVar ->
+                    let pureVarLoc =
+                            case Map.lookup pureVar coloring of
+                                Just color -> getColorReg color initAlloc
+                     in [ CMP_X86 pureVarLoc (CONST_ARGLOC falseX86)
+                        , JZ_X86 (bbToLabel splitFalse)
+                        , JMP_X86 (bbToLabel splitTrue)
+                        ]
+        
+        PURE_BINOP_IR (PureBinopIr cat ty base1 base2) ->
+            let pureVarLoc1 =
+                    case base1 of
+                        CONST_IR const ->
+                            case const of
+                                INT_CONST int -> CONST_ARGLOC int
+                        VAR_IR pureVar ->
+                            case Map.lookup pureVar coloring of
+                                Just color -> getColorReg color initAlloc
+                pureVarLoc2 =
+                    case base2 of
+                        CONST_IR const ->
+                            case const of
+                                INT_CONST int -> CONST_ARGLOC int
+                        VAR_IR pureVar ->
+                            case Map.lookup pureVar coloring of
+                                Just color -> getColorReg color initAlloc
+             in case cat of
+                    LT_IR -> 
+                        case (pureVarLoc1, pureVarLoc2) of
+                            -- S[i] < S[j] -> move S[i] to DX
+                            (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
+                                [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
+                                , JL_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                            -- at least one reg --> direct cmp
+                            _ ->
+                                [ CMP_X86 pureVarLoc1 pureVarLoc2
+                                , JL_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                    LTE_IR ->
+                        case (pureVarLoc1, pureVarLoc2) of
+                            -- S[i] <= S[j] -> move S[i] to DX
+                            (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
+                                [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
+                                , JLE_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                            -- at least one reg --> direct cmp
+                            _ ->
+                                [ CMP_X86 pureVarLoc1 pureVarLoc2
+                                , JLE_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                    GT_IR ->
+                        case (pureVarLoc1, pureVarLoc2) of
+                            -- S[i] > S[j] -> move S[i] to DX
+                            (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
+                                [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
+                                , JG_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                            -- at least one reg --> direct cmp
+                            _ ->
+                                [ CMP_X86 pureVarLoc1 pureVarLoc2
+                                , JG_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                    GTE_IR ->
+                        case (pureVarLoc1, pureVarLoc2) of
+                            -- S[i] >= S[j] -> move S[i] to DX
+                            (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
+                                [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
+                                , JGE_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                            -- at least one reg --> direct cmp
+                            _ ->
+                                [ CMP_X86 pureVarLoc1 pureVarLoc2
+                                , JGE_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                    EQ_IR ->
+                        case (pureVarLoc1, pureVarLoc2) of
+                            -- S[i] == S[j] -> move S[i] to DX
+                            (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
+                                [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
+                                , JE_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                            -- at least one reg --> direct cmp
+                            _ ->
+                                [ CMP_X86 pureVarLoc1 pureVarLoc2
+                                , JE_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                    NEQ_IR ->
+                        case (pureVarLoc1, pureVarLoc2) of
+                            -- S[i] != S[j] -> move S[i] to DX
+                            (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
+                                [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
+                                , JNE_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+                            -- at least one reg --> direct cmp
+                            _ ->
+                                [ CMP_X86 pureVarLoc1 pureVarLoc2
+                                , JNE_X86 (bbToLabel splitTrue)
+                                , JMP_X86 (bbToLabel splitFalse)
+                                ]
+
+        PURE_UNOP_IR (PureUnopIr cat ty base) ->
+            let pureVarLoc =
+                    case base of
+                        CONST_IR const ->
+                            case const of
+                                INT_CONST int -> CONST_ARGLOC int
+                        VAR_IR pureVar ->
+                            case Map.lookup pureVar coloring of
+                                Just color -> getColorReg color initAlloc
+            in case cat of
+                    LOGNOT_IR ->
+                        [ CMP_X86 pureVarLoc (CONST_ARGLOC falseX86)
+                        , JZ_X86 (bbToLabel splitTrue)
+                        , JMP_X86 (bbToLabel splitFalse)
+                        ]
 
 retToX86 :: Map.Map VariableIr Int -> PureIr -> AllocState -> [X86Instruction]
 retToX86 coloring retPure initAlloc =

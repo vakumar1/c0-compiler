@@ -9,6 +9,7 @@ module Model.Ir (
     PureBinopCatIr (..),
     PureUnopIr (..),
     PureUnopCatIr (..),
+    dummyPureIr,
     ImpureIr (..),
     ImpureBinopIr (..),
     ImpureBinopCatIr (..),
@@ -59,7 +60,7 @@ data CommandIr
     | ASN_PURE_IR VariableIr PureIr
     | ASN_IMPURE_IR VariableIr ImpureIr
     | GOTO_BB_IR Int
-    | SPLIT_BB_IR PureBaseIr Int Int
+    | SPLIT_BB_IR PureIr Int Int
     | RET_PURE_IR PureIr
     deriving (Show)
 
@@ -86,6 +87,7 @@ data PureBinopIr = PureBinopIr
     deriving (Show)
 
 data PureBinopCatIr
+    -- arithmetic ops
     = ADD_IR
     | SUB_IR
     | MUL_IR
@@ -94,6 +96,7 @@ data PureBinopCatIr
     | OR_IR
     | SLA_IR
     | SRA_IR
+    -- boolean ops
     | LT_IR
     | GT_IR
     | LTE_IR
@@ -116,6 +119,9 @@ data PureUnopCatIr
     | NOT_IR
     | LOGNOT_IR
     deriving (Show)
+
+dummyPureIr :: PureIr
+dummyPureIr = PURE_BASE_IR (CONST_IR (BOOL_CONST False))
 
 -- impure operations
 data ImpureIr

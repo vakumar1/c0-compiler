@@ -55,7 +55,9 @@ bbLivenessPass :: Set.Set VariableIr -> BasicBlockIr -> Set.Set VariableIr
 bbLivenessPass liveVars bb = 
     foldl updateLiveVarsComm liveVars (bbIrCommands bb)
 
--- MAXIMAL SSA PASS ON BB -> updates BB (phi functions and commands) to conform to SSA form
+-- MAXIMAL SSA PASS ON BB -> updates BB (phi functions and commands) to conform to SSA form by
+-- (i) updating variables to most recent version
+-- (ii) updating the most recent version for asn commands
 
 bbIrToMaximalSSA :: BasicBlockIr -> VariableIrVersion -> (BasicBlockIr, VariableIrVersion)
 bbIrToMaximalSSA bb versions = 
@@ -94,8 +96,10 @@ commandIrToMaximalSSA comm versions =
              in (newComm, newVersions)
         GOTO_BB_IR _ ->
             (comm, versions)
-        SPLIT_BB_IR _ _ _ ->
-            (comm, versions)
+        SPLIT_BB_IR condPure splitLeft splitRight ->
+            let newPure = pureIrToMaximalSSA condPure versions
+                newComm = SPLIT_BB_IR newPure splitLeft splitRight
+            in (newComm, versions)
         RET_PURE_IR retPure ->
             let newPure = pureIrToMaximalSSA retPure versions
                 newComm = RET_PURE_IR newPure

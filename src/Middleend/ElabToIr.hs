@@ -120,8 +120,11 @@ irIf :: IfElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorC
 irIf (IfElab condExp ifStmt Nothing) fnElab state = 
     let 
         -- evaluate if cond exp and add split comm (with both indices unfilled) to curr basic block
-        (condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
-        condComms = (SPLIT_BB_IR condPu 0 0):initCondComms
+        (m_condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
+        condComms = 
+            case m_condPu of
+                Just condPu -> (SPLIT_BB_IR condPu 0 0):initCondComms
+                Nothing -> (SPLIT_BB_IR dummyPureIr 0 0):initCondComms
         termBbIr = appendCommsToBb (irProcStateCurrBb state) condComms
         termState = 
             ((irProcessingStateUpdateBB termBbIr) .
@@ -139,8 +142,11 @@ irIf (IfElab condExp ifStmt Nothing) fnElab state =
 irIf (IfElab condExp ifStmt (Just elseStmt)) fnElab state =
     let 
         -- evaluate if cond exp and add split comm (with both indices unfilled) to curr basic block
-        (condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
-        condComms = (SPLIT_BB_IR condPu 0 0):initCondComms
+        (m_condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
+        condComms = 
+            case m_condPu of
+                Just condPu -> (SPLIT_BB_IR condPu 0 0):initCondComms
+                Nothing -> (SPLIT_BB_IR dummyPureIr 0 0):initCondComms
         termBbIr = appendCommsToBb (irProcStateCurrBb state) condComms
         termState = 
             ((irProcessingStateUpdateBB termBbIr) .
@@ -166,8 +172,11 @@ irWhile (WhileElab condExp whileStmt) fnElab state =
         -- i. create the basic block
         -- ii. add all cond commands + terminate with a split (with both indices unfilled)
         (condBbIr, initState) = irProcessingStateAddBB state
-        (condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
-        condComms = (SPLIT_BB_IR condPu 0 0):initCondComms
+        (m_condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
+        condComms = 
+            case m_condPu of
+                Just condPu -> (SPLIT_BB_IR condPu 0 0):initCondComms
+                Nothing -> (SPLIT_BB_IR dummyPureIr 0 0):initCondComms
         condTermBbIr = appendCommsToBb condBbIr condComms
         condBbIndex = bbIndex condBbIr
 
@@ -205,26 +214,23 @@ irWhile (WhileElab condExp whileStmt) fnElab state =
         condToNextPreds = predecessorCommandsAddSplit predecessorCommandEmpty condBbIndex 1
     in (False, True, condToNextPreds, injectedState)
 
-irCond :: ExpElab -> IrProcessingScopeState -> (PureBaseIr, [CommandIr], IrProcessingScopeState, [VerificationError])
+irCond :: ExpElab -> IrProcessingScopeState -> (Maybe PureIr, [CommandIr], IrProcessingScopeState, [VerificationError])
 irCond e scopeState = 
     let 
         -- evaluate if exp and create temp
         (expComms, m_expPT, expScopeState, expErrs) = irExp e scopeState
-        (tempName, newScopeState) = irProcessingScopeStateAddTemp scopeState
-        temp = VariableIr tempName 0 BOOL_TYPE True
-        base = VAR_IR temp
     in case m_expPT of
         -- fail if exp malformed
         Nothing -> 
-            (base, [], expScopeState, expErrs)
+            (Nothing, [], expScopeState, expErrs)
         Just (expPu, expTy) ->
             if (BOOL_TYPE /= expTy)
                 -- fail on non-bool exp type mismatch
                 then 
-                    (base, [], expScopeState, (IF_COND_TYPE_MISMATCH (IfCondTypeMismatch expTy)) : expErrs)
+                    (Just expPu, [], expScopeState, (IF_COND_TYPE_MISMATCH (IfCondTypeMismatch expTy)) : expErrs)
                 -- success - add asn command
                 else
-                    (base, (ASN_PURE_IR temp expPu) : expComms, expScopeState, expErrs)
+                    (Just expPu, expComms, expScopeState, expErrs)
 
 irDecl :: DeclElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
 irDecl (DeclElab varElab Nothing) state =

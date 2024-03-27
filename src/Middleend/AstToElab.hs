@@ -113,6 +113,7 @@ elaborateExp e =
     case e of
         HEXNUM_EXP h -> CONST_ELAB (elaborateConst h)
         DECNUM_EXP d -> CONST_ELAB (elaborateConst d)
+        BOOL_EXP b -> CONST_ELAB (elaborateConst b)
         IDENTIFIER_EXP id -> IDENTIFIER_ELAB id
         BINOP_EXP b -> BINOP_ELAB (elaborateBinop b)
         UNOP_EXP u -> UNOP_ELAB (elaborateUnop u)
@@ -137,6 +138,8 @@ elaborateConst tok =
         DECNUM d ->
             case (Numeric.readDec d) of
                 [(i, _)] -> INT_CONST i
+        TRUE -> BOOL_CONST True
+        FALSE -> BOOL_CONST False
 
 translateBinop :: TokenCategory -> BinopCatElab
 translateBinop cat = 
