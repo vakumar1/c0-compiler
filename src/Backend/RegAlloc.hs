@@ -6,37 +6,67 @@ where
 
 import Model.Ir
 import Common.Liveness
+import Common.Graphs
+import Common.Errors
 
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-regAllocColoring :: FunctionIr -> Map.Map VariableIr Int
-regAllocColoring fnIr =
-    let ifg = constructIFG fnIr
+regAllocColoring :: FunctionIr -> (Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> Map.Map VariableIr Int
+regAllocColoring fnIr (leaves, dag, sccMap) =
+    let versionedLiveMap = livenessPass fnIr (leaves, dag, sccMap)
+        ifg = constructIFG fnIr versionedLiveMap
         order = simplicialElimOrder ifg
      in greedyGraphColoring ifg order
 
 -- IFG CONSTRUCTION
 
-constructIFG :: FunctionIr -> IFG
-constructIFG fnIr = 
-    let (_, finalIFG) =
-            foldl
-                ( \(interLiveVars, interIFG) index ->
-                    case Map.lookup index (functionIrBlocks fnIr) of
-                        Just bb -> constructIFGBasicBlock (interLiveVars, interIFG) bb
-                        Nothing -> (interLiveVars, interIFG)
-                )
-                (Set.empty, (IFG Set.empty Map.empty))
-                (bfsPredecessors fnIr)
-     in finalIFG
+-- undirected graph - uses a directed graph
+-- and adds both directions for a given undirected edge
 
-constructIFGBasicBlock :: (Set.Set VariableIr, IFG) -> BasicBlockIr -> (Set.Set VariableIr, IFG)
-constructIFGBasicBlock (liveVars, initIFG) bb =
-    let (liveVarsUpdatedComms, ifgUpdatedComms) = foldl constructIFGCommand (liveVars, initIFG) (bbIrCommands bb)
+type IFG = DirectedGraph VariableIr
+
+addNodeToIFG :: VariableIr -> IFG -> IFG
+addNodeToIFG var ifg = addNode var ifg
+
+addEdgeToIFG :: (VariableIr, VariableIr) -> IFG -> IFG
+addEdgeToIFG (var1, var2) ifg = (addEdge var1 var2 (addEdge var2 var1 ifg))
+
+-- construct interference graph between versioned variables
+constructIFG :: FunctionIr -> LiveMap -> IFG
+constructIFG fnIr versionedLiveMap = 
+    foldl
+        (\interIFG bbIndex ->
+            let successors = 
+                    case Map.lookup bbIndex (graphSuccessors (functionIrCFG fnIr)) of
+                        Just s -> s
+                        Nothing -> Set.empty
+                liveOutVars = 
+                    foldr
+                        (\succIndex interLiveOutVars ->
+                            let succLiveInVars = 
+                                    case Map.lookup succIndex versionedLiveMap of
+                                        Just s -> s
+                                        Nothing -> Set.empty
+                            in Set.union interLiveOutVars succLiveInVars
+                        )
+                        Set.empty
+                        successors
+                bb = 
+                    case Map.lookup bbIndex (functionIrBlocks fnIr) of
+                        Just bb -> bb
+                        Nothing -> error (compilerError ("Attempted to lookup basic block during IFG construction that does not exist: bb=" ++ (show bbIndex)))
+            in constructIFGBasicBlock bb liveOutVars interIFG
+        )
+        emptyGraph
+        (looseBbOrdering fnIr)
+
+constructIFGBasicBlock :: BasicBlockIr -> Set.Set VariableIr -> IFG -> IFG
+constructIFGBasicBlock bb liveVars ifg = 
+    let (liveVarsUpdatedComms, ifgUpdatedComms) = foldl constructIFGCommand (liveVars, ifg) (bbIrCommands bb)
         (liveVarsUpdatedPhi, ifgUpdatedPhi) = constructIFGPhi (liveVarsUpdatedComms, ifgUpdatedComms) (bbIrPhiFn bb)
-    in (liveVarsUpdatedPhi, ifgUpdatedPhi)
+    in ifgUpdatedPhi
 
 constructIFGPhi :: (Set.Set VariableIr, IFG) -> PhiFnIr -> (Set.Set VariableIr, IFG)
 constructIFGPhi (liveVars, initIFG) phi = 
@@ -82,7 +112,7 @@ simplicialElimOrder ifg =
             foldr
                 (\node interWeights -> Map.insert node 0 interWeights)
                 Map.empty
-                (ifgNodes ifg)
+                (graphNodes ifg)
      in reverse (simplicialElimOrderHelper ifg initWeights)
 
 simplicialElimOrderHelper :: IFG -> Map.Map VariableIr Int -> [VariableIr]
@@ -100,7 +130,7 @@ simplicialElimOrderHelper ifg weights =
                         (head (Map.toList weights))
                         (tail (Map.toList weights))
                 neighbors =
-                    case Map.lookup maxVar (ifgEdges ifg) of
+                    case Map.lookup maxVar (graphSuccessors ifg) of
                         Just s -> s
                         Nothing -> Set.empty
                 incrWeights =
@@ -126,7 +156,7 @@ greedyGraphColoringHelper ifg order initColoring =
         [] -> initColoring
         var : _ ->
             let neighbors =
-                    case Map.lookup var (ifgEdges ifg) of
+                    case Map.lookup var (graphSuccessors ifg) of
                         Just s -> s
                         Nothing -> Set.empty
                 remainingColors =
@@ -141,30 +171,3 @@ greedyGraphColoringHelper ifg order initColoring =
                 newColoring = Map.insert var (head remainingColors) initColoring
              in greedyGraphColoringHelper ifg (tail order) newColoring
 
--- IFG HELPERS
-
-data IFG = IFG
-    { ifgNodes :: Set.Set VariableIr
-    , ifgEdges :: Map.Map VariableIr (Set.Set VariableIr)
-    }
-    deriving (Show)
-
-addNodeToIFG :: VariableIr -> IFG -> IFG
-addNodeToIFG var ifg =
-    let newNodes = Set.insert var (ifgNodes ifg)
-     in IFG newNodes (ifgEdges ifg)
-
-addEdgeToIFG :: (VariableIr, VariableIr) -> IFG -> IFG
-addEdgeToIFG (var1, var2) ifg =
-    let neighbors1 =
-            case Map.lookup var1 (ifgEdges ifg) of
-                Just s -> s
-                Nothing -> Set.empty
-        newNeighbors1 = Set.insert var2 neighbors1
-        neighbors2 =
-            case Map.lookup var2 (ifgEdges ifg) of
-                Just s -> s
-                Nothing -> Set.empty
-        newNeighbors2 = Set.insert var1 neighbors2
-        newEdges = Map.insert var2 newNeighbors2 (Map.insert var1 newNeighbors1 (ifgEdges ifg))
-     in IFG (ifgNodes ifg) newEdges

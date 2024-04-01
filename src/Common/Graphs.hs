@@ -1,28 +1,56 @@
-module Common.Graph (
-
+module Common.Graphs (
+    DirectedGraph (..),
+    emptyGraph,
+    addNode,
+    addEdge,
+    SCC,
+    tarjansAlgo,
+    innerSCCSubOrdering,
 ) where
+
+import Common.Errors
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 -- common graph model + utilities
+
 data DirectedGraph a = DirectedGraph
     { graphNodes :: Set.Set a
     , graphPredecessors :: Map.Map a (Set.Set a)
     , graphSuccessors :: Map.Map a (Set.Set a)
     }
+instance (Show a) => Show (DirectedGraph a) where
+    show g = 
+        "nodes=[" ++ (foldr (\node curr -> curr ++ (show node) ++ ",") "" (graphNodes g)) ++ "]" ++ 
+        "succEdges=[" ++ 
+        (foldr
+            (\(node, succSet) curr ->
+                curr ++
+                (foldr
+                    (\succ innerCurr ->
+                        innerCurr ++ (show succ) ++ ","
+                    )
+                    ("\n" ++ (show node) ++ "->")
+                    succSet
+                )
+            )
+            ""
+            (Map.toList (graphSuccessors g))
+        ) ++ 
+        "]"
 
 emptyGraph :: DirectedGraph a
 emptyGraph = DirectedGraph Set.empty Map.empty Map.empty
 
-addNode :: Eq a => a -> DirectedGraph a -> DirectedGraph a
+addNode :: Ord a => a -> DirectedGraph a -> DirectedGraph a
 addNode node graph = 
     DirectedGraph
-        (Set.add node (graphNodes graph))
+        (Set.insert node (graphNodes graph))
         (graphPredecessors graph)
         (graphSuccessors graph)
 
-addEdge :: Eq a => a -> a -> DirectedGraph a -> DirectedGraph a
+addEdge :: Ord a => a -> a -> DirectedGraph a -> DirectedGraph a
 addEdge source dest graph = 
     let originalPredecessors = 
             case Map.lookup dest (graphPredecessors graph) of
@@ -34,8 +62,8 @@ addEdge source dest graph =
                 Nothing -> Set.empty
     in DirectedGraph
             (graphNodes graph)
-            Map.insert dest (Set.add source originalPredecessors) (graphPredecessors graph)
-            Map.insert source (Set.add dest originalSuccessors) (graphSuccessors graph)
+            (Map.insert dest (Set.insert source originalPredecessors) (graphPredecessors graph))
+            (Map.insert source (Set.insert dest originalSuccessors) (graphSuccessors graph))
 
 type SCC a = Set.Set a
 
@@ -50,102 +78,114 @@ data TarjanNode a = TarjanNode
     }
 data TarjanState a = TarjanState
     { tarjanStateNodeIndexCtr :: Int                    -- curr node index ctr
-    , tarjanStateSCCIndexCtr :: Int                     -- curr SCC index ctr
     , tarjanStateNodes :: Map.Map a (TarjanNode a)      -- map from node to TarjanNode
     , tarjanStateStack :: [a]                           -- curr stack of nodes
 
     -- intermediary SCC DAG state
+    , tarjanStateSCCIndexCtr :: Int                     -- curr SCC index ctr
     , tarjanStateCurrDAG :: DirectedGraph Int           -- SCC index DAG
+    , tarjanStateDAGLeaves :: Set.Set Int               -- SCC indexes for DAG leaves
     , tarjanStateSCCs :: Map.Map Int (SCC a)            -- map from index to SCC
     , tarjanStateMapToSCC :: Map.Map a Int              -- map from node value to SCC index
     }
 
-tarjansAlgo :: Eq a => a -> DirectedGraph a -> (Map.Map Int (SCC a), DirectedGraph Int)
+tarjansAlgo :: (Ord a, Show a) => a -> DirectedGraph a -> (Set.Set Int, DirectedGraph Int, Map.Map Int (SCC a))
 tarjansAlgo initNode graph = 
-    let initState = TarjanState 0 0 Map.empty [] emptyGraph Map.empty Map.empty
+    let initState = TarjanState 0 Map.empty [] 0 emptyGraph Set.empty Map.empty Map.empty
         finalState = tarjanHelper initNode graph initState
-    in (tarjanStateMapToSCC finalState, tarjanStateCurrDAG finalState)
+    in (tarjanStateDAGLeaves finalState, tarjanStateCurrDAG finalState, tarjanStateSCCs finalState)
 
-tarjanHelper :: (Eq a, Show a) => a -> DirectedGraph a -> TarjanState a -> TarjanState a
+tarjanHelper :: (Ord a, Show a) => a -> DirectedGraph a -> TarjanState a -> TarjanState a
 tarjanHelper node graph state = 
-    let initTarjanNode = 
+    let tarjanIndex = (tarjanStateNodeIndexCtr state)
+        initTarjanNode = 
             TarjanNode
                 node
-                (tarjanStateNodeIndexCtr state)
-                (tarjanStateNodeIndexCtr state)
+                tarjanIndex
+                tarjanIndex
                 True
         initState = 
-            (tarjanUpdateCtr) .
-            (tarjanUpdateNode initTarjanNode) state
+            ((tarjanPushStack node) .
+            (tarjanAddNode initTarjanNode))
+            state
         successors = 
-            case Map.lookup node (graphSuccessors state) of
+            case Map.lookup node (graphSuccessors graph) of
                 Just succ -> succ
                 Nothing -> Set.empty
-        recursedState =
+        (recursedTarjanNode, recursedState) =
             foldr
                 (\succ (interTarjanNode, interState) ->
                     case Map.lookup succ (tarjanStateNodes interState) of
                         Just tarjanSucc ->
                             let newTarjanNodeBase = 
-                                itarjanAddSCCf (tarjanNodeProcessing tarjanSucc)
-                                    then (min (tarjanNodeBase interTarjanNode) (tarjanNodeIndex tarjanSucc))
-                                    else (tarjanNodeBase interTarjanNode)
-                                newTarjanNode = TarjanNode node (tarjanNodeIndex interTarjanNode) newTarjanNodeBase
+                                    if (tarjanNodeProcessing tarjanSucc)
+                                        then (min (tarjanNodeBase interTarjanNode) (tarjanNodeIndex tarjanSucc))
+                                        else (tarjanNodeBase interTarjanNode)
+                                newTarjanNode = 
+                                    TarjanNode 
+                                        node 
+                                        tarjanIndex
+                                        newTarjanNodeBase
+                                        True
                                 newTarjanState = tarjanUpdateNode newTarjanNode interState
                             in (newTarjanNode, newTarjanState)
                         Nothing ->
-                            let processedTarjanState = tarjanHelper (tarjanNodeValue tarjanSucc) graph interState
+                            let processedTarjanState = tarjanHelper succ graph interState
                                 newTarjanSucc = 
                                     case Map.lookup succ (tarjanStateNodes processedTarjanState) of
                                         Just s -> s
-                                        Nothing -> compilerError (error "Attempted to access successor Tarjan Node after processing that does not exist: " ++ (show succ))
+                                        Nothing -> error (compilerError ("Attempted to access successor Tarjan Node after processing that does not exist: " ++ (show succ)))
                                 newTarjanNodeBase = (min (tarjanNodeBase interTarjanNode) (tarjanNodeBase newTarjanSucc))
-                                newTarjanNode = TarjanNode node (tarjanNodeIndex interTarjanNode) newTarjanNodeBase
-                                newTarjanState = tarjanUpdateNode newTarjanNode interState
+                                newTarjanNode = 
+                                    TarjanNode 
+                                        node 
+                                        tarjanIndex
+                                        newTarjanNodeBase
+                                        True
+                                newTarjanState = tarjanUpdateNode newTarjanNode processedTarjanState
                             in (newTarjanNode, newTarjanState)
                 )
-                (interTarjanNode, initState)
+                (initTarjanNode, initState)
                 successors
-        newTarjanNode = 
-            case Map.lookup node (tarjanStateNodes recursedState) of
-                Just s -> s
-                Nothing -> compilerError (error "Attempted to access current Tarjan Node after processing that does not exist: " ++ (show node))
-    in if (tarjanNodeIndex initTarjanNode) == (tarjanNodeIndex newTarjanNode)
-        then 
-            let (poppedState, scc) = tarjanPopStackToSCC baseNode state Set.empty
-            in tarjanAddSCC scc graph poppedState
-        else recursedState
+    in if (tarjanNodeIndex recursedTarjanNode) == (tarjanNodeBase recursedTarjanNode)
+            then 
+                let (poppedState, scc) = tarjanPopStackToSCC node (recursedState, Set.empty)
+                in tarjanAddSCC scc graph poppedState
+            else recursedState
 
 -- Tarjan State Node helpers
 
-tarjanAddNode :: Eq a => TarjanNode a -> TarjanState a -> TarjanState a
+tarjanAddNode :: Ord a => TarjanNode a -> TarjanState a -> TarjanState a
 tarjanAddNode tarjanNode state =
     TarjanState
         ((tarjanStateNodeIndexCtr state) + 1)
-        (tarjanStateSCCIndexCtr state)
         (Map.insert (tarjanNodeValue tarjanNode) tarjanNode (tarjanStateNodes state))
         (tarjanStateStack state)
+        (tarjanStateSCCIndexCtr state)
         (tarjanStateCurrDAG state)
+        (tarjanStateDAGLeaves state)
         (tarjanStateSCCs state)
         (tarjanStateMapToSCC state)
 
-tarjanUpdateNode :: Eq a => TarjanNode a -> TarjanState a -> TarjanState a
+tarjanUpdateNode :: Ord a => TarjanNode a -> TarjanState a -> TarjanState a
 tarjanUpdateNode tarjanNode state = 
     TarjanState
         (tarjanStateNodeIndexCtr state)
-        (tarjanStateSCCIndexCtr state)
         (Map.insert (tarjanNodeValue tarjanNode) tarjanNode (tarjanStateNodes state))
         (tarjanStateStack state)
+        (tarjanStateSCCIndexCtr state)
         (tarjanStateCurrDAG state)
+        (tarjanStateDAGLeaves state)
         (tarjanStateSCCs state)
         (tarjanStateMapToSCC state)
 
 -- Tarjan State SCC helpers
 
-tarjanAddSCC :: Eq a => SCC a -> DirectedGraph a -> TarjanState a -> TarjanState a
+tarjanAddSCC :: (Ord a, Show a) => SCC a -> DirectedGraph a -> TarjanState a -> TarjanState a
 tarjanAddSCC scc graph state = 
     let newSCCIndex = (tarjanStateSCCIndexCtr state) + 1
-        newDAG = tarjanInsertSCCToDAG (tarjanStateSCCIndexCtr state) scc graph (tarjanStateMapToSCC state) (tarjanStateCurrDAG state)
+        (isLeaf, newDAG) = tarjanInsertSCCToDAG (tarjanStateSCCIndexCtr state) scc graph (tarjanStateMapToSCC state) (tarjanStateCurrDAG state)
+        newLeaves = if isLeaf then Set.insert newSCCIndex (tarjanStateDAGLeaves state) else (tarjanStateDAGLeaves state)
         newSCCs = Map.insert (tarjanStateSCCIndexCtr state) scc (tarjanStateSCCs state)
         newMapToSCC = 
             foldr
@@ -156,75 +196,100 @@ tarjanAddSCC scc graph state =
                 scc
     in TarjanState
             (tarjanStateNodeIndexCtr state)
-            newSCCIndex
             (tarjanStateNodes state)
             (tarjanStateStack state)
+            newSCCIndex
             newDAG
+            newLeaves
             newSCCs
             newMapToSCC
 
-tarjanInsertSCCToDAG :: Eq a => Int -> SCC a -> DirectedGraph a -> Map.Map a Int -> DirectedGraph Int -> DirectedGraph Int
+tarjanInsertSCCToDAG :: (Ord a, Show a) => Int -> SCC a -> DirectedGraph a -> Map.Map a Int -> DirectedGraph Int -> (Bool, DirectedGraph Int)
 tarjanInsertSCCToDAG sccIndex scc graph sccMap dag =
     foldr
-        (\node interDag ->
+        (\node (interIsLeaf, interDag) ->
             let successors = 
-                case Map.lookup node (graphSuccessors graph) of
-                    Just s -> s
-                    Nothing -> Set.empty
-            foldr
-                (\succ innerInterDag ->
-                    case Map.lookup succ sccMap of
-                        Just succSCC -> addEdge sccIndex succSCC
-                        Nothing -> compilerError (error "Tarjan's algo added a node to an SCC before its successor was added to an SCC: " ++ 
-                                                        "node=" ++ (show node) ++ " succ=" ++ (succ))
-                )
-                interDag
-                successors
+                    case Map.lookup node (graphSuccessors graph) of
+                        Just s -> s
+                        Nothing -> Set.empty
+            in foldr
+                    (\succ (innerInterIsLeaf, innerInterDag) ->
+                        case Map.lookup succ sccMap of
+                            Just succSCC -> 
+                                if sccIndex == succSCC
+                                    then (innerInterIsLeaf, innerInterDag)
+                                    else (False, addEdge sccIndex succSCC innerInterDag)
+                            Nothing -> error (compilerError ("Tarjan's algo added a node to an SCC before itself/successor was added to an SCC: " ++ 
+                                                            "node=" ++ (show node) ++ " succ=" ++ (show succ)))
+                    )
+                    (interIsLeaf, interDag)
+                    successors
         )
-        (addNode sccIndex dag)
+        (True, addNode sccIndex dag)
         scc
 
 -- Tarjan State stack helpers
 
-tarjanPopStackToSCC :: (Show, Eq) a => a -> (TarjanState a, SCC a) -> (TarjanState a, SCC a)
-tarjanPopStackToSCC baseNode state currSCC = 
-    case tarjanPopStack of
-        (Nothing, _) -> compilerError (error "Attempted to clear Tarjan stack but did not find base node: " ++ (show node))
-        (Just baseNode, newState) -> (newState, Set.add baseNode currSCC)
-        (Just x, newState) -> tarjanPopStackToSCC baseNode newState (Set.add x currSCC)
+-- pops all nodes on top of stack into an SCC until reaching the base node
+tarjanPopStackToSCC :: (Show a, Ord a) => a -> (TarjanState a, SCC a) -> (TarjanState a, SCC a)
+tarjanPopStackToSCC baseNode (state, currSCC) = 
+    case (tarjanPopStack state) of
+        (Just baseNode, newState) -> 
+            (newState, Set.insert baseNode currSCC)
+        (Just x, newState) -> 
+            tarjanPopStackToSCC baseNode (newState, Set.insert x currSCC)
+        (Nothing, _) -> error (compilerError "Attempted to clear Tarjan stack but did not find base node: " ++ (show baseNode))
+
+-- pops top node from stack and returns
+-- and updates node state to not processing
+tarjanPopStack :: (Show a, Ord a) => TarjanState a -> (Maybe a, TarjanState a)
+tarjanPopStack state =
+    case (tarjanStateStack state) of
+        [] -> (Nothing, state)
+        node : _ -> 
+            let newStack = tail (tarjanStateStack state)
+                newTarjanNode = 
+                    case Map.lookup node (tarjanStateNodes state) of
+                        Just tarjanNode ->
+                            TarjanNode
+                                (tarjanNodeValue tarjanNode) 
+                                (tarjanNodeIndex tarjanNode) 
+                                (tarjanNodeBase tarjanNode)
+                                False
+                        Nothing -> error (compilerError ("Attempted to update Tarjan Node after popping from stack that does not exist: node=" ++ (show node)))
+            in (Just node,
+                TarjanState
+                    (tarjanStateNodeIndexCtr state)
+                    (Map.insert node newTarjanNode (tarjanStateNodes state))
+                    newStack
+                    (tarjanStateSCCIndexCtr state)
+                    (tarjanStateCurrDAG state)
+                    (tarjanStateDAGLeaves state)
+                    (tarjanStateSCCs state)
+                    (tarjanStateMapToSCC state))
 
 tarjanPushStack :: a -> TarjanState a -> TarjanState a
 tarjanPushStack node state =
     TarjanState
         (tarjanStateNodeIndexCtr state)
-        (tarjanStateSCCIndexCtr state)
         (tarjanStateNodes state)        
-        (a:(tarjanStateStack state))
+        (node:(tarjanStateStack state))
+        (tarjanStateSCCIndexCtr state)
         (tarjanStateCurrDAG state)
+        (tarjanStateDAGLeaves state)
         (tarjanStateSCCs state)
         (tarjanStateMapToSCC state)
 
-tarjanPopStack :: TarjanState a -> (Just a, TarjanState a)
-tarjanPushStack node state =
-    let (elem, newStack) = 
-        case (tarjanStateStack state) of
-            [] -> (Nothing, [])
-            x : _ -> (Just x, (tail tarjanStateStack state))
-        in (elem, TarjanState
-                (tarjanStateNodeIndexCtr state)
-                (tarjanStateSCCIndexCtr state)
-                (tarjanStateNodes state)        
-                newStack
-                (tarjanStateCurrDAG state)
-                (tarjanStateSCCs state)
-                (tarjanStateMapToSCC state))
-
--- TODO: add predecessor ordering
-
--- converts the SCC DAG to a list of sets of nodes
--- where each set is a strict ancestor of the previous set
--- i.e. for nodes A and B
--- i. if A ancestor of B -> B is in an earlier set than A's set
--- ii. if B ancestor of A -> A is in an earlier set than B's set
--- iii. o/w A and B are in the same set
-strictBfsPredecessorOrdering :: Map.Map Int (SCC a) -> DirectedGraph Int -> [Set.Set a]
+-- returns a sub-ordering of an SCC
+-- where we repeat an arbitrary ordering of all but one of the elements of the SCC
+-- e.g. the SCC {A, B, C} could return the ordering [A, B, C, A, B] or [C, A, B, A, C]
+-- -> every element appears before and after every other element in the SCC
+innerSCCSubOrdering :: (Ord a) => Int -> Map.Map Int (SCC a) -> [a]
+innerSCCSubOrdering sccIndex sccMap = 
+    let scc = 
+            case Map.lookup sccIndex sccMap of
+                Just s -> s
+                Nothing -> error (compilerError ("Attempted to lookup SCC index for SCC that does not exist while generating subordering: index=" ++ (show sccIndex)))
+        initOrdering = Set.toList scc
+        doubleOrdering = initOrdering ++ (Set.toList (Set.delete (last initOrdering) scc))
+    in doubleOrdering

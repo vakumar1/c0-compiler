@@ -28,6 +28,7 @@ library
       Backend.Codegen
       Backend.RegAlloc
       Common.Errors
+      Common.Graphs
       Common.Liveness
       Frontend.Lexer
       Frontend.Parser

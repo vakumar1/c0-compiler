@@ -14,7 +14,7 @@ import qualified Data.Set as Set
 
 irToX86 :: Map.Map VariableIr Int -> FunctionIr -> [X86Instruction]
 irToX86 coloring fnIr =
-    let blocks = bfsSuccessors fnIr
+    let blocks = looseBbOrdering fnIr
         -- initialize function spillover at SP - 8 and w/ all available registers
         initAlloc = AllocState Map.empty 8 availableRegisters
         (instBlockMap, _) =

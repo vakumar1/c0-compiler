@@ -6,6 +6,7 @@ import Middleend.AstToElab
 import Backend.Codegen
 import Middleend.ElabToIr
 import Common.Errors
+import Common.Graphs
 import Model.Ir
 import Middleend.IrToSSA
 import Frontend.Lexer
@@ -43,8 +44,9 @@ compiler code =
         ast = parser (reverse tokens)
         elaborated = elaborate ast
         (ir, verErrors) = irFunction elaborated
-        maxSSAIr = irToMaximalSSA ir
-        coloring = regAllocColoring maxSSAIr
+        (leaves, dag, sccMap) = tarjansAlgo 0 (functionIrCFG ir)
+        maxSSAIr = irToMaximalSSA ir (leaves, dag, sccMap)
+        coloring = regAllocColoring maxSSAIr (leaves, dag, sccMap)
         x86asm = foldl (\interCode instr -> interCode ++ (show instr)) "" (irToX86 coloring maxSSAIr)
      in if not (null lexerErrors)
             then prettyPrintList lexerErrors

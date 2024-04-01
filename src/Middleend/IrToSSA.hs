@@ -3,6 +3,7 @@ module Middleend.IrToSSA (
 ) where
 
 import Common.Errors
+import Common.Graphs
 import Model.Ir
 import Common.Liveness
 
@@ -13,51 +14,50 @@ import qualified Data.Set as Set
 -- MAXIMAL SSA PASS ON CFG -> 
 -- - updates SSA Id for each variable (in phi-functions and commands) to conform to SSA form 
 -- - injects live vars into successor phi-functions
+-- - returns 
+-- - (i) the updated FnIr
+-- - (ii) the SCC DAG + metadata constructed as a byproduct
 
-irToMaximalSSA :: FunctionIr -> FunctionIr
-irToMaximalSSA fnIr =
-    let order = bfsSuccessors fnIr
-        liveMap = livenessPass fnIr
-        (newFnIr, _) = 
+irToMaximalSSA :: FunctionIr -> (Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> FunctionIr
+irToMaximalSSA fnIr (leaves, dag, sccMap) =
+    let bbLiveMap = livenessPass fnIr (leaves, dag, sccMap)
+        versionedFnIr = versionPass fnIr bbLiveMap
+    in versionedFnIr
+
+-- MAXIMAL SSA PASS ON BB -> updates BB (phi functions and commands) to conform to SSA form by
+-- (i) updating variables to most recent version
+-- (ii) updating the most recent version for asn commands
+
+-- map from variable name to most recent VariableIr version of variable
+type VariableIrVersion = Map.Map String VariableIr
+
+updateVarVersion :: VariableIr -> VariableIrVersion -> (VariableIr, VariableIrVersion)
+updateVarVersion (VariableIr name _ ty tmp) versions = 
+    let currCount = 
+            case Map.lookup name versions of
+                Just currVar -> (variableIrSSAId currVar)
+                Nothing -> 0
+        newVar = VariableIr name (currCount + 1) ty tmp
+        newVersions = Map.insert name newVar versions
+    in (newVar, newVersions)
+
+-- version pass converts variable versions within BBs in loose BFS order
+versionPass :: FunctionIr -> LiveMap -> FunctionIr
+versionPass fnIr bbLiveMap = 
+    let (newFnIr, _) = 
             foldl
                 (\(interFnIr, interVersions) index ->
                     case Map.lookup index (functionIrBlocks interFnIr) of
                         Just bb -> 
                             let (updatedBb, newVersions) = bbIrToMaximalSSA bb interVersions
-                                currUpdatedFnIr = addBbsToFunction interFnIr [updatedBb]
-                                succUpdatedFnIr = bbInjectPhiFn currUpdatedFnIr liveMap newVersions (bbIndex updatedBb)
+                                currUpdatedFnIr = addBbsToFunction [updatedBb] interFnIr
+                                succUpdatedFnIr = bbInjectPhiFn currUpdatedFnIr bbLiveMap newVersions (bbIndex updatedBb)
                             in (succUpdatedFnIr, newVersions)
+                        Nothing -> error (compilerError ("Attempted to access bb index supplied from BFS ordering that does not exist: bbIndex=" ++ (show index)))
                 )
                 (fnIr, Map.empty)
-                order
+                (looseBbOrdering fnIr)
     in newFnIr
-
--- LIVENESS PASS ON CFG -> returns map of variables that are live-in for each BB
-
-livenessPass :: FunctionIr -> LiveMap
-livenessPass fnIr = 
-    let order = bfsPredecessors fnIr
-        (liveMap, _) = 
-            foldl 
-                (\(interLiveMap, interLiveVars) index ->
-                    case Map.lookup index (functionIrBlocks fnIr) of
-                        Just bb -> 
-                            let newLiveVars = bbLivenessPass interLiveVars bb
-                                newLiveMap = Map.insert index newLiveVars interLiveMap
-                            in (newLiveMap, newLiveVars)
-                        Nothing -> error (compilerError ("Liveness pass encountered basic block index not in fnIr" ++ (show index)))
-                )
-                (Map.empty, Set.empty)
-                order
-    in liveMap
-
-bbLivenessPass :: Set.Set VariableIr -> BasicBlockIr -> Set.Set VariableIr
-bbLivenessPass liveVars bb = 
-    foldl updateLiveVarsComm liveVars (bbIrCommands bb)
-
--- MAXIMAL SSA PASS ON BB -> updates BB (phi functions and commands) to conform to SSA form by
--- (i) updating variables to most recent version
--- (ii) updating the most recent version for asn commands
 
 bbIrToMaximalSSA :: BasicBlockIr -> VariableIrVersion -> (BasicBlockIr, VariableIrVersion)
 bbIrToMaximalSSA bb versions = 
@@ -136,7 +136,7 @@ pureBaseIrToMaximalSSA base versions =
 bbInjectPhiFn :: FunctionIr -> LiveMap -> VariableIrVersion -> Int -> FunctionIr
 bbInjectPhiFn fnIr liveMap versions predBbIndex = 
     let succBbIndices = 
-            case Map.lookup predBbIndex (functionIrSuccessorMap fnIr) of
+            case Map.lookup predBbIndex (graphSuccessors (functionIrCFG fnIr)) of
                 Just succs -> succs
                 Nothing -> Set.empty
     in foldr
@@ -144,7 +144,7 @@ bbInjectPhiFn fnIr liveMap versions predBbIndex =
                 case Map.lookup id (functionIrBlocks interFnIr) of
                     Just bb ->  
                         let newBb = succBbInjectPhiFn bb liveMap versions predBbIndex
-                        in addBbsToFunction interFnIr [newBb]
+                        in addBbsToFunction [newBb] interFnIr
                     Nothing -> error (compilerError ("BB Phi-Fn injection succ map lookup encountered basic block index not in fnIr" ++ (show id)))
             )
             fnIr
@@ -174,21 +174,3 @@ succBbInjectPhiFn bbIr liveMap versions predBbIndex =
                 (bbIrPhiFn bbIr)
                 liveVars
     in BasicBlockIr (bbIndex bbIr) newPhiFn (bbIrCommands bbIr)
-
--- SSA Data Types and Helpers
-
--- map from bb index to (base; i.e., SSAId = 0) variables that are live-in at start of bb
-type LiveMap = Map.Map Int (Set.Set VariableIr)
-
--- map from variable name to most recent VariableIr version of variable
-type VariableIrVersion = Map.Map String VariableIr
-
-updateVarVersion :: VariableIr -> VariableIrVersion -> (VariableIr, VariableIrVersion)
-updateVarVersion (VariableIr name _ ty tmp) versions = 
-    let currCount = 
-            case Map.lookup name versions of
-                Just currVar -> (variableIrSSAId currVar)
-                Nothing -> 0
-        newVar = VariableIr name (currCount + 1) ty tmp
-        newVersions = Map.insert name newVar versions
-    in (newVar, newVersions)

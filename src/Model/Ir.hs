@@ -18,21 +18,19 @@ module Model.Ir (
     addEdgeToCFG,
     appendCommsToBb,
     bbTerminates,
-    bfsSuccessors,
-    bfsPredecessors,
+    looseBbOrdering,
 )
 where
 
 import Model.Types
+import Common.Graphs
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 data FunctionIr = FunctionIr
     { functionIrBlocks :: Map.Map Int BasicBlockIr
-    , functionIrPredecessorMap :: Map.Map Int (Set.Set Int)
-    , functionIrSuccessorMap :: Map.Map Int (Set.Set Int)
-    , functionIrTerminators :: Set.Set Int
+    , functionIrCFG :: DirectedGraph Int
     }
     deriving (Show)
 
@@ -158,33 +156,28 @@ instance Ord VariableIr where
 -- HELPERS
 -- adds basic block to function's collection
 -- records whether the basic block definitely terminates (ends in return)
-addBbsToFunction :: FunctionIr -> [BasicBlockIr] -> FunctionIr
-addBbsToFunction fn bbs =
-    let newBlocks = foldr (\bb interMap -> Map.insert (bbIndex bb) bb interMap) (functionIrBlocks fn) bbs
-        newTerminators =
+addBbsToFunction :: [BasicBlockIr] -> FunctionIr -> FunctionIr
+addBbsToFunction bbs fn =
+    let newBlocks = 
             foldr
-                (\bb interSet -> if (bbTerminates bb) then (Set.insert (bbIndex bb) interSet) else interSet)
-                (functionIrTerminators fn)
+                (\bb interBlocks ->
+                    Map.insert (bbIndex bb) bb interBlocks
+                )
+                (functionIrBlocks fn)
                 bbs
-     in FunctionIr newBlocks (functionIrPredecessorMap fn) (functionIrSuccessorMap fn) newTerminators
+        newCFG = 
+            foldr 
+                addNode 
+                (functionIrCFG fn) 
+                (map bbIndex bbs)
+     in FunctionIr newBlocks newCFG
 
--- adds edge to function's CFG
+-- adds edge from source->dest to function's CFG
 -- * may add loops in the CFG in the event of while statements
-addEdgeToCFG :: FunctionIr -> Int -> Int -> FunctionIr
-addEdgeToCFG fn source dest =
-    let destPreds =
-            case Map.lookup dest (functionIrPredecessorMap fn) of
-                Just s -> s
-                Nothing -> Set.empty
-        newDestPreds = Set.insert source destPreds
-        newPredsMap = Map.insert dest newDestPreds (functionIrPredecessorMap fn)
-        srcSuccs =
-            case Map.lookup source (functionIrSuccessorMap fn) of
-                Just s -> s
-                Nothing -> Set.empty
-        newSrcSuccs = Set.insert dest srcSuccs
-        newSuccsMap = Map.insert source newSrcSuccs (functionIrSuccessorMap fn)
-     in FunctionIr (functionIrBlocks fn) newPredsMap newSuccsMap (functionIrTerminators fn)
+addEdgeToCFG :: Int -> Int -> FunctionIr -> FunctionIr
+addEdgeToCFG source dest fn =
+    let newCFG = addEdge source dest (functionIrCFG fn)
+    in FunctionIr (functionIrBlocks fn) (addEdge source dest (functionIrCFG fn))
 
 appendCommsToBb :: BasicBlockIr -> [CommandIr] -> BasicBlockIr
 appendCommsToBb bb comms = BasicBlockIr (bbIndex bb) (bbIrPhiFn bb) (comms ++ (bbIrCommands bb))
@@ -196,68 +189,34 @@ bbTerminates bb =
         RET_PURE_IR _ : _ -> True
         _ -> False
 
--- returns a BFS iteration over the CFG starting from block 0
-bfsSuccessors :: FunctionIr -> [Int]
-bfsSuccessors fnIr = reverse (bfsSuccessorsHelper fnIr [0] (Set.insert 0 Set.empty) [])
+-- returns a loose BFS ordering of BB indices for purposes of clarity 
+-- (where an exact ordering is desired but unneeded)
+looseBbOrdering :: FunctionIr -> [Int]
+looseBbOrdering fnIr = 
+    looseBbOrderingHelper (Set.singleton 0) Set.empty fnIr []
 
-bfsSuccessorsHelper :: FunctionIr -> [Int] -> Set.Set Int -> [Int] -> [Int]
-bfsSuccessorsHelper fnIr queue seen order =
-    case queue of
-        [] -> order
-        index : _ ->
-            let succIds =
-                    case Map.lookup index (functionIrSuccessorMap fnIr) of
-                        Just s -> s
-                        Nothing -> Set.empty
-                (newQueue, newSeen) =
+looseBbOrderingHelper :: Set.Set Int -> Set.Set Int -> FunctionIr -> [Int] -> [Int]
+looseBbOrderingHelper queue seen fnIr currOrder =
+    if Set.size queue == 0
+        then currOrder
+        else
+            let newSeen = Set.union queue seen
+                newQueue = 
                     foldr
-                        ( \succId (interQueue, interSeen) ->
-                            if (Set.member succId interSeen)
-                                then (interQueue, interSeen)
-                                else (interQueue ++ [succId], Set.insert succId interSeen)
+                        (\bbIndex interQueue ->
+                            let succIndices = 
+                                    case Map.lookup bbIndex (graphSuccessors (functionIrCFG fnIr)) of
+                                        Just s -> s
+                                        Nothing -> Set.empty
+                                unseenSuccIndices = 
+                                    Set.filter
+                                        (\succIndex ->
+                                            not (Set.member succIndex seen)    
+                                        )
+                                        succIndices
+                            in Set.union interQueue unseenSuccIndices
                         )
-                        (tail queue, seen)
-                        succIds
-                newOrder = index : order
-             in bfsSuccessorsHelper fnIr newQueue newSeen newOrder
-
--- returns a BFS iteration over the CFG starting from the return blocks
-bfsPredecessors :: FunctionIr -> [Int]
-bfsPredecessors fnIr =
-    let retBlocks = bfsPredecessorsInitQueue fnIr
-     in reverse (bfsPredecessorsHelper fnIr retBlocks (Set.fromList retBlocks) [])
-
-bfsPredecessorsInitQueue :: FunctionIr -> [Int]
-bfsPredecessorsInitQueue fnIr =
-    map
-        (\(index, bb) -> index)
-        (filter (\(index, bb) -> (bbTerminates bb)) (Map.toList (functionIrBlocks fnIr)))
-
-bfsPredecessorsHelper :: FunctionIr -> [Int] -> Set.Set Int -> [Int] -> [Int]
-bfsPredecessorsHelper fnIr queue seen order =
-    case queue of
-        [] -> order
-        index : _ ->
-            let predIds =
-                    case Map.lookup index (functionIrPredecessorMap fnIr) of
-                        Just s -> s
-                        Nothing -> Set.empty
-                (newQueue, newSeen) =
-                    foldr
-                        ( \predId (interQueue, interSeen) ->
-                            if ((Set.member predId interSeen) || (not (allSuccessorsVisited fnIr predId interSeen)))
-                                then (interQueue, interSeen)
-                                else (interQueue ++ [predId], Set.insert predId interSeen)
-                        )
-                        (tail queue, seen)
-                        predIds
-                newOrder = index : order
-             in bfsPredecessorsHelper fnIr newQueue newSeen newOrder
-
-allSuccessorsVisited :: FunctionIr -> Int -> Set.Set Int -> Bool
-allSuccessorsVisited fnIr predId seen =
-    let succIds =
-            case Map.lookup predId (functionIrSuccessorMap fnIr) of
-                Just s -> s
-                Nothing -> Set.empty
-     in all (\succId -> Set.member succId seen) succIds
+                        Set.empty
+                        queue
+                newOrder = currOrder ++ (Set.toList queue)
+            in looseBbOrderingHelper newQueue newSeen fnIr newOrder

@@ -5,6 +5,7 @@ where
 
 import Model.Elaborated
 import Common.Errors
+import Common.Graphs
 import Model.Ir
 import Model.Tokens
 import Model.Types
@@ -44,7 +45,7 @@ data Scope = Scope
 irFunction :: FunctionElab -> (FunctionIr, [VerificationError])
 irFunction fnElab =
     let initBbIr = BasicBlockIr 0 Map.empty []
-        initFnIr = FunctionIr Map.empty Map.empty Map.empty Set.empty
+        initFnIr = FunctionIr Map.empty emptyGraph
         initScopeState = IrProcessingScopeState [] 0 0
         initState = IrProcessingState initBbIr initFnIr [] 1 initScopeState
         (finalTerm, _, _, finalState) = irSeq (functionElabBlock fnElab) fnElab initState
@@ -67,7 +68,7 @@ irStatement stmtElab fnElab (startBb, preds, state) =
                 then state
                 else
                     -- commit current basic block + create new basic block + apply predecessor injection
-                    let termFnIr = addBbsToFunction (irProcStateFunctionIr state) [(irProcStateCurrBb state)]
+                    let termFnIr = addBbsToFunction [(irProcStateCurrBb state)] (irProcStateFunctionIr state)
                         termState = irProcessingStateUpdateFn termFnIr state
                         (startBb, _state) = irProcessingStateAddBB termState
                         startState = irProcessingStateUpdateBB startBb _state
@@ -183,10 +184,10 @@ irWhile (WhileElab condExp whileStmt) fnElab state =
         -- terminate the current basic block w/ a direct GOTO to cond basic block
         -- also manually add edge in function CFG
         termBbIr = appendCommsToBb (irProcStateCurrBb initState) [(GOTO_BB_IR condBbIndex)]
-        manualInjectFnIr = (addEdgeToCFG (irProcStateFunctionIr initState) (bbIndex termBbIr) condBbIndex)
+        manualInjectFnIr = (addEdgeToCFG (bbIndex termBbIr) condBbIndex (irProcStateFunctionIr initState))
 
         -- commit the original term and cond basic blocks to fn
-        condTermFnIr = addBbsToFunction manualInjectFnIr [termBbIr, condTermBbIr]
+        condTermFnIr = addBbsToFunction [termBbIr, condTermBbIr] manualInjectFnIr
         condTermState = 
             ((irProcessingStateAppendErrs condErrs) .
             (irProcessingStateUpdateScopeState condScopeState) .
@@ -203,7 +204,7 @@ irWhile (WhileElab condExp whileStmt) fnElab state =
         -- i. commit the current basic block (whatever it is)
         -- ii. set the current basic block to be the cond block
         -- iii. manually apply stmt->cond injection
-        stmtTermFnIr = addBbsToFunction (irProcStateFunctionIr stmtState) [(irProcStateCurrBb stmtState)]
+        stmtTermFnIr = addBbsToFunction [(irProcStateCurrBb stmtState)] (irProcStateFunctionIr stmtState)
         stmtTermState = 
             ((irProcessingStateUpdateBB condTermBbIr) .
             (irProcessingStateUpdateFn stmtTermFnIr))
@@ -346,7 +347,7 @@ irRet (RetElab e) (FunctionElab _ (TypeElab retTy _) _) state =
                     else
                         let comms = (RET_PURE_IR expPu) : expComms
                             retBbIr = (appendCommsToBb (irProcStateCurrBb state) comms)
-                            retFnIr = addBbsToFunction (irProcStateFunctionIr state) [retBbIr]
+                            retFnIr = addBbsToFunction [retBbIr] (irProcStateFunctionIr state)
                             retState = 
                                 ((irProcessingStateUpdateFn retFnIr) .
                                 (irProcessingStateAppendErrs expErrs) .
@@ -506,7 +507,10 @@ applyPredecessorCommands predComms state =
                     case Map.lookup predBlockIndex (functionIrBlocks interFnIr) of
                         Just bb -> 
                             let newBBIr = applyPredecessorGoto bb successorBbIndex
-                                newFnIr = addEdgeToCFG (addBbsToFunction interFnIr [newBBIr]) predBlockIndex successorBbIndex
+                                newFnIr = 
+                                    ((addEdgeToCFG predBlockIndex successorBbIndex) . 
+                                    (addBbsToFunction [newBBIr]))
+                                    interFnIr
                             in newFnIr
                         Nothing -> error (compilerError ("Attempted to insert successor after nonexistent predecessor BasicBlock GOTO: BasicBlockIr=" ++ (show predBlockIndex)))
                 )
@@ -518,7 +522,10 @@ applyPredecessorCommands predComms state =
                     case Map.lookup predBlockIndex (functionIrBlocks interFnIr) of
                         Just bb -> 
                             let newBBIr = applyPredecessorSplit bb successorBbIndex succSplitPos
-                                newFnIr = addEdgeToCFG (addBbsToFunction interFnIr [newBBIr]) predBlockIndex successorBbIndex
+                                newFnIr = 
+                                    ((addEdgeToCFG predBlockIndex successorBbIndex) . 
+                                    (addBbsToFunction [newBBIr]))
+                                    interFnIr
                             in newFnIr
                         Nothing -> error (compilerError ("Attempted to insert successor after nonexistent predecessor BasicBlock SPLIT: BasicBlockIr=" ++ (show predBlockIndex)))
                 )
