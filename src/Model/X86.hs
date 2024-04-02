@@ -62,7 +62,7 @@ instance Show X86Instruction where
                     JMP_X86 l ->
                         Printf.printf "jmp %s" l
                     CMP_X86 r1 r2 ->
-                        Printf.printf "comp %s %s" (show r1) (show r2)
+                        Printf.printf "cmp %s %s" (show r1) (show r2)
                     JZ_X86 l ->
                         Printf.printf "jz %s" l
                     JL_X86 l ->

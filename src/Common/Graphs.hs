@@ -97,7 +97,7 @@ tarjansAlgo initNode graph =
 
 tarjanHelper :: (Ord a, Show a) => a -> DirectedGraph a -> TarjanState a -> TarjanState a
 tarjanHelper node graph state = 
-    let tarjanIndex = (tarjanStateNodeIndexCtr state)
+    let tarjanIndex = tarjanStateNodeIndexCtr state
         initTarjanNode = 
             TarjanNode
                 node
@@ -134,7 +134,7 @@ tarjanHelper node graph state =
                                 newTarjanSucc = 
                                     case Map.lookup succ (tarjanStateNodes processedTarjanState) of
                                         Just s -> s
-                                        Nothing -> error (compilerError ("Attempted to access successor Tarjan Node after processing that does not exist: " ++ (show succ)))
+                                        Nothing -> error (compilerError ("Node=" ++ (show node) ++ " Attempted to access successor Tarjan Node after processing that does not exist: " ++ (show succ)))
                                 newTarjanNodeBase = (min (tarjanNodeBase interTarjanNode) (tarjanNodeBase newTarjanSucc))
                                 newTarjanNode = 
                                     TarjanNode 
@@ -184,9 +184,6 @@ tarjanUpdateNode tarjanNode state =
 tarjanAddSCC :: (Ord a, Show a) => SCC a -> DirectedGraph a -> TarjanState a -> TarjanState a
 tarjanAddSCC scc graph state = 
     let newSCCIndex = (tarjanStateSCCIndexCtr state) + 1
-        (isLeaf, newDAG) = tarjanInsertSCCToDAG (tarjanStateSCCIndexCtr state) scc graph (tarjanStateMapToSCC state) (tarjanStateCurrDAG state)
-        newLeaves = if isLeaf then Set.insert newSCCIndex (tarjanStateDAGLeaves state) else (tarjanStateDAGLeaves state)
-        newSCCs = Map.insert (tarjanStateSCCIndexCtr state) scc (tarjanStateSCCs state)
         newMapToSCC = 
             foldr
                 (\node interMap ->
@@ -194,6 +191,9 @@ tarjanAddSCC scc graph state =
                 )
                 (tarjanStateMapToSCC state)
                 scc
+        (isLeaf, newDAG) = tarjanInsertSCCToDAG (tarjanStateSCCIndexCtr state) scc graph newMapToSCC (tarjanStateCurrDAG state)
+        newLeaves = if isLeaf then Set.insert newSCCIndex (tarjanStateDAGLeaves state) else (tarjanStateDAGLeaves state)
+        newSCCs = Map.insert (tarjanStateSCCIndexCtr state) scc (tarjanStateSCCs state)
     in TarjanState
             (tarjanStateNodeIndexCtr state)
             (tarjanStateNodes state)
@@ -205,7 +205,7 @@ tarjanAddSCC scc graph state =
             newMapToSCC
 
 tarjanInsertSCCToDAG :: (Ord a, Show a) => Int -> SCC a -> DirectedGraph a -> Map.Map a Int -> DirectedGraph Int -> (Bool, DirectedGraph Int)
-tarjanInsertSCCToDAG sccIndex scc graph sccMap dag =
+tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag =
     foldr
         (\node (interIsLeaf, interDag) ->
             let successors = 
@@ -214,13 +214,14 @@ tarjanInsertSCCToDAG sccIndex scc graph sccMap dag =
                         Nothing -> Set.empty
             in foldr
                     (\succ (innerInterIsLeaf, innerInterDag) ->
-                        case Map.lookup succ sccMap of
+                        case Map.lookup succ nodeMapToSCC of
                             Just succSCC -> 
                                 if sccIndex == succSCC
                                     then (innerInterIsLeaf, innerInterDag)
                                     else (False, addEdge sccIndex succSCC innerInterDag)
                             Nothing -> error (compilerError ("Tarjan's algo added a node to an SCC before itself/successor was added to an SCC: " ++ 
-                                                            "node=" ++ (show node) ++ " succ=" ++ (show succ)))
+                                                            "node=" ++ (show node) ++ " nodeSCC=" ++ (show sccIndex) ++ 
+                                                            " succ=" ++ (show succ)))
                     )
                     (interIsLeaf, interDag)
                     successors
@@ -234,10 +235,10 @@ tarjanInsertSCCToDAG sccIndex scc graph sccMap dag =
 tarjanPopStackToSCC :: (Show a, Ord a) => a -> (TarjanState a, SCC a) -> (TarjanState a, SCC a)
 tarjanPopStackToSCC baseNode (state, currSCC) = 
     case (tarjanPopStack state) of
-        (Just baseNode, newState) -> 
-            (newState, Set.insert baseNode currSCC)
-        (Just x, newState) -> 
-            tarjanPopStackToSCC baseNode (newState, Set.insert x currSCC)
+        (Just x, newState) ->
+            if baseNode == x
+                then (newState, Set.insert baseNode currSCC)
+                else tarjanPopStackToSCC baseNode (newState, Set.insert x currSCC)
         (Nothing, _) -> error (compilerError "Attempted to clear Tarjan stack but did not find base node: " ++ (show baseNode))
 
 -- pops top node from stack and returns
@@ -261,7 +262,7 @@ tarjanPopStack state =
                 TarjanState
                     (tarjanStateNodeIndexCtr state)
                     (Map.insert node newTarjanNode (tarjanStateNodes state))
-                    newStack
+                    (tail . tarjanStateStack $ state)
                     (tarjanStateSCCIndexCtr state)
                     (tarjanStateCurrDAG state)
                     (tarjanStateDAGLeaves state)
