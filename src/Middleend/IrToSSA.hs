@@ -11,6 +11,8 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 
+import qualified Debug.Trace as Trace
+
 -- MAXIMAL SSA PASS ON CFG -> 
 -- - updates SSA Id for each variable (in phi-functions and commands) to conform to SSA form 
 -- - injects live vars into successor phi-functions
@@ -19,6 +21,12 @@ import qualified Data.Set as Set
 -- - (ii) the SCC DAG + metadata constructed as a byproduct
 
 irToMaximalSSA :: FunctionIr -> (Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> FunctionIr
+-- irToMaximalSSA fnIr (leaves, dag, sccMap)
+    -- | Trace.trace 
+    --     ("\n\nirToMaximalSSA -- " ++
+    --         "\nfnIr=" ++ (show fnIr)
+    --     )
+    --     False = undefined
 irToMaximalSSA fnIr (leaves, dag, sccMap) =
     let bbLiveMap = livenessPass fnIr (leaves, dag, sccMap)
         versionedFnIr = versionPass fnIr bbLiveMap

@@ -13,6 +13,8 @@ import Model.Types
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import qualified Debug.Trace as Trace
+
 -- IR TRANSLATION
 -- + DECLARATION VERIFICATION
 -- + TYPE VERIFICATION
@@ -30,6 +32,7 @@ data PredecessorCommands = PredecessorCommands
     { predecessorCommandsGotoBlocks :: [Int]            -- list of predecessor BasicBlock indexes to inject GOTO commands
     , predecessorCommandsSplitBlocks :: [(Int, Int)]    -- list of predecessor BasicBlock indexes to inject SPLIT commands
     }
+    deriving Show
 
 data IrProcessingScopeState = IrProcessingScopeState
     { scopes :: [Scope]                             -- current ordered list of scopes
@@ -62,6 +65,16 @@ irFunction fnElab =
 --   PredecessorCommands: the list of injections to be inserted (if needed) after this statement
 --   IrProcessingState: the new processing state
 irStatement :: StatementElab -> FunctionElab -> (Bool, PredecessorCommands, IrProcessingState) -> (Bool, Bool, PredecessorCommands, IrProcessingState)
+-- irStatement stmtElab fnElab (startBb, preds, state) 
+    -- | Trace.trace 
+    --     ("\n\nirStatement -- " ++ 
+    --         "\nstmtElab=" ++ (show stmtElab) ++ 
+    --         "\nstartBB=" ++ (show startBb) ++ 
+    --         "\npreds=" ++ (show preds) ++ 
+    --         "\ncurrBB=" ++ (show . irProcStateCurrBb $ state) ++ 
+    --         "\nfnIr=" ++ (show . irProcStateFunctionIr $ state)
+    --     ) 
+    --     False = undefined
 irStatement stmtElab fnElab (startBb, preds, state) = 
     let stmtState = 
             if not startBb
@@ -70,8 +83,8 @@ irStatement stmtElab fnElab (startBb, preds, state) =
                     -- commit current basic block + create new basic block + apply predecessor injection
                     let termFnIr = addBbsToFunction [(irProcStateCurrBb state)] (irProcStateFunctionIr state)
                         termState = irProcessingStateUpdateFn termFnIr state
-                        (startBb, _state) = irProcessingStateAddBB termState
-                        startState = irProcessingStateUpdateBB startBb _state
+                        (newBb, _state) = irProcessingStateAddBB termState
+                        startState = irProcessingStateUpdateBB newBb _state
                         injectState = applyPredecessorCommands preds startState
                     in injectState
     in case stmtElab of
@@ -128,9 +141,9 @@ irIf (IfElab condExp ifStmt Nothing) fnElab state =
                 Nothing -> (SPLIT_BB_IR dummyPureIr 0 0):initCondComms
         termBbIr = appendCommsToBb (irProcStateCurrBb state) condComms
         termState = 
-            ((irProcessingStateUpdateBB termBbIr) .
+            (irProcessingStateUpdateBB termBbIr) .
             (irProcessingStateAppendErrs condErrs) .
-            (irProcessingStateUpdateScopeState condScopeState))
+            (irProcessingStateUpdateScopeState condScopeState) $
             state
         termBbIndex = bbIndex termBbIr
 
@@ -189,9 +202,10 @@ irWhile (WhileElab condExp whileStmt) fnElab state =
         -- commit the original term and cond basic blocks to fn
         condTermFnIr = addBbsToFunction [termBbIr, condTermBbIr] manualInjectFnIr
         condTermState = 
-            ((irProcessingStateAppendErrs condErrs) .
+            (irProcessingStateUpdateBB condTermBbIr) .
+            (irProcessingStateAppendErrs condErrs) .
             (irProcessingStateUpdateScopeState condScopeState) .
-            (irProcessingStateUpdateFn condTermFnIr))
+            (irProcessingStateUpdateFn condTermFnIr) $
             initState
 
         -- PART II. stmt block evaluation + manual injection
@@ -202,12 +216,16 @@ irWhile (WhileElab condExp whileStmt) fnElab state =
 
         -- apply stmt->cond injection:
         -- i. commit the current basic block (whatever it is)
-        -- ii. set the current basic block to be the cond block
+        -- ii. set the current basic block to be the updated cond block
         -- iii. manually apply stmt->cond injection
         stmtTermFnIr = addBbsToFunction [(irProcStateCurrBb stmtState)] (irProcStateFunctionIr stmtState)
+        updatedCondTermBBIr = 
+            case Map.lookup condBbIndex (functionIrBlocks stmtTermFnIr) of
+                Just bb -> bb
+                Nothing -> error (compilerError ("Attempted to retrieve updated cond BB but was never committed by while stmt: bbIndex=" ++ (show condBbIndex)))
         stmtTermState = 
-            ((irProcessingStateUpdateBB condTermBbIr) .
-            (irProcessingStateUpdateFn stmtTermFnIr))
+            (irProcessingStateUpdateBB updatedCondTermBBIr) .
+            (irProcessingStateUpdateFn stmtTermFnIr) $
             stmtState
         injectedState = applyPredecessorCommands stmtToCondPreds stmtTermState
 

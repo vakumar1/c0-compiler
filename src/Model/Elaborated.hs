@@ -37,31 +37,37 @@ data StatementElab
     | RET_ELAB RetElab
     | EXP_ELAB ExpElab
     | SEQ_ELAB SeqElab
+    deriving Show
 
 data DeclElab = DeclElab
     { declElabVariable :: VariableElab
     , declElabAsn :: Maybe AsnElab
     }
+    deriving Show
 
 data AsnElab = AsnElab
     { asnElabIdentifier :: Token
     , asnElabExpression :: ExpElab
     }
+    deriving Show
 
 data IfElab = IfElab
     { ifElabExp :: ExpElab
     , ifElabStmt :: StatementElab
     , ifElabElseoptStmt :: Maybe StatementElab
     }
+    deriving Show
 
 data WhileElab = WhileElab
     { whileElabExp :: ExpElab
     , whileElabStmt :: StatementElab
     }
+    deriving Show
 
 data RetElab = RetElab
     { retElabExpression :: ExpElab
     }
+    deriving Show
 
 type SeqElab = [StatementElab]
 
@@ -71,6 +77,7 @@ data ExpElab
     | BINOP_ELAB BinopElab
     | UNOP_ELAB UnopElab
     | TERN_ELAB ExpElab ExpElab ExpElab
+    deriving Show
 
 data BinopElab = BinopElab
     { binopElabCat :: BinopCatElab
@@ -78,6 +85,7 @@ data BinopElab = BinopElab
     , binopElabExp1 :: ExpElab
     , binopElabExp2 :: ExpElab
     }
+    deriving Show
 
 data BinopCatElab
     = ADD_EXP_ELAB
@@ -98,22 +106,26 @@ data BinopCatElab
     | NEQ_EXP_ELAB
     | LOGAND_EXP_ELAB
     | LOGOR_EXP_ELAB
+    deriving Show
 
 data UnopElab = UnopElab
     { unopElabCat :: UnopCatElab
     , unopElabOp :: Token
     , unopElabExp :: ExpElab
     }
+    deriving Show
 
 data UnopCatElab
     = NEG_EXP_ELAB
     | NOT_EXP_ELAB
     | LOGNOT_EXP_ELAB
+    deriving Show
 
 data VariableElab = VariableElab
     { variableElabIdentifier :: Token
     , variableElabType :: TypeElab
     }
+    deriving Show
 
 data TypeElab = TypeElab
     { typeElabType :: TypeCategory
