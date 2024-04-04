@@ -17,6 +17,8 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import qualified Debug.Trace as Trace
+
 -- map from bb/SCC index to base (i.e., SSAId = 0) variables that are live-in at start of bb/SCC
 type LiveMap = Map.Map Int (Set.Set VariableIr)
 
@@ -24,16 +26,28 @@ type LiveMap = Map.Map Int (Set.Set VariableIr)
 
 livenessPass :: FunctionIr -> (Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> LiveMap
 livenessPass fnIr (leaves, dag, sccMap) = 
-    let (leaves, dag, sccMap) = tarjansAlgo 0 (functionIrCFG fnIr)
-        sccLiveMap = livenessPassSCCHelper 0 fnIr dag sccMap Map.empty
+    -- TODO: replace 2 with correctly passed scc dag root
+    let sccLiveMap = livenessPassSCCHelper 2 fnIr dag sccMap Map.empty
         bbLiveMap = livenessPassDeaggregateSCCToBBHelper sccMap sccLiveMap
     in bbLiveMap
 
 -- constructs the SCC liveness map - i.e., a map from the SCC index to
 -- the set of variables that are live-in to the SCC
 livenessPassSCCHelper :: Int -> FunctionIr -> DirectedGraph Int -> Map.Map Int (SCC Int) -> LiveMap -> LiveMap
+-- livenessPassSCCHelper sccIndex fnIr dag sccMap sccLiveMap
+--     | Trace.trace 
+--         ("\n\nlivenessPassSCCHelper -- " ++
+--             "\nsccIndex=" ++ (show sccIndex) ++
+--             "\ncurrSCCLiveMap=" ++ (show sccLiveMap) ++
+--             "\ndag=" ++ (show dag)
+--         )
+--         False = undefined
 livenessPassSCCHelper sccIndex fnIr dag sccMap sccLiveMap = 
-    let succSCCIndices = 
+    let scc = 
+            case Map.lookup sccIndex sccMap of
+                Just s -> s
+                Nothing -> error . compilerError $ "Attempted to access scc during liveMap construction that does not exist: sccIndex=" ++ (show sccIndex)
+        succSCCIndices = 
             case Map.lookup sccIndex (graphSuccessors dag) of
                 Just s -> s
                 Nothing -> Set.empty
@@ -53,28 +67,38 @@ livenessPassSCCHelper sccIndex fnIr dag sccMap sccLiveMap =
                 )
                 (Set.empty, sccLiveMap)
                 succSCCIndices
-        initLiveInVars = 
+        initSCCLiveInVars = 
             case Map.lookup sccIndex sccLiveMap of
                 Just l -> l
                 Nothing -> Set.empty
         innerBBs = 
             map
-                (\bbIndex ->
-                    case Map.lookup bbIndex (functionIrBlocks fnIr) of
+                (\index ->
+                    case Map.lookup index (functionIrBlocks fnIr) of
                         Just bb -> bb
-                        Nothing -> error (compilerError ("Attempted to access basic block during liveness pass that does not exist: bbIndex=" ++ (show bbIndex)))
+                        Nothing -> error (compilerError ("Attempted to access basic block during liveness pass that does not exist: bbIndex=" ++ (show index)))
                 )
-                (innerSCCSubOrdering sccIndex sccMap)
-        finalLiveInVars = 
+                (Set.toList scc)
+        (finalCumulativeLiveInVars, finalLiveOutVars) = 
             foldl
-                bbLivenessPass
-                initLiveInVars
+                (\(interCumulativeSCCLiveInVars, interLiveOutVars) bb ->
+                    let newLiveOutVars = bbLivenessPass interLiveOutVars bb
+                        newCumulativeSCCLiveInVars = Set.union interCumulativeSCCLiveInVars newLiveOutVars
+                    in (newCumulativeSCCLiveInVars, newLiveOutVars)
+                )
+                (initSCCLiveInVars, liveOutVars)
                 innerBBs
-    in Map.insert sccIndex finalLiveInVars recursedSCCLiveMap
+    in Map.insert sccIndex finalCumulativeLiveInVars recursedSCCLiveMap
 
 -- deaggregates the SCC live map to a BB live map by
 -- directly replicating the live-in variables for the SCC to each of its BBs
 livenessPassDeaggregateSCCToBBHelper :: Map.Map Int (SCC Int) -> LiveMap -> LiveMap
+livenessPassDeaggregateSCCToBBHelper sccMap sccLiveMap
+    | Trace.trace 
+        ("\n\nlivenessPassDeaggregateSCCToBBHelper -- " ++
+            "\nsccLiveMap=" ++ (show sccLiveMap)
+        )
+        False = undefined
 livenessPassDeaggregateSCCToBBHelper sccMap sccLiveMap = 
     let bbLiveMapNestedList = map (replicateSCCLiveInVarsToBB sccMap sccLiveMap) (Map.toList sccLiveMap)
     in (Map.fromList . concat) bbLiveMapNestedList
@@ -88,6 +112,13 @@ replicateSCCLiveInVarsToBB sccMap sccLiveMap (sccIndex, liveInVars) =
     in map (\bbIndex -> (bbIndex, liveInVars)) (Set.toList bbIndices)
 
 bbLivenessPass :: Set.Set VariableIr -> BasicBlockIr -> Set.Set VariableIr
+bbLivenessPass liveVars bb
+    | Trace.trace 
+        ("\n\nbbLivenessPass -- " ++
+            "\nbbIr=" ++ (show bb) ++
+            "\nliveVars=" ++ (show liveVars)
+        )
+        False = undefined
 bbLivenessPass liveVars bb = 
     foldl updateLiveVarsComm liveVars (bbIrCommands bb)
 

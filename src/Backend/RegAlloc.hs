@@ -13,6 +13,8 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import qualified Debug.Trace as Trace
+
 regAllocColoring :: FunctionIr -> (Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> Map.Map VariableIr Int
 regAllocColoring fnIr (leaves, dag, sccMap) =
     let versionedLiveMap = livenessPass fnIr (leaves, dag, sccMap)
@@ -63,6 +65,13 @@ constructIFG fnIr versionedLiveMap =
         (looseBbOrdering fnIr)
 
 constructIFGBasicBlock :: BasicBlockIr -> Set.Set VariableIr -> IFG -> IFG
+-- constructIFGBasicBlock bb liveVars ifg 
+    -- | Trace.trace 
+    --     ("\n\nconstructIFGBasicBlock -- " ++
+    --         "\nbbIr=" ++ (show bb) ++
+    --         "\nliveVars=" ++ (show liveVars)
+    --     )
+    --     False = undefined
 constructIFGBasicBlock bb liveVars ifg = 
     let (liveVarsUpdatedComms, ifgUpdatedComms) = foldl constructIFGCommand (liveVars, ifg) (bbIrCommands bb)
         (liveVarsUpdatedPhi, ifgUpdatedPhi) = constructIFGPhi (liveVarsUpdatedComms, ifgUpdatedComms) (bbIrPhiFn bb)

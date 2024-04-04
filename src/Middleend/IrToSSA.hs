@@ -41,16 +41,22 @@ type VariableIrVersion = Map.Map String VariableIr
 
 updateVarVersion :: VariableIr -> VariableIrVersion -> (VariableIr, VariableIrVersion)
 updateVarVersion (VariableIr name _ ty tmp) versions = 
-    let currCount = 
+    let newCount = 
             case Map.lookup name versions of
-                Just currVar -> (variableIrSSAId currVar)
+                Just currVar -> (variableIrSSAId currVar) + 1
                 Nothing -> 0
-        newVar = VariableIr name (currCount + 1) ty tmp
+        newVar = VariableIr name newCount ty tmp
         newVersions = Map.insert name newVar versions
     in (newVar, newVersions)
 
 -- version pass converts variable versions within BBs in loose BFS order
 versionPass :: FunctionIr -> LiveMap -> FunctionIr
+versionPass fnIr bbLiveMap
+    | Trace.trace 
+        ("\n\nversionPass -- " ++
+            "\nbbLiveMap=" ++ (show bbLiveMap)
+        )
+        False = undefined
 versionPass fnIr bbLiveMap = 
     let (newFnIr, _) = 
             foldl
@@ -68,6 +74,13 @@ versionPass fnIr bbLiveMap =
     in newFnIr
 
 bbIrToMaximalSSA :: BasicBlockIr -> VariableIrVersion -> (BasicBlockIr, VariableIrVersion)
+-- bbIrToMaximalSSA bb versions
+    -- | Trace.trace 
+    --     ("\n\nbbIrToMaximalSSA -- " ++
+    --         "\nbbIr=" ++ (show bb) ++
+    --         "\nversions=" ++ (show versions)
+    --     )
+    --     False = undefined
 bbIrToMaximalSSA bb versions = 
     let (newPhiFnIrPairs, phiUpdateVersions) = 
             foldr

@@ -17,19 +17,34 @@ irToX86 coloring fnIr =
     let blocks = looseBbOrdering fnIr
         -- initialize function spillover at SP - 8 and w/ all available registers
         initAlloc = AllocState Map.empty 8 availableRegisters
-        (instBlockMap, _) =
+
+        -- apply command Ir->x86 translation
+        (commBlockMap, commAlloc) =
             foldl
-                ( \(interBlockMap, interAlloc) bbIndex ->
-                    case Map.lookup bbIndex (functionIrBlocks fnIr) of
-                        Just bb -> bbIrToX86 coloring bb interBlockMap interAlloc
+                ( \(interBlockMap, interAlloc) index ->
+                    case Map.lookup index (functionIrBlocks fnIr) of
+                        Just bb -> bbIrCommsToX86 coloring bb interBlockMap interAlloc
                         Nothing -> (interBlockMap, interAlloc)
                 )
                 (Map.empty, initAlloc)
                 blocks
+
+        -- apply phiFn Ir->x86 translation
+        (phiBlockMap, _) = 
+            foldl
+                ( \(interBlockMap, interAlloc) index ->
+                    case Map.lookup index (functionIrBlocks fnIr) of
+                        Just bb -> phiFnIrToX86 coloring (bbIrPhiFn bb) interBlockMap interAlloc
+                        Nothing -> (interBlockMap, interAlloc)
+                )
+                (commBlockMap, commAlloc)
+                blocks
+
+        -- concatenate x86 instructions
         finalInstr = 
             foldl
                 (\interInstr index ->
-                    case Map.lookup index instBlockMap of
+                    case Map.lookup index phiBlockMap of
                         Just inst -> interInstr ++ inst
                         Nothing -> interInstr
                 )
@@ -92,7 +107,20 @@ phiFnArgToX86 coloring asnVar (predIndex, predVar) initBlockMap initAlloc =
                 newBlockMap = Map.insert predIndex newInst initBlockMap
             in (newBlockMap, asnAlloc)
         Nothing -> error (compilerError ("Invalid phi-function generated for predecessor without translation. " ++
-                        "Predecessor" ++ (show predIndex) ++ " Successor var=" ++ (show asnVar)))
+                        "Predecessor=" ++ (show predIndex) ++ " Successor var=" ++ (show asnVar)))
+
+bbIrCommsToX86 :: Map.Map VariableIr Int -> BasicBlockIr -> Map.Map Int [X86Instruction] -> AllocState -> (Map.Map Int [X86Instruction], AllocState)
+bbIrCommsToX86 coloring bb initBlockMap initAlloc = 
+    let (bbInst, updateBbAlloc) = 
+            foldr
+                ( \comm (interInstr, interAlloc) ->
+                    let (commInstr, newAlloc) = commIrToX86 coloring comm interAlloc
+                    in (interInstr ++ commInstr, newAlloc)
+                )
+                ([LABEL_X86 (bbToLabel (bbIndex bb))], initAlloc)
+                (bbIrCommands bb)
+        updateBbBlockMap = Map.insert (bbIndex bb) bbInst initBlockMap
+    in (updateBbBlockMap, updateBbAlloc)
 
 commIrToX86 :: Map.Map VariableIr Int -> CommandIr -> AllocState -> ([X86Instruction], AllocState)
 commIrToX86 coloring comm initAlloc =
