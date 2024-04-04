@@ -15,9 +15,9 @@ import qualified Data.Set as Set
 
 import qualified Debug.Trace as Trace
 
-regAllocColoring :: FunctionIr -> (Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> Map.Map VariableIr Int
-regAllocColoring fnIr (leaves, dag, sccMap) =
-    let versionedLiveMap = livenessPass fnIr (leaves, dag, sccMap)
+regAllocColoring :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> Map.Map VariableIr Int
+regAllocColoring fnIr (root, leaves, dag, sccMap) =
+    let versionedLiveMap = livenessPass fnIr (root, leaves, dag, sccMap)
         ifg = constructIFG fnIr versionedLiveMap
         order = simplicialElimOrder ifg
      in greedyGraphColoring ifg order

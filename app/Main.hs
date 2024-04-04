@@ -44,9 +44,9 @@ compiler code =
         ast = parser (reverse tokens)
         elaborated = elaborate ast
         (ir, verErrors) = irFunction elaborated
-        (leaves, dag, sccMap) = tarjansAlgo 0 (functionIrCFG ir)
-        maxSSAIr = irToMaximalSSA ir (leaves, dag, sccMap)
-        coloring = regAllocColoring maxSSAIr (leaves, dag, sccMap)
+        (root, leaves, dag, sccMap) = tarjansAlgo 0 (functionIrCFG ir)
+        maxSSAIr = irToMaximalSSA ir (root, leaves, dag, sccMap)
+        coloring = regAllocColoring maxSSAIr (root, leaves, dag, sccMap)
         x86asm = foldl (\interCode instr -> interCode ++ (show instr)) "" (irToX86 coloring maxSSAIr)
      in if not (null lexerErrors)
             then prettyPrintList lexerErrors

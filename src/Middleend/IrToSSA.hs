@@ -20,15 +20,15 @@ import qualified Debug.Trace as Trace
 -- - (i) the updated FnIr
 -- - (ii) the SCC DAG + metadata constructed as a byproduct
 
-irToMaximalSSA :: FunctionIr -> (Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> FunctionIr
+irToMaximalSSA :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> FunctionIr
 -- irToMaximalSSA fnIr (leaves, dag, sccMap)
     -- | Trace.trace 
     --     ("\n\nirToMaximalSSA -- " ++
     --         "\nfnIr=" ++ (show fnIr)
     --     )
     --     False = undefined
-irToMaximalSSA fnIr (leaves, dag, sccMap) =
-    let bbLiveMap = livenessPass fnIr (leaves, dag, sccMap)
+irToMaximalSSA fnIr (root, leaves, dag, sccMap) =
+    let bbLiveMap = livenessPass fnIr (root, leaves, dag, sccMap)
         versionedFnIr = versionPass fnIr bbLiveMap
     in versionedFnIr
 

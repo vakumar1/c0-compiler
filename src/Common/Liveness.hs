@@ -24,10 +24,10 @@ type LiveMap = Map.Map Int (Set.Set VariableIr)
 
 -- LIVENESS PASS ON CFG -> returns map of (base) variables that are live-in for each BB
 
-livenessPass :: FunctionIr -> (Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> LiveMap
-livenessPass fnIr (leaves, dag, sccMap) = 
+livenessPass :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> LiveMap
+livenessPass fnIr (root, leaves, dag, sccMap) = 
     -- TODO: replace 2 with correctly passed scc dag root
-    let sccLiveMap = livenessPassSCCHelper 2 fnIr dag sccMap Map.empty
+    let sccLiveMap = livenessPassSCCHelper root fnIr dag sccMap Map.empty
         bbLiveMap = livenessPassDeaggregateSCCToBBHelper sccMap sccLiveMap
     in bbLiveMap
 
