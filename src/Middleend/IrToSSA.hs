@@ -29,7 +29,8 @@ irToMaximalSSA :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map In
     --     False = undefined
 irToMaximalSSA fnIr (root, leaves, dag, sccMap) =
     let bbLiveMap = livenessPass fnIr (root, leaves, dag, sccMap)
-        versionedFnIr = versionPass fnIr bbLiveMap
+        initPhiFnIr = initPhiFn fnIr bbLiveMap
+        versionedFnIr = versionPass initPhiFnIr bbLiveMap
     in versionedFnIr
 
 -- MAXIMAL SSA PASS ON BB -> updates BB (phi functions and commands) to conform to SSA form by
@@ -48,6 +49,37 @@ updateVarVersion (VariableIr name _ ty tmp) versions =
         newVar = VariableIr name newCount ty tmp
         newVersions = Map.insert name newVar versions
     in (newVar, newVersions)
+
+-- initializes phi-fn of each BB with live in vars
+initPhiFn :: FunctionIr -> LiveMap -> FunctionIr
+initPhiFn fnIr liveMap = 
+    let initPhiBBs = 
+            map
+                (\index ->
+                    let bb = 
+                            case Map.lookup index (functionIrBlocks fnIr) of
+                                Just b -> b
+                                Nothing -> error . compilerError $ "Attempted to access bb index supplied from BFS ordering that does not exist: bbIndex=" ++ (show index)
+                        liveInVars = 
+                            case Map.lookup index liveMap of
+                                Just l -> l
+                                Nothing -> Set.empty
+                        newPhiFn = 
+                            foldr
+                                (\var interPhiFn->
+                                    Map.insert var Map.empty interPhiFn
+                                )
+                                Map.empty
+                                liveInVars
+                        initPhiBb = 
+                            BasicBlockIr
+                                index
+                                newPhiFn
+                                (bbIrCommands bb)
+                    in initPhiBb
+                )
+                (looseBbOrdering fnIr)
+    in addBbsToFunction initPhiBBs fnIr
 
 -- version pass converts variable versions within BBs in loose BFS order
 versionPass :: FunctionIr -> LiveMap -> FunctionIr
@@ -160,16 +192,15 @@ bbInjectPhiFn fnIr liveMap versions predBbIndex =
             case Map.lookup predBbIndex (graphSuccessors (functionIrCFG fnIr)) of
                 Just succs -> succs
                 Nothing -> Set.empty
-    in foldr
-            (\id interFnIr ->
-                case Map.lookup id (functionIrBlocks interFnIr) of
-                    Just bb ->  
-                        let newBb = succBbInjectPhiFn bb liveMap versions predBbIndex
-                        in addBbsToFunction [newBb] interFnIr
-                    Nothing -> error (compilerError ("BB Phi-Fn injection succ map lookup encountered basic block index not in fnIr" ++ (show id)))
-            )
-            fnIr
-            succBbIndices
+        injectedSuccBBs = 
+            map
+                (\succIndex ->
+                    case Map.lookup succIndex (functionIrBlocks fnIr) of
+                        Just bb ->  succBbInjectPhiFn bb liveMap versions predBbIndex
+                        Nothing -> error . compilerError $ "BB Phi-Fn injection succ map lookup encountered basic block index not in fnIr" ++ (show succIndex)
+                )
+                (Set.toList succBbIndices)
+    in addBbsToFunction injectedSuccBBs fnIr
 
 -- for each live-in variable for the BB, inject the curr Version of the variable from the predecessor BB
 succBbInjectPhiFn :: BasicBlockIr -> LiveMap -> VariableIrVersion -> Int -> BasicBlockIr
@@ -181,16 +212,23 @@ succBbInjectPhiFn bbIr liveMap versions predBbIndex =
         newPhiFn = 
             foldr
                 (\baseVar interPhiFn ->
-                    let initPredMap = 
-                            case Map.lookup baseVar interPhiFn of
-                                Just predMap -> predMap
-                                Nothing -> Map.empty
-                        newPredMap = 
-                            case Map.lookup (variableIrName baseVar) versions of
-                                Just currVar -> Map.insert predBbIndex currVar initPredMap
-                                Nothing -> error (compilerError ("Incorrect liveness analysis resulted in variable " ++ (show baseVar) ++ 
-                                                " that is live-in at successor and not live-out from predecessor"))
-                    in Map.insert baseVar newPredMap interPhiFn
+                    let predMapMatches = 
+                            filter
+                                (\(var, _) -> variableIrBaseEq var baseVar)
+                                (Map.toList interPhiFn)
+                    in if (length predMapMatches) /= 1
+                            then error . compilerError $ "BB does not have exactly one phi-fn for a live in var: " ++
+                                                            "bb=" ++ (show bbIr) ++ 
+                                                            " baseVar=" ++ (show baseVar) ++
+                                                            " phi-rn pred count=" ++ (show . length $ predMapMatches)
+                            else
+                                let (var, initPredMap) = head predMapMatches
+                                    newPredMap = 
+                                        case Map.lookup (variableIrName baseVar) versions of
+                                            Just currVar -> Map.insert predBbIndex currVar initPredMap
+                                            Nothing -> error (compilerError ("Incorrect liveness analysis resulted in variable " ++ (show baseVar) ++ 
+                                                            " that is live-in at successor and not live-out from predecessor"))
+                                in Map.insert var newPredMap interPhiFn
                 )
                 (bbIrPhiFn bbIr)
                 liveVars

@@ -14,6 +14,7 @@ module Model.Ir (
     ImpureBinopIr (..),
     ImpureBinopCatIr (..),
     VariableIr (..),
+    variableIrBaseEq,
     addBbsToFunction,
     addEdgeToCFG,
     appendCommsToBb,
@@ -152,6 +153,9 @@ instance Eq VariableIr where
 instance Ord VariableIr where
     var1 <= var2 = ((variableIrName var1) < (variableIrName var2))
                         || (((variableIrName var1) == (variableIrName var2)) && ((variableIrSSAId var1) <= (variableIrSSAId var2)))
+variableIrBaseEq :: VariableIr -> VariableIr -> Bool
+variableIrBaseEq var1 var2 = 
+    (variableIrName var1) == (variableIrName var2)
 
 -- HELPERS
 -- adds basic block to function's collection
