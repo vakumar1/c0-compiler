@@ -25,15 +25,19 @@ type LiveMap = Map.Map Int (Set.Set VariableIr)
 -- LIVENESS PASS ON CFG -> returns map of (base) variables that are live-in for each BB
 
 livenessPass :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> LiveMap
+livenessPass fnIr (root, leaves, dag, sccMap)
+    | Trace.trace 
+        ("\n\nlivenessPass -- " ++
+            "\nCFG=" ++ (show . functionIrCFG $ fnIr)
+        )
+        False = undefined
 livenessPass fnIr (root, leaves, dag, sccMap) = 
-    -- TODO: replace 2 with correctly passed scc dag root
-    let sccLiveMap = livenessPassSCCHelper root fnIr dag sccMap Map.empty
-        bbLiveMap = livenessPassDeaggregateSCCToBBHelper sccMap sccLiveMap
-    in bbLiveMap
+    let (_, liveMap) = livenessPassSCCHelper root fnIr dag sccMap (Set.empty, Map.empty)
+    in liveMap
 
--- constructs the SCC liveness map - i.e., a map from the SCC index to
--- the set of variables that are live-in to the SCC
-livenessPassSCCHelper :: Int -> FunctionIr -> DirectedGraph Int -> Map.Map Int (SCC Int) -> LiveMap -> LiveMap
+-- constructs the liveness map - i.e., a map from the BB index to
+-- the set of variables that are live-in to the BB for each BB in SCC
+livenessPassSCCHelper :: Int -> FunctionIr -> DirectedGraph Int -> Map.Map Int (SCC Int) -> (Set.Set Int, LiveMap) -> (Set.Set Int, LiveMap)
 -- livenessPassSCCHelper sccIndex fnIr dag sccMap sccLiveMap
 --     | Trace.trace 
 --         ("\n\nlivenessPassSCCHelper -- " ++
@@ -42,7 +46,7 @@ livenessPassSCCHelper :: Int -> FunctionIr -> DirectedGraph Int -> Map.Map Int (
 --             "\ndag=" ++ (show dag)
 --         )
 --         False = undefined
-livenessPassSCCHelper sccIndex fnIr dag sccMap sccLiveMap = 
+livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap) = 
     let scc = 
             case Map.lookup sccIndex sccMap of
                 Just s -> s
@@ -51,26 +55,15 @@ livenessPassSCCHelper sccIndex fnIr dag sccMap sccLiveMap =
             case Map.lookup sccIndex (graphSuccessors dag) of
                 Just s -> s
                 Nothing -> Set.empty
-        (liveOutVars, recursedSCCLiveMap) = 
+        (recursedVisitedSCCs, recursedLiveMap) = 
             foldr
-                (\succSCCIndex (interLiveOutVars, interSCCLiveMap) ->
-                    let newSCCLiveMap = 
-                            case Map.lookup succSCCIndex interSCCLiveMap of
-                                Just l -> interSCCLiveMap
-                                Nothing -> livenessPassSCCHelper succSCCIndex fnIr dag sccMap interSCCLiveMap
-                        succLiveInVars = 
-                            case Map.lookup succSCCIndex newSCCLiveMap of
-                                Just l -> l
-                                Nothing -> error (compilerError ("Liveness pass on successor failed to update live-in vars in SCC liveMap: succSCC=" ++ (show succSCCIndex)))
-                        newLiveOutVars = Set.union interLiveOutVars succLiveInVars
-                    in (newLiveOutVars, newSCCLiveMap)
+                (\succSCCIndex (interVisitedSCCs, interLiveMap) ->
+                    if Set.member succSCCIndex interVisitedSCCs
+                        then (interVisitedSCCs, interLiveMap)
+                        else livenessPassSCCHelper succSCCIndex fnIr dag sccMap (interVisitedSCCs, interLiveMap)
                 )
-                (Set.empty, sccLiveMap)
+                (Set.insert sccIndex visitedSCCs, liveMap)
                 succSCCIndices
-        initSCCLiveInVars = 
-            case Map.lookup sccIndex sccLiveMap of
-                Just l -> l
-                Nothing -> Set.empty
         innerBBs = 
             map
                 (\index ->
@@ -79,37 +72,51 @@ livenessPassSCCHelper sccIndex fnIr dag sccMap sccLiveMap =
                         Nothing -> error (compilerError ("Attempted to access basic block during liveness pass that does not exist: bbIndex=" ++ (show index)))
                 )
                 (Set.toList scc)
-        (finalCumulativeLiveInVars, finalLiveOutVars) = 
-            foldl
-                (\(interCumulativeSCCLiveInVars, interLiveOutVars) bb ->
-                    let newLiveOutVars = bbLivenessPass interLiveOutVars bb
-                        newCumulativeSCCLiveInVars = Set.union interCumulativeSCCLiveInVars newLiveOutVars
-                    in (newCumulativeSCCLiveInVars, newLiveOutVars)
-                )
-                (initSCCLiveInVars, liveOutVars)
-                innerBBs
-    in Map.insert sccIndex finalCumulativeLiveInVars recursedSCCLiveMap
 
--- deaggregates the SCC live map to a BB live map by
--- directly replicating the live-in variables for the SCC to each of its BBs
-livenessPassDeaggregateSCCToBBHelper :: Map.Map Int (SCC Int) -> LiveMap -> LiveMap
-livenessPassDeaggregateSCCToBBHelper sccMap sccLiveMap
+        finalLiveMap = livenessPassSaturationHelper fnIr innerBBs recursedLiveMap
+    in (recursedVisitedSCCs, finalLiveMap)
+
+-- updates live in vars for each basic block and recursively calls itself
+-- until live in vars reach saturation
+livenessPassSaturationHelper :: FunctionIr -> [BasicBlockIr] -> LiveMap -> LiveMap
+livenessPassSaturationHelper fnIr bbs liveMap
     | Trace.trace 
-        ("\n\nlivenessPassDeaggregateSCCToBBHelper -- " ++
-            "\nsccLiveMap=" ++ (show sccLiveMap)
+        ("\n\nlivenessPassSaturationHelper -- " ++
+            "\nbbs=" ++ (show . (map bbIndex) $ bbs) ++
+            "\ncurrSCCLiveMap=" ++ (show liveMap)
         )
         False = undefined
-livenessPassDeaggregateSCCToBBHelper sccMap sccLiveMap = 
-    let bbLiveMapNestedList = map (replicateSCCLiveInVarsToBB sccMap sccLiveMap) (Map.toList sccLiveMap)
-    in (Map.fromList . concat) bbLiveMapNestedList
-
-replicateSCCLiveInVarsToBB :: Map.Map Int (SCC Int) -> LiveMap -> (Int, Set.Set VariableIr) -> [(Int, Set.Set VariableIr)]
-replicateSCCLiveInVarsToBB sccMap sccLiveMap (sccIndex, liveInVars) = 
-    let bbIndices = 
-            case Map.lookup sccIndex sccMap of
-                Just s -> s
-                Nothing -> error (compilerError ("Attempted to lookup SCC index during liveMap deaggregation that does not exist: sccIndex=" ++ (show sccIndex)))
-    in map (\bbIndex -> (bbIndex, liveInVars)) (Set.toList bbIndices)
+livenessPassSaturationHelper fnIr bbs liveMap = 
+    let (finalLiveMapUpdated, finalLiveMap) = 
+            foldr
+                (\bb (interLiveMapUpdated, interLiveMap) ->
+                    let succBbs = 
+                            case Map.lookup (bbIndex bb) (graphSuccessors . functionIrCFG $ fnIr) of
+                                Just s -> s
+                                Nothing -> Set.empty
+                        liveOutVars = 
+                            foldr
+                                (\succBbIndex interLiveOutVars ->
+                                    case Map.lookup succBbIndex interLiveMap of
+                                        Just l -> Set.union interLiveOutVars l
+                                        Nothing -> interLiveOutVars
+                                )
+                                Set.empty
+                                succBbs
+                        initLiveInVars = 
+                            case Map.lookup (bbIndex bb) interLiveMap of
+                                Just l -> l
+                                Nothing -> Set.empty
+                        newLiveInVars = bbLivenessPass liveOutVars bb
+                        newLiveMap = Map.insert (bbIndex bb) newLiveInVars interLiveMap
+                        newLiveMapUpdated = (Set.size initLiveInVars) /= (Set.size newLiveInVars)
+                    in (newLiveMapUpdated, newLiveMap)
+                )
+                (False, liveMap)
+                bbs
+    in if finalLiveMapUpdated
+            then livenessPassSaturationHelper fnIr bbs finalLiveMap
+            else finalLiveMap
 
 bbLivenessPass :: Set.Set VariableIr -> BasicBlockIr -> Set.Set VariableIr
 bbLivenessPass liveVars bb
@@ -146,12 +153,12 @@ getUsedVarsPredMap predMap =
 
 updateLiveVarsComm :: Set.Set VariableIr -> CommandIr -> Set.Set VariableIr
 updateLiveVarsComm liveVars comm = 
-    let liveVarsAddedUsed = Set.union liveVars (getUsedVarsCommand comm)
-        liveVarsRemovedAsn = 
+    let liveVarsRemovedAsn = 
             case (getAssignedVarsCommand comm) of
-                Just var -> Set.delete var liveVarsAddedUsed
-                Nothing -> liveVarsAddedUsed
-    in liveVarsRemovedAsn
+                Just var -> Set.delete var liveVars
+                Nothing -> liveVars
+        liveVarsAddedUsed = Set.union liveVarsRemovedAsn (getUsedVarsCommand comm)
+    in liveVarsAddedUsed
 
 getUsedVarsCommand :: CommandIr -> Set.Set VariableIr
 getUsedVarsCommand comm = 

@@ -211,14 +211,14 @@ tarjanAddSCC scc graph state =
             newMapToSCC
 
 tarjanInsertSCCToDAG :: (Ord a, Show a) => Int -> SCC a -> DirectedGraph a -> Map.Map a Int -> DirectedGraph Int -> (Bool, DirectedGraph Int)
-tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag
-    | Trace.trace 
-        ("\n\ntarjanInsertSCCToDAG -- " ++
-            "\nsccIndex=" ++ (show sccIndex) ++
-            "\nscc=" ++ (show scc) ++
-            "\ncurrDAG=" ++ (show dag)
-        )
-        False = undefined
+-- tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag
+--     | Trace.trace 
+--         ("\n\ntarjanInsertSCCToDAG -- " ++
+--             "\nsccIndex=" ++ (show sccIndex) ++
+--             "\nscc=" ++ (show scc) ++
+--             "\ncurrDAG=" ++ (show dag)
+--         )
+--         False = undefined
 tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag =
     foldr
         (\node (interIsLeaf, interDag) ->
