@@ -17,6 +17,7 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import qualified Text.Show.Pretty as Pretty
 import qualified Debug.Trace as Trace
 
 -- map from bb/SCC index to base (i.e., SSAId = 0) variables that are live-in at start of bb/SCC
@@ -28,7 +29,8 @@ livenessPass :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int 
 livenessPass fnIr (root, leaves, dag, sccMap)
     | Trace.trace 
         ("\n\nlivenessPass -- " ++
-            "\nCFG=" ++ (show . functionIrCFG $ fnIr)
+            "\nCFG=" ++ (Pretty.ppShow . functionIrCFG $ fnIr) ++
+            "\nBBs=" ++ (Pretty.ppShow . functionIrBlocks $ fnIr)
         )
         False = undefined
 livenessPass fnIr (root, leaves, dag, sccMap) = 
@@ -38,16 +40,19 @@ livenessPass fnIr (root, leaves, dag, sccMap) =
 -- constructs the liveness map - i.e., a map from the BB index to
 -- the set of variables that are live-in to the BB for each BB in SCC
 livenessPassSCCHelper :: Int -> FunctionIr -> DirectedGraph Int -> Map.Map Int (SCC Int) -> (Set.Set Int, LiveMap) -> (Set.Set Int, LiveMap)
--- livenessPassSCCHelper sccIndex fnIr dag sccMap sccLiveMap
---     | Trace.trace 
---         ("\n\nlivenessPassSCCHelper -- " ++
---             "\nsccIndex=" ++ (show sccIndex) ++
---             "\ncurrSCCLiveMap=" ++ (show sccLiveMap) ++
---             "\ndag=" ++ (show dag)
---         )
---         False = undefined
+livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap)
+    | Trace.trace 
+        ("\n\nlivenessPassSCCHelper -- " ++
+            "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++
+            "\ncurrSCCLiveMap=" ++ (Pretty.ppShow liveMap) ++
+            "\ndag=" ++ (Pretty.ppShow dag)
+        )
+        False = undefined
 livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap) = 
-    let scc = 
+    let 
+        -- collect the successors of the SCC and for each
+        -- apply livenessPassSCCHelper to populate the liveMap if the SCC has not been seen yet
+        scc = 
             case Map.lookup sccIndex sccMap of
                 Just s -> s
                 Nothing -> error . compilerError $ "Attempted to access scc during liveMap construction that does not exist: sccIndex=" ++ (show sccIndex)
@@ -64,33 +69,40 @@ livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap) =
                 )
                 (Set.insert sccIndex visitedSCCs, liveMap)
                 succSCCIndices
+        
+        -- populate the liveMap with a map from each BB in the SCC
+        -- to the set of vars that are live-in to the BB
         innerBBs = 
             map
                 (\index ->
                     case Map.lookup index (functionIrBlocks fnIr) of
                         Just bb -> bb
-                        Nothing -> error (compilerError ("Attempted to access basic block during liveness pass that does not exist: bbIndex=" ++ (show index)))
+                        Nothing -> error . compilerError $ "Attempted to access basic block during liveness pass that does not exist: bbIndex=" ++ (show index)
                 )
                 (Set.toList scc)
 
-        finalLiveMap = livenessPassSaturationHelper fnIr innerBBs recursedLiveMap
+        finalLiveMap = livenessPassSaturationHelper sccIndex fnIr innerBBs recursedLiveMap
     in (recursedVisitedSCCs, finalLiveMap)
 
 -- updates live in vars for each basic block and recursively calls itself
 -- until live in vars reach saturation
-livenessPassSaturationHelper :: FunctionIr -> [BasicBlockIr] -> LiveMap -> LiveMap
-livenessPassSaturationHelper fnIr bbs liveMap
+livenessPassSaturationHelper :: Int -> FunctionIr -> [BasicBlockIr] -> LiveMap -> LiveMap
+livenessPassSaturationHelper sccIndex fnIr bbs liveMap
     | Trace.trace 
         ("\n\nlivenessPassSaturationHelper -- " ++
-            "\nbbs=" ++ (show . (map bbIndex) $ bbs) ++
-            "\ncurrSCCLiveMap=" ++ (show liveMap)
+            "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++ 
+            "\nbbs=" ++ (Pretty.ppShow . (map bbIndex) $ bbs) ++
+            "\ncurrSCCLiveMap=" ++ (Pretty.ppShow liveMap)
         )
         False = undefined
-livenessPassSaturationHelper fnIr bbs liveMap = 
+livenessPassSaturationHelper sccIndex fnIr bbs liveMap = 
     let (finalLiveMapUpdated, finalLiveMap) = 
             foldr
                 (\bb (interLiveMapUpdated, interLiveMap) ->
-                    let succBbs = 
+                    let 
+                        -- collect the set of live-out vars as the union of 
+                        -- the set of all live-in vars of all successor BBs (if they have been populated at this point)
+                        succBbs = 
                             case Map.lookup (bbIndex bb) (graphSuccessors . functionIrCFG $ fnIr) of
                                 Just s -> s
                                 Nothing -> Set.empty
@@ -103,39 +115,47 @@ livenessPassSaturationHelper fnIr bbs liveMap =
                                 )
                                 Set.empty
                                 succBbs
+
+                        -- apply the liveness pass to the set of live-out vars
+                        -- and update the current set of live-in vars
+                        -- record whether the set of live-in vars grew
                         initLiveInVars = 
                             case Map.lookup (bbIndex bb) interLiveMap of
                                 Just l -> l
                                 Nothing -> Set.empty
                         newLiveInVars = bbLivenessPass liveOutVars bb
                         newLiveMap = Map.insert (bbIndex bb) newLiveInVars interLiveMap
-                        newLiveMapUpdated = (Set.size initLiveInVars) /= (Set.size newLiveInVars)
+                        newLiveMapUpdated = interLiveMapUpdated || ((Set.size initLiveInVars) /= (Set.size newLiveInVars))
                     in (newLiveMapUpdated, newLiveMap)
                 )
                 (False, liveMap)
                 bbs
     in if finalLiveMapUpdated
-            then livenessPassSaturationHelper fnIr bbs finalLiveMap
+            then livenessPassSaturationHelper sccIndex fnIr bbs finalLiveMap
             else finalLiveMap
 
 bbLivenessPass :: Set.Set VariableIr -> BasicBlockIr -> Set.Set VariableIr
 bbLivenessPass liveVars bb
     | Trace.trace 
         ("\n\nbbLivenessPass -- " ++
-            "\nbbIr=" ++ (show bb) ++
-            "\nliveVars=" ++ (show liveVars)
+            "\nbbIr=" ++ (Pretty.ppShow bb) ++
+            "\nliveVars=" ++ (Pretty.ppShow liveVars)
         )
         False = undefined
 bbLivenessPass liveVars bb = 
-    foldl updateLiveVarsComm liveVars (bbIrCommands bb)
+    let updatedCommVars = foldl updateLiveVarsComm liveVars (bbIrCommands bb)
+        updatedPhiVars = updateLiveVarsPhi updatedCommVars (bbIrPhiFn bb)
+    in updatedPhiVars
 
 -- PHI FN LIVENESS ANALYSIS
 
 updateLiveVarsPhi :: Set.Set VariableIr -> PhiFnIr -> Set.Set VariableIr
 updateLiveVarsPhi liveVars phi = 
     foldr 
+        -- for each phi-fn delete the assigned var
+        -- and add all used vars
         (\(var, varPredMap) interLiveVars -> 
-            Set.delete var (Set.union (getUsedVarsPredMap varPredMap) interLiveVars)
+            Set.union (getUsedVarsPredMap varPredMap) (Set.delete var interLiveVars)
         )
         liveVars
         (Map.toList phi)
@@ -153,7 +173,10 @@ getUsedVarsPredMap predMap =
 
 updateLiveVarsComm :: Set.Set VariableIr -> CommandIr -> Set.Set VariableIr
 updateLiveVarsComm liveVars comm = 
-    let liveVarsRemovedAsn = 
+    let 
+        -- delete the assigned var
+        -- and add all used vars
+        liveVarsRemovedAsn = 
             case (getAssignedVarsCommand comm) of
                 Just var -> Set.delete var liveVars
                 Nothing -> liveVars

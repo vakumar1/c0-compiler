@@ -13,6 +13,7 @@ import Common.Errors
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import qualified Text.Show.Pretty as Pretty
 import qualified Debug.Trace as Trace
 
 -- common graph model + utilities
@@ -22,25 +23,7 @@ data DirectedGraph a = DirectedGraph
     , graphPredecessors :: Map.Map a (Set.Set a)
     , graphSuccessors :: Map.Map a (Set.Set a)
     }
-instance (Show a) => Show (DirectedGraph a) where
-    show g = 
-        "nodes=[" ++ (foldr (\node curr -> curr ++ (show node) ++ ",") "" (graphNodes g)) ++ "]" ++ 
-        "succEdges=[" ++ 
-        (foldr
-            (\(node, succSet) curr ->
-                curr ++
-                (foldr
-                    (\succ innerCurr ->
-                        innerCurr ++ (show succ) ++ ","
-                    )
-                    ("\n" ++ (show node) ++ "->")
-                    succSet
-                )
-            )
-            ""
-            (Map.toList (graphSuccessors g))
-        ) ++ 
-        "]"
+    deriving (Show)
 
 emptyGraph :: DirectedGraph a
 emptyGraph = DirectedGraph Set.empty Map.empty Map.empty
@@ -211,14 +194,14 @@ tarjanAddSCC scc graph state =
             newMapToSCC
 
 tarjanInsertSCCToDAG :: (Ord a, Show a) => Int -> SCC a -> DirectedGraph a -> Map.Map a Int -> DirectedGraph Int -> (Bool, DirectedGraph Int)
--- tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag
---     | Trace.trace 
---         ("\n\ntarjanInsertSCCToDAG -- " ++
---             "\nsccIndex=" ++ (show sccIndex) ++
---             "\nscc=" ++ (show scc) ++
---             "\ncurrDAG=" ++ (show dag)
---         )
---         False = undefined
+tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag
+    | Trace.trace 
+        ("\n\ntarjanInsertSCCToDAG -- " ++
+            "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++
+            "\nscc=" ++ (Pretty.ppShow scc) ++
+            "\ncurrDAG=" ++ (Pretty.ppShow dag)
+        )
+        False = undefined
 tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag =
     foldr
         (\node (interIsLeaf, interDag) ->
