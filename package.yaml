@@ -37,6 +37,7 @@ library:
   source-dirs: src
   dependencies:
   - text
+  - pretty-show
   - array
   - containers
 

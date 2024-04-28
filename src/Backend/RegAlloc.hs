@@ -37,6 +37,12 @@ addEdgeToIFG (var1, var2) ifg = (addEdge var1 var2 (addEdge var2 var1 ifg))
 
 -- construct interference graph between versioned variables
 constructIFG :: FunctionIr -> LiveMap -> IFG
+-- constructIFG fnIr versionedLiveMap
+--     | Trace.trace 
+--         ("\n\nconstructIFG -- " ++
+--             "\nliveMap=" ++ (show versionedLiveMap)
+--         )
+--         False = undefined
 constructIFG fnIr versionedLiveMap = 
     foldl
         (\interIFG bbIndex ->
@@ -66,12 +72,12 @@ constructIFG fnIr versionedLiveMap =
 
 constructIFGBasicBlock :: BasicBlockIr -> Set.Set VariableIr -> IFG -> IFG
 -- constructIFGBasicBlock bb liveVars ifg 
-    -- | Trace.trace 
-    --     ("\n\nconstructIFGBasicBlock -- " ++
-    --         "\nbbIr=" ++ (show bb) ++
-    --         "\nliveVars=" ++ (show liveVars)
-    --     )
-    --     False = undefined
+--     | Trace.trace 
+--         ("\n\nconstructIFGBasicBlock -- " ++
+--             "\nbbIr=" ++ (show bb) ++
+--             "\nliveVars=" ++ (show liveVars)
+--         )
+--         False = undefined
 constructIFGBasicBlock bb liveVars ifg = 
     let (liveVarsUpdatedComms, ifgUpdatedComms) = foldl constructIFGCommand (liveVars, ifg) (bbIrCommands bb)
         (liveVarsUpdatedPhi, ifgUpdatedPhi) = constructIFGPhi (liveVarsUpdatedComms, ifgUpdatedComms) (bbIrPhiFn bb)
@@ -79,7 +85,12 @@ constructIFGBasicBlock bb liveVars ifg =
 
 constructIFGPhi :: (Set.Set VariableIr, IFG) -> PhiFnIr -> (Set.Set VariableIr, IFG)
 constructIFGPhi (liveVars, initIFG) phi = 
-    let newLiveVars = updateLiveVarsPhi liveVars phi
+    let 
+        -- update live vars by removing all assigned vars and inserting all used vars
+        newLiveVars = updateLiveVarsPhi liveVars phi
+
+        -- update IFG by adding edges between all assigned vars with
+        -- all live vars and all used vars (excluding those from the same phi-fn)
         ifgUpdatedWithAsn = 
             foldr
                 (\(var, varPredMap) interIFG ->
@@ -90,7 +101,7 @@ constructIFGPhi (liveVars, initIFG) phi =
                                 else addEdgeToIFG (liveVar, var) predInterIFG
                         )
                         (addNodeToIFG var interIFG)
-                        liveVars
+                        (Set.difference (Set.union (getUsedVarsPhi phi) liveVars) (getUsedVarsPredMap varPredMap))
                 )
                 initIFG
                 (Map.toList phi)
@@ -98,7 +109,11 @@ constructIFGPhi (liveVars, initIFG) phi =
 
 constructIFGCommand :: (Set.Set VariableIr, IFG) -> CommandIr -> (Set.Set VariableIr, IFG)
 constructIFGCommand (liveVars, initIFG) comm =
-    let newLiveVars = updateLiveVarsComm liveVars comm
+    let 
+        -- update live vars by removing assigned var (if any) and inserting all used vars
+        newLiveVars = updateLiveVarsComm liveVars comm
+
+        -- update IFG by adding edges between assigned var and all live vars
         ifgUpdatedWithAsn =
             case (getAssignedVarsCommand comm) of
                 Just asnVar ->

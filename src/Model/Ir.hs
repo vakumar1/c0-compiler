@@ -40,19 +40,7 @@ data BasicBlockIr = BasicBlockIr
     , bbIrPhiFn :: PhiFnIr
     , bbIrCommands :: [CommandIr]
     }
-instance Show BasicBlockIr where
-    show bb =
-        "\nINDEX=" ++ (show (bbIndex bb)) ++
-        "\nPHI-FN=" ++ (show (bbIrPhiFn bb)) ++ 
-        "\nCOMMANDS=" ++
-        foldr 
-            (\comm interStr -> 
-                interStr ++ "\n" ++ (show comm)
-            ) 
-            "" 
-            (bbIrCommands bb)
-            ++
-        "\n"
+    deriving (Show)
 
 data CommandIr
     = INIT_IR VariableIr

@@ -586,38 +586,45 @@ data BasicBlockX86 = BasicBlockX86
 --      successor = false BB -> add to phi-fn-2
 --    RET: err (no valid injection)
 injectPhiFnPredCommand :: CommandIr -> [X86Instruction] -> Int -> BasicBlockX86 -> BasicBlockX86
+injectPhiFnPredCommand termComm phiFnComms succBBIndex bbX86
+    | Trace.trace 
+        ("\n\ninjectPhiFnPredCommand -- " ++
+            "\ntermComm=" ++ (Pretty.ppShow termComm) ++
+            "\nsuccIndex=" ++ (show succBBIndex) ++
+            "\nphiFnComms=" ++ (Pretty.ppShow phiFnComms)
+        )
+        False = undefined
 injectPhiFnPredCommand termComm phiFnComms succBBIndex bbX86 = 
     case termComm of
-        GOTO_BB_IR actualSuccIndex ->
-            case succBBIndex of
-                actualSuccIndex ->
-                    BasicBlockX86
-                        (basicBlockX86MainCommands bbX86)
-                        (basicBlockX86TailCommands bbX86)
-                        ((basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++ phiFnComms)
-                        (basicBlockX86InjectedPhiFnPredCommands2 bbX86)
-                _ -> 
-                    error . compilerError $ "Attempted to inject phi-fn pred command to a GOTO predecessor without correct successor: " ++ 
-                                                "\nactual succ=" ++ (show actualSuccIndex) ++
-                                                "\nexpected succ=" ++ (show succBBIndex)
-        SPLIT_BB_IR _ trueSuccIndex falseSuccIndex ->
-            case succBBIndex of
-                trueSuccIndex ->
-                    BasicBlockX86
-                        (basicBlockX86MainCommands bbX86)
-                        (basicBlockX86TailCommands bbX86)
-                        ((basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++ phiFnComms)
-                        (basicBlockX86InjectedPhiFnPredCommands2 bbX86)
-                falseSuccIndex ->
-                    BasicBlockX86
-                        (basicBlockX86MainCommands bbX86)
-                        (basicBlockX86TailCommands bbX86)
-                        (basicBlockX86InjectedPhiFnPredCommands1 bbX86)
-                        ((basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++ phiFnComms)
-                _ -> error . compilerError $ "Attempted to inject phi-fn pred command to a SPLIT predecessor without correct successor: " ++ 
-                                                "\ntrue succ=" ++ (show trueSuccIndex) ++
-                                                "\false succ=" ++ (show falseSuccIndex) ++
-                                                "\nexpected succ=" ++ (show succBBIndex)
+        GOTO_BB_IR actualSuccIndex
+            | succBBIndex == actualSuccIndex ->
+                BasicBlockX86
+                    (basicBlockX86MainCommands bbX86)
+                    (basicBlockX86TailCommands bbX86)
+                    ((basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++ phiFnComms)
+                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86)
+            | otherwise ->
+                error . compilerError $ "Attempted to inject phi-fn pred command to a GOTO predecessor without correct successor: " ++ 
+                                            "\nactual succ=" ++ (show actualSuccIndex) ++
+                                            "\nexpected succ=" ++ (show succBBIndex)
+        SPLIT_BB_IR _ trueSuccIndex falseSuccIndex
+            | succBBIndex == trueSuccIndex ->
+                BasicBlockX86
+                    (basicBlockX86MainCommands bbX86)
+                    (basicBlockX86TailCommands bbX86)
+                    ((basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++ phiFnComms)
+                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86)
+            | succBBIndex == falseSuccIndex ->
+                BasicBlockX86
+                    (basicBlockX86MainCommands bbX86)
+                    (basicBlockX86TailCommands bbX86)
+                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86)
+                    ((basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++ phiFnComms)
+            | otherwise ->
+                error . compilerError $ "Attempted to inject phi-fn pred command to a SPLIT predecessor without correct successor: " ++ 
+                                            "\ntrue succ=" ++ (show trueSuccIndex) ++
+                                            "\false succ=" ++ (show falseSuccIndex) ++
+                                            "\nexpected succ=" ++ (show succBBIndex)
         RET_PURE_IR _ ->
             error . compilerError $ "Attempted to inject phi-fn pred command to a RET predecessor: " ++ 
                                         "\nexpected succ=" ++ (show succBBIndex)

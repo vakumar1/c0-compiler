@@ -3,6 +3,8 @@ module Common.Liveness (
     Coloring,
     livenessPass,
     updateLiveVarsPhi,
+    getAssignedVarsPhi,
+    getUsedVarsPhi,
     getUsedVarsPredMap,
     updateLiveVarsComm,
     getUsedVarsCommand,
@@ -155,13 +157,25 @@ bbLivenessPass liveVars bb =
 
 updateLiveVarsPhi :: Set.Set VariableIr -> PhiFnIr -> Set.Set VariableIr
 updateLiveVarsPhi liveVars phi = 
-    foldr 
-        -- for each phi-fn delete the assigned var
-        -- and add all used vars
-        (\(var, varPredMap) interLiveVars -> 
-            Set.union (getUsedVarsPredMap varPredMap) (Set.delete var interLiveVars)
+    -- delete all assigned vars and insert all used vars to live vars
+    Set.union (getUsedVarsPhi phi) (Set.difference liveVars (getAssignedVarsPhi phi))
+
+getAssignedVarsPhi :: PhiFnIr -> Set.Set VariableIr
+getAssignedVarsPhi phi = 
+    foldr
+        (\(var, varPredMap) interUsedVars ->
+            Set.insert var interUsedVars
         )
-        liveVars
+        Set.empty
+        (Map.toList phi)
+
+getUsedVarsPhi :: PhiFnIr -> Set.Set VariableIr
+getUsedVarsPhi phi = 
+    foldr
+        (\(var, varPredMap) interUsedVars ->
+            Set.union (getUsedVarsPredMap varPredMap) interUsedVars
+        )
+        Set.empty
         (Map.toList phi)
 
 getUsedVarsPredMap :: Map.Map Int VariableIr -> Set.Set VariableIr
