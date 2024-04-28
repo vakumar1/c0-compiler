@@ -1,5 +1,6 @@
 module Common.Liveness (
     LiveMap,
+    Coloring,
     livenessPass,
     updateLiveVarsPhi,
     getUsedVarsPredMap,
@@ -22,6 +23,9 @@ import qualified Debug.Trace as Trace
 
 -- map from bb/SCC index to base (i.e., SSAId = 0) variables that are live-in at start of bb/SCC
 type LiveMap = Map.Map Int (Set.Set VariableIr)
+
+-- map from variable to a color (i.e. an Int)
+type Coloring = Map.Map VariableIr Int
 
 -- LIVENESS PASS ON CFG -> returns map of (base) variables that are live-in for each BB
 

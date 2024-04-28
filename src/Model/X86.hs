@@ -44,25 +44,25 @@ instance Show X86Instruction where
                     LABEL_X86 l ->
                         Printf.printf "%s:" l
                     MOV_X86 r1 r2 ->
-                        Printf.printf "mov %s, %s" (show r1) (show r2)
+                        Printf.printf "mov %s, %s" (displayArgLoc r1) (displayArgLoc r2)
                     ADD_X86 r1 r2 ->
-                        Printf.printf "add %s, %s" (show r1) (show r2)
+                        Printf.printf "add %s, %s" (displayArgLoc r1) (displayArgLoc r2)
                     SUB_X86 r1 r2 ->
-                        Printf.printf "sub %s, %s" (show r1) (show r2)
+                        Printf.printf "sub %s, %s" (displayArgLoc r1) (displayArgLoc r2)
                     IMUL_X86 r1 r2 ->
-                        Printf.printf "imul %s, %s" (show r1) (show r2)
+                        Printf.printf "imul %s, %s" (displayArgLoc r1) (displayArgLoc r2)
                     IDIV_X86 r ->
-                        Printf.printf "idiv dword %s" (show r)
+                        Printf.printf "idiv %s" (displayArgLoc r)
                     XOR_X86 r1 r2 ->
-                        Printf.printf "xor %s, %s" (show r1) (show r2)
+                        Printf.printf "xor %s, %s" (displayArgLoc r1) (displayArgLoc r2)
                     NEG_X86 r ->
-                        Printf.printf "neg %s" (show r)
+                        Printf.printf "neg %s" (displayArgLoc r)
                     PUSH_X86 r ->
-                        Printf.printf "push %s" (show r)
+                        Printf.printf "push %s" (displayArgLoc r)
                     JMP_X86 l ->
                         Printf.printf "jmp %s" l
                     CMP_X86 r1 r2 ->
-                        Printf.printf "cmp %s %s" (show r1) (show r2)
+                        Printf.printf "cmp %s, %s" (displayArgLoc r1) (displayArgLoc r2)
                     JZ_X86 l ->
                         Printf.printf "jz %s" l
                     JL_X86 l ->
@@ -87,15 +87,16 @@ data ArgLocation
     = REG_ARGLOC Register
     | STACK_ARGLOC Int
     | CONST_ARGLOC Int
-instance Show ArgLocation where
-    show argLoc =
-        case argLoc of
-            REG_ARGLOC reg -> show reg
-            STACK_ARGLOC stackPtr ->
-                if (stackPtr >= 0)
-                    then Printf.printf "[%s + %s]" (show SP) (show stackPtr)
-                    else Printf.printf "[%s - %s]" (show SP) (show (-stackPtr))
-            CONST_ARGLOC const -> show const
+
+displayArgLoc :: ArgLocation -> String
+displayArgLoc argLoc =
+    case argLoc of
+        REG_ARGLOC reg -> show reg
+        STACK_ARGLOC stackPtr ->
+            if (stackPtr >= 0)
+                then Printf.printf "QWORD [%s + %s]" (show SP) (show stackPtr)
+                else Printf.printf "QWORD [%s - %s]" (show SP) (show (-stackPtr))
+        CONST_ARGLOC const -> show const
 
 data Register
     = AX
