@@ -59,7 +59,7 @@ irFunction fnElab =
         fnIr = (irProcStateFunctionIr finalState)
     in (fnIr, errs)
 
--- each statment processor returns
+-- each statement processor returns
 --   Bool: whether the statement definitely terminates the function (within its parent statement context)
 --   Bool: whether to create and start a new basic block for the following statement
 --   PredecessorCommands: the list of injections to be inserted (if needed) after this statement
@@ -110,17 +110,8 @@ irSeq seq fnElab state =
                 (\(interTerm, interStartBb, interPreds, interState) stmt ->
                     if interTerm
                         -- short-circuit once fn has already been terminated
-                        then 
-                            (interTerm, interStartBb, interPreds, interState)
-                        else
-                            let (stmtTerm, stmtStartBb, stmtPreds, stmtState) = irStatement stmt fnElab (interStartBb, interPreds, interState)
-                            in if stmtTerm
-                                -- statement terminates the function
-                                -- ignore remaining state and assert no further basic block creation/injection
-                                then
-                                    (True, False, predecessorCommandEmpty, stmtState)
-                                else
-                                    (stmtTerm, stmtStartBb, stmtPreds, stmtState)
+                        then (interTerm, interStartBb, interPreds, interState)
+                        else irStatement stmt fnElab (interStartBb, interPreds, interState)
                 )
                 (False, False, predecessorCommandEmpty, innerState)
                 seq
