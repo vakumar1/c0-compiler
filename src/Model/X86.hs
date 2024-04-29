@@ -87,6 +87,13 @@ data ArgLocation
     = REG_ARGLOC Register
     | STACK_ARGLOC Int
     | CONST_ARGLOC Int
+instance Eq ArgLocation where
+    argLoc1 == argLoc2 = 
+        case (argLoc1, argLoc2) of
+            (REG_ARGLOC r1, REG_ARGLOC r2) -> r1 == r2
+            (STACK_ARGLOC sp1, STACK_ARGLOC sp2) -> sp1 == sp2
+            (CONST_ARGLOC c1, CONST_ARGLOC c2) -> c1 == c2
+            _ -> False
 
 displayArgLoc :: ArgLocation -> String
 displayArgLoc argLoc =
@@ -107,6 +114,7 @@ data Register
     | DI
     | SP
     | BP
+    deriving (Eq)
 instance Show Register where
     show reg =
         case reg of

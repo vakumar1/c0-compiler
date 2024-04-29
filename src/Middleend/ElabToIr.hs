@@ -9,6 +9,7 @@ import Common.Graphs
 import Model.Ir
 import Model.Tokens
 import Model.Types
+import Common.Constants
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -65,16 +66,16 @@ irFunction fnElab =
 --   PredecessorCommands: the list of injections to be inserted (if needed) after this statement
 --   IrProcessingState: the new processing state
 irStatement :: StatementElab -> FunctionElab -> (Bool, PredecessorCommands, IrProcessingState) -> (Bool, Bool, PredecessorCommands, IrProcessingState)
--- irStatement stmtElab fnElab (startBb, preds, state) 
-    -- | Trace.trace 
-    --     ("\n\nirStatement -- " ++ 
-    --         "\nstmtElab=" ++ (show stmtElab) ++ 
-    --         "\nstartBB=" ++ (show startBb) ++ 
-    --         "\npreds=" ++ (show preds) ++ 
-    --         "\ncurrBB=" ++ (show . irProcStateCurrBb $ state) ++ 
-    --         "\nfnIr=" ++ (show . irProcStateFunctionIr $ state)
-    --     ) 
-    --     False = undefined
+irStatement stmtElab fnElab (startBb, preds, state) 
+    | debugLogs && (Trace.trace 
+        ("\n\nirStatement -- " ++ 
+            "\nstmtElab=" ++ (show stmtElab) ++ 
+            "\nstartBB=" ++ (show startBb) ++ 
+            "\npreds=" ++ (show preds) ++ 
+            "\ncurrBB=" ++ (show . irProcStateCurrBb $ state) ++ 
+            "\nfnIr=" ++ (show . irProcStateFunctionIr $ state)
+        ) 
+        False) = undefined
 irStatement stmtElab fnElab (startBb, preds, state) = 
     let stmtState = 
             if not startBb

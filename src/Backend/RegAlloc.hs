@@ -8,6 +8,7 @@ import Model.Ir
 import Common.Liveness
 import Common.Graphs
 import Common.Errors
+import Common.Constants
 
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -37,12 +38,12 @@ addEdgeToIFG (var1, var2) ifg = (addEdge var1 var2 (addEdge var2 var1 ifg))
 
 -- construct interference graph between versioned variables
 constructIFG :: FunctionIr -> LiveMap -> IFG
--- constructIFG fnIr versionedLiveMap
---     | Trace.trace 
---         ("\n\nconstructIFG -- " ++
---             "\nliveMap=" ++ (show versionedLiveMap)
---         )
---         False = undefined
+constructIFG fnIr versionedLiveMap
+    | debugLogs && (Trace.trace 
+        ("\n\nconstructIFG -- " ++
+            "\nliveMap=" ++ (show versionedLiveMap)
+        )
+        False) = undefined
 constructIFG fnIr versionedLiveMap = 
     foldl
         (\interIFG bbIndex ->
@@ -71,13 +72,13 @@ constructIFG fnIr versionedLiveMap =
         (looseBbOrdering fnIr)
 
 constructIFGBasicBlock :: BasicBlockIr -> Set.Set VariableIr -> IFG -> IFG
--- constructIFGBasicBlock bb liveVars ifg 
---     | Trace.trace 
---         ("\n\nconstructIFGBasicBlock -- " ++
---             "\nbbIr=" ++ (show bb) ++
---             "\nliveVars=" ++ (show liveVars)
---         )
---         False = undefined
+constructIFGBasicBlock bb liveVars ifg 
+    | debugLogs && (Trace.trace 
+        ("\n\nconstructIFGBasicBlock -- " ++
+            "\nbbIr=" ++ (show bb) ++
+            "\nliveVars=" ++ (show liveVars)
+        )
+        False) = undefined
 constructIFGBasicBlock bb liveVars ifg = 
     let (liveVarsUpdatedComms, ifgUpdatedComms) = foldl constructIFGCommand (liveVars, ifg) (bbIrCommands bb)
         (liveVarsUpdatedPhi, ifgUpdatedPhi) = constructIFGPhi (liveVarsUpdatedComms, ifgUpdatedComms) (bbIrPhiFn bb)

@@ -8,6 +8,7 @@ import Common.Liveness
 import Model.Types
 import Model.X86
 import Common.Errors
+import Common.Constants
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -17,13 +18,12 @@ import qualified Debug.Trace as Trace
 
 irToX86 :: Coloring -> FunctionIr -> [X86Instruction]
 irToX86 coloring fnIr
-    | Trace.trace 
+    | debugLogs && (Trace.trace
         ("\n\nirToX86 -- " ++
             "\ncoloring=" ++ (Pretty.ppShow coloring)
-        )
-        False = undefined
+        ) False) = undefined
 irToX86 coloring fnIr =
-    let blocks = looseBbOrdering fnIr
+    let 
         -- initialize function spillover at SP - 8 and w/ all available registers
         initAlloc = AllocState Map.empty 8 availableRegisters
 
@@ -36,7 +36,7 @@ irToX86 coloring fnIr =
                         Nothing -> error . compilerError $ "Attempted to access basic block during phi-fn x86 translation: index=" ++ (show index)
                 )
                 (Map.empty, commAlloc)
-                blocks
+                [0..((length . functionIrBlocks $ fnIr) - 1)]
 
         -- apply command Ir->x86 translation
         (commBlockMap, commAlloc) =
@@ -47,7 +47,7 @@ irToX86 coloring fnIr =
                         Nothing -> error . compilerError $ "Attempted to access basic block during command x86 translation: index=" ++ (show index)
                 )
                 (phiBlockMap, initAlloc)
-                blocks
+                [0..((length . functionIrBlocks $ fnIr) - 1)]
 
         -- concatenate x86 instructions
         finalInstr = 
@@ -58,7 +58,7 @@ irToX86 coloring fnIr =
                         Nothing -> error . compilerError $ "Attempted to access basic block during final X86 translation: index=" ++ (show index)
                 )
                 []
-                blocks
+                [0..((length . functionIrBlocks $ fnIr) - 1)]
      in finalInstr
 
 phiFnIrToX86 :: Coloring -> FunctionIr -> Int -> PhiFnIr -> Map.Map Int BasicBlockX86 -> AllocState -> (Map.Map Int BasicBlockX86, AllocState)
@@ -188,10 +188,17 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                             ADD_IR ->
                                 case asnVarLoc of
                                     -- reg = y + z -> perform binop in reg
-                                    REG_ARGLOC asnVarReg ->
-                                        [ MOV_X86 asnVarLoc pureVarLoc1
-                                        , ADD_X86 asnVarLoc pureVarLoc2
-                                        ]
+                                    REG_ARGLOC asnVarReg
+                                        | asnVarLoc == pureVarLoc1 ->
+                                            [ ADD_X86 asnVarLoc pureVarLoc2
+                                            ]
+                                        | asnVarLoc == pureVarLoc2 ->
+                                            [ ADD_X86 asnVarLoc pureVarLoc1
+                                            ]
+                                        | otherwise ->
+                                            [ MOV_X86 asnVarLoc pureVarLoc1
+                                            , ADD_X86 asnVarLoc pureVarLoc2
+                                            ]
                                     -- S[i] = y + z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -201,10 +208,17 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                             SUB_IR ->
                                 case asnVarLoc of
                                     -- reg = y - z -> perform binop in reg
-                                    REG_ARGLOC asnVarReg ->
-                                        [ MOV_X86 asnVarLoc pureVarLoc1
-                                        , SUB_X86 asnVarLoc pureVarLoc2
-                                        ]
+                                    REG_ARGLOC asnVarReg
+                                        | asnVarLoc == pureVarLoc1 ->
+                                            [ SUB_X86 asnVarLoc pureVarLoc2
+                                            ]
+                                        | asnVarLoc == pureVarLoc2 ->
+                                            [ SUB_X86 asnVarLoc pureVarLoc1
+                                            ]
+                                        | otherwise ->
+                                            [ MOV_X86 asnVarLoc pureVarLoc1
+                                            , SUB_X86 asnVarLoc pureVarLoc2
+                                            ]
                                     -- S[i] = y - z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -214,10 +228,17 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                             MUL_IR ->
                                 case asnVarLoc of
                                     -- reg = y * z -> perform binop in reg
-                                    REG_ARGLOC asnVarReg ->
-                                        [ MOV_X86 asnVarLoc pureVarLoc1
-                                        , IMUL_X86 asnVarLoc pureVarLoc2
-                                        ]
+                                    REG_ARGLOC asnVarReg
+                                        | asnVarLoc == pureVarLoc1 ->
+                                            [ IMUL_X86 asnVarLoc pureVarLoc2
+                                            ]
+                                        | asnVarLoc == pureVarLoc2 ->
+                                            [ IMUL_X86 asnVarLoc pureVarLoc1
+                                            ]
+                                        | otherwise ->
+                                            [ MOV_X86 asnVarLoc pureVarLoc1
+                                            , IMUL_X86 asnVarLoc pureVarLoc2
+                                            ]
                                     -- S[i] = y * z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -337,10 +358,10 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                             [ CMP_X86 pureVarLoc (CONST_ARGLOC falseX86)
                             ] ++
                             (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                            [JZ_X86 (bbToLabel splitFalse)
+                            [ JZ_X86 (bbToLabel splitFalse)
                             ] ++
                             (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                            [JMP_X86 (bbToLabel splitTrue)
+                            [ JMP_X86 (bbToLabel splitTrue)
                             ]
                     in (splitInst, splitAlloc)
         
@@ -363,20 +384,20 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                                     , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JL_X86 (bbToLabel splitTrue)
+                                    [ JL_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                                 -- at least one reg --> direct cmp
                                 _ ->
                                     [ CMP_X86 pureVarLoc1 pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JL_X86 (bbToLabel splitTrue)
+                                    [ JL_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                         LTE_IR ->
                             case (pureVarLoc1, pureVarLoc2) of
@@ -386,20 +407,20 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                                     , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JLE_X86 (bbToLabel splitTrue)
+                                    [ JLE_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                                 -- at least one reg --> direct cmp
                                 _ ->
                                     [ CMP_X86 pureVarLoc1 pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JLE_X86 (bbToLabel splitTrue)
+                                    [ JLE_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                         GT_IR ->
                             case (pureVarLoc1, pureVarLoc2) of
@@ -409,20 +430,20 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                                     , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JG_X86 (bbToLabel splitTrue)
+                                    [ JG_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                                 -- at least one reg --> direct cmp
                                 _ ->
                                     [ CMP_X86 pureVarLoc1 pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JG_X86 (bbToLabel splitTrue)
+                                    [ JG_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                         GTE_IR ->
                             case (pureVarLoc1, pureVarLoc2) of
@@ -432,20 +453,20 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                                     , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JGE_X86 (bbToLabel splitTrue)
+                                    [ JGE_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                                 -- at least one reg --> direct cmp
                                 _ ->
                                     [ CMP_X86 pureVarLoc1 pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JGE_X86 (bbToLabel splitTrue)
+                                    [ JGE_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                         EQ_IR ->
                             case (pureVarLoc1, pureVarLoc2) of
@@ -455,20 +476,20 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                                     , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JE_X86 (bbToLabel splitTrue)
+                                    [ JE_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                                 -- at least one reg --> direct cmp
                                 _ ->
                                     [ CMP_X86 pureVarLoc1 pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JE_X86 (bbToLabel splitTrue)
+                                    [ JE_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                         NEQ_IR ->
                             case (pureVarLoc1, pureVarLoc2) of
@@ -478,20 +499,20 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                                     , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
                                     ] ++ 
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JNE_X86 (bbToLabel splitTrue)
+                                    [ JNE_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
                                 -- at least one reg --> direct cmp
                                 _ ->
                                     [ CMP_X86 pureVarLoc1 pureVarLoc2
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [JNE_X86 (bbToLabel splitTrue)
+                                    [ JNE_X86 (bbToLabel splitTrue)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [JMP_X86 (bbToLabel splitFalse)
+                                    [ JMP_X86 (bbToLabel splitFalse)
                                     ]
             in (splitInst, pureVar2Alloc)
 
@@ -506,10 +527,10 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                             [ CMP_X86 pureVarLoc (CONST_ARGLOC falseX86)
                             ] ++
                             (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                            [JZ_X86 (bbToLabel splitTrue)
+                            [ JZ_X86 (bbToLabel splitTrue)
                             ] ++
                             (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                            [JMP_X86 (bbToLabel splitFalse)
+                            [ JMP_X86 (bbToLabel splitFalse)
                             ]
             in (splitInst, pureVarAlloc)
 
@@ -587,13 +608,12 @@ data BasicBlockX86 = BasicBlockX86
 --    RET: err (no valid injection)
 injectPhiFnPredCommand :: CommandIr -> [X86Instruction] -> Int -> BasicBlockX86 -> BasicBlockX86
 injectPhiFnPredCommand termComm phiFnComms succBBIndex bbX86
-    | Trace.trace 
+    | debugLogs && (Trace.trace
         ("\n\ninjectPhiFnPredCommand -- " ++
             "\ntermComm=" ++ (Pretty.ppShow termComm) ++
             "\nsuccIndex=" ++ (show succBBIndex) ++
             "\nphiFnComms=" ++ (Pretty.ppShow phiFnComms)
-        )
-        False = undefined
+        ) False) = undefined
 injectPhiFnPredCommand termComm phiFnComms succBBIndex bbX86 = 
     case termComm of
         GOTO_BB_IR actualSuccIndex

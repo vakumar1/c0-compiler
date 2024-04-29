@@ -6,6 +6,7 @@ import Common.Errors
 import Common.Graphs
 import Model.Ir
 import Common.Liveness
+import Common.Constants
 
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -21,12 +22,12 @@ import qualified Debug.Trace as Trace
 -- - (ii) the SCC DAG + metadata constructed as a byproduct
 
 irToMaximalSSA :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> FunctionIr
--- irToMaximalSSA fnIr (leaves, dag, sccMap)
-    -- | Trace.trace 
-    --     ("\n\nirToMaximalSSA -- " ++
-    --         "\nfnIr=" ++ (show fnIr)
-    --     )
-    --     False = undefined
+irToMaximalSSA fnIr (root, leaves, dag, sccMap)
+    | debugLogs && (Trace.trace 
+        ("\n\nirToMaximalSSA -- " ++
+            "\nfnIr=" ++ (show fnIr)
+        )
+        False) = undefined
 irToMaximalSSA fnIr (root, leaves, dag, sccMap) =
     let bbLiveMap = livenessPass fnIr (root, leaves, dag, sccMap)
         initPhiFnIr = initPhiFn fnIr bbLiveMap
@@ -84,11 +85,11 @@ initPhiFn fnIr liveMap =
 -- version pass converts variable versions within BBs in loose BFS order
 versionPass :: FunctionIr -> LiveMap -> FunctionIr
 versionPass fnIr bbLiveMap
-    | Trace.trace 
+    | debugLogs && (Trace.trace 
         ("\n\nversionPass -- " ++
             "\nbbLiveMap=" ++ (show bbLiveMap)
         )
-        False = undefined
+        False) = undefined
 versionPass fnIr bbLiveMap = 
     let (newFnIr, _) = 
             foldl
@@ -106,13 +107,13 @@ versionPass fnIr bbLiveMap =
     in newFnIr
 
 bbIrToMaximalSSA :: BasicBlockIr -> VariableIrVersion -> (BasicBlockIr, VariableIrVersion)
--- bbIrToMaximalSSA bb versions
-    -- | Trace.trace 
-    --     ("\n\nbbIrToMaximalSSA -- " ++
-    --         "\nbbIr=" ++ (show bb) ++
-    --         "\nversions=" ++ (show versions)
-    --     )
-    --     False = undefined
+bbIrToMaximalSSA bb versions
+    | debugLogs && (Trace.trace 
+        ("\n\nbbIrToMaximalSSA -- " ++
+            "\nbbIr=" ++ (show bb) ++
+            "\nversions=" ++ (show versions)
+        )
+        False) = undefined
 bbIrToMaximalSSA bb versions = 
     let (newPhiFnIrPairs, phiUpdateVersions) = 
             foldr

@@ -41,8 +41,16 @@ int_to_str:
     dec     rsp
     mov     dl, 0
     mov     [rsp], dl               ; Decr sp and add null terminator
+    dec     rsp
     mov     dl, 0x0A
-    mov     [rsp], dl                ; Decr sp and add newline
+    mov     [rsp], dl               ; Decr sp and add newline
+
+pre_check_neg:
+    mov     r8, 0                   ; record rax is positive
+    test    rax, rax
+    jns     convert_loop
+    mov     r8, 1                   ; record rax is negative
+    neg     rax                     ; negative and add negative sign if negative
 
 convert_loop:
     inc     rbx
@@ -53,8 +61,16 @@ convert_loop:
     mov     [rsp], dl               ; Store ASCII character in the buffer
 
     test    rax, rax
-    jz      finish                  ; If quotient is zero return
+    jz      post_process_neg        ; If quotient is zero return
 
     cmp     rbx, 10
-    je      finish                  ; If loop is over (10) return
+    je      post_process_neg        ; If loop is over (10) return
     jmp     convert_loop
+
+post_process_neg:
+    test    r8, r8
+    jz      finish
+    dec     rsp
+    mov     dl, '-'
+    mov     [rsp], dl               ; if negative decr sp and add '-'
+    jmp     finish      

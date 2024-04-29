@@ -9,6 +9,7 @@ module Common.Graphs (
 ) where
 
 import Common.Errors
+import Common.Constants
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -195,13 +196,13 @@ tarjanAddSCC scc graph state =
 
 tarjanInsertSCCToDAG :: (Ord a, Show a) => Int -> SCC a -> DirectedGraph a -> Map.Map a Int -> DirectedGraph Int -> (Bool, DirectedGraph Int)
 tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag
-    | Trace.trace 
+    | debugLogs && (Trace.trace 
         ("\n\ntarjanInsertSCCToDAG -- " ++
             "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++
             "\nscc=" ++ (Pretty.ppShow scc) ++
             "\ncurrDAG=" ++ (Pretty.ppShow dag)
         )
-        False = undefined
+        False) = undefined
 tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag =
     foldr
         (\node (interIsLeaf, interDag) ->

@@ -15,6 +15,7 @@ where
 import Model.Ir
 import Common.Graphs
 import Common.Errors
+import Common.Constants
 
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -33,12 +34,12 @@ type Coloring = Map.Map VariableIr Int
 
 livenessPass :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> LiveMap
 livenessPass fnIr (root, leaves, dag, sccMap)
-    | Trace.trace 
+    | debugLogs && (Trace.trace 
         ("\n\nlivenessPass -- " ++
             "\nCFG=" ++ (Pretty.ppShow . functionIrCFG $ fnIr) ++
             "\nBBs=" ++ (Pretty.ppShow . functionIrBlocks $ fnIr)
         )
-        False = undefined
+        False) = undefined
 livenessPass fnIr (root, leaves, dag, sccMap) = 
     let (_, liveMap) = livenessPassSCCHelper root fnIr dag sccMap (Set.empty, Map.empty)
     in liveMap
@@ -47,13 +48,13 @@ livenessPass fnIr (root, leaves, dag, sccMap) =
 -- the set of variables that are live-in to the BB for each BB in SCC
 livenessPassSCCHelper :: Int -> FunctionIr -> DirectedGraph Int -> Map.Map Int (SCC Int) -> (Set.Set Int, LiveMap) -> (Set.Set Int, LiveMap)
 livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap)
-    | Trace.trace 
+    | debugLogs && (Trace.trace 
         ("\n\nlivenessPassSCCHelper -- " ++
             "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++
             "\ncurrSCCLiveMap=" ++ (Pretty.ppShow liveMap) ++
             "\ndag=" ++ (Pretty.ppShow dag)
         )
-        False = undefined
+        False) = undefined
 livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap) = 
     let 
         -- collect the successors of the SCC and for each
@@ -94,13 +95,13 @@ livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap) =
 -- until live in vars reach saturation
 livenessPassSaturationHelper :: Int -> FunctionIr -> [BasicBlockIr] -> LiveMap -> LiveMap
 livenessPassSaturationHelper sccIndex fnIr bbs liveMap
-    | Trace.trace 
+    | debugLogs && (Trace.trace 
         ("\n\nlivenessPassSaturationHelper -- " ++
             "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++ 
             "\nbbs=" ++ (Pretty.ppShow . (map bbIndex) $ bbs) ++
             "\ncurrSCCLiveMap=" ++ (Pretty.ppShow liveMap)
         )
-        False = undefined
+        False) = undefined
 livenessPassSaturationHelper sccIndex fnIr bbs liveMap = 
     let (finalLiveMapUpdated, finalLiveMap) = 
             foldr
@@ -142,12 +143,12 @@ livenessPassSaturationHelper sccIndex fnIr bbs liveMap =
 
 bbLivenessPass :: Set.Set VariableIr -> BasicBlockIr -> Set.Set VariableIr
 bbLivenessPass liveVars bb
-    | Trace.trace 
+    | debugLogs && (Trace.trace 
         ("\n\nbbLivenessPass -- " ++
             "\nbbIr=" ++ (Pretty.ppShow bb) ++
             "\nliveVars=" ++ (Pretty.ppShow liveVars)
         )
-        False = undefined
+        False) = undefined
 bbLivenessPass liveVars bb = 
     let updatedCommVars = foldl updateLiveVarsComm liveVars (bbIrCommands bb)
         updatedPhiVars = updateLiveVarsPhi updatedCommVars (bbIrPhiFn bb)
