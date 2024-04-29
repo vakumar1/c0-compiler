@@ -17,8 +17,7 @@ mkdir -p $work_dir
 # compile compiler
 stack build
 
-# run every test in the program dir
-for filepath in $programs_dir/*; do
+run_test () {
   if [ -f $filepath ]; then
     file=$(basename $filepath)
     test=${file%.c}
@@ -45,8 +44,24 @@ for filepath in $programs_dir/*; do
     fi
     echo "  Extracted Result: $actual_out"
     echo "  Expected Result: $expected_out"
+  else
+    echo "Invalid file: $filepath"
   fi
-done
+}
+
+if [ $# -eq 0 ]; then
+   # run every test in the program dir
+  for filepath in $programs_dir/*; do
+    run_test $filepath
+  done
+
+else
+  # run tests on provided files
+  for filepath in "$@"; do
+    run_test $filepath
+  done
+
+fi
 
 
 rm -r $work_dir

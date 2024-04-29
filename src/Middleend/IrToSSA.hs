@@ -13,6 +13,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 
 import qualified Debug.Trace as Trace
+import qualified Text.Show.Pretty as Pretty
 
 -- MAXIMAL SSA PASS ON CFG -> 
 -- - updates SSA Id for each variable (in phi-functions and commands) to conform to SSA form 
@@ -25,7 +26,7 @@ irToMaximalSSA :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map In
 irToMaximalSSA fnIr (root, leaves, dag, sccMap)
     | debugLogs && (Trace.trace 
         ("\n\nirToMaximalSSA -- " ++
-            "\nfnIr=" ++ (show fnIr)
+            "\nfnIr=" ++ (Pretty.ppShow fnIr)
         )
         False) = undefined
 irToMaximalSSA fnIr (root, leaves, dag, sccMap) =

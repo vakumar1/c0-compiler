@@ -15,6 +15,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 import qualified Debug.Trace as Trace
+import qualified Text.Show.Pretty as Pretty
 
 -- IR TRANSLATION
 -- + DECLARATION VERIFICATION
@@ -69,11 +70,12 @@ irStatement :: StatementElab -> FunctionElab -> (Bool, PredecessorCommands, IrPr
 irStatement stmtElab fnElab (startBb, preds, state) 
     | debugLogs && (Trace.trace 
         ("\n\nirStatement -- " ++ 
-            "\nstmtElab=" ++ (show stmtElab) ++ 
-            "\nstartBB=" ++ (show startBb) ++ 
-            "\npreds=" ++ (show preds) ++ 
-            "\ncurrBB=" ++ (show . irProcStateCurrBb $ state) ++ 
-            "\nfnIr=" ++ (show . irProcStateFunctionIr $ state)
+            "\nstmtElab=" ++    (Pretty.ppShow stmtElab) ++ 
+            "\nstartBB=" ++     (Pretty.ppShow startBb) ++ 
+            "\nnextBBIndex=" ++ (Pretty.ppShow . irProcStateBbCtr $ state) ++
+            "\npreds=" ++       (Pretty.ppShow preds) ++ 
+            "\ncurrBB=" ++      (Pretty.ppShow . irProcStateCurrBb $ state) ++ 
+            "\nfnIr=" ++        (Pretty.ppShow . irProcStateFunctionIr $ state)
         ) 
         False) = undefined
 irStatement stmtElab fnElab (startBb, preds, state) = 
@@ -143,7 +145,13 @@ irIf (IfElab condExp ifStmt Nothing) fnElab state =
         termInnerPreds = predecessorCommandsAddSplit predecessorCommandEmpty termBbIndex 0
         (innerTerm, innerStartBb, innerPreds, innerState) = irStatement ifStmt fnElab (True, termInnerPreds, termState)
         outerPreds = predecessorCommandsAddSplit innerPreds termBbIndex 1
-    in (False, True, outerPreds, innerState)
+
+        resetFinalTermBBIr = 
+            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ innerState) of
+                Just bb -> bb
+                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show . bbIndex $ termBbIr)
+        resetFinalTermState = irProcessingStateUpdateBB resetFinalTermBBIr innerState
+    in (False, True, outerPreds, resetFinalTermState)
 
 irIf (IfElab condExp ifStmt (Just elseStmt)) fnElab state =
     let 
@@ -165,9 +173,20 @@ irIf (IfElab condExp ifStmt (Just elseStmt)) fnElab state =
         (ifTerm, ifStartBb, ifPreds, ifState) = irStatement ifStmt fnElab (True, termIfPreds, termState)
 
         -- evaluate else stmt
+        resetElseTermBBIr = 
+            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ ifState) of
+                Just bb -> bb
+                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show . bbIndex $ termBbIr)
+        resetElseTermState = irProcessingStateUpdateBB resetElseTermBBIr ifState
         termElsePreds = predecessorCommandsAddSplit predecessorCommandEmpty (bbIndex termBbIr) 1
-        (elseTerm, elseStartBb, elsePreds, elseState) = irStatement elseStmt fnElab (True, termElsePreds, ifState)
-    in (ifTerm && elseTerm, True, predecessorCommandsMerge ifPreds elsePreds, elseState)
+        (elseTerm, elseStartBb, elsePreds, elseState) = irStatement elseStmt fnElab (True, termElsePreds, resetElseTermState)
+
+        resetFinalTermBBIr = 
+            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ elseState) of
+                Just bb -> bb
+                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show . bbIndex $ termBbIr)
+        resetFinalTermState = irProcessingStateUpdateBB resetFinalTermBBIr elseState
+    in (ifTerm && elseTerm, True, predecessorCommandsMerge ifPreds elsePreds, resetFinalTermState)
 
 irWhile :: WhileElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
 irWhile (WhileElab condExp whileStmt) fnElab state = 
@@ -744,9 +763,9 @@ binopOpTranslate cat ty p1 p2 state =
             OR_EXP_ELAB ->
                 (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr OR_IR ty expandPureBase1 expandPureBase2), expandState2)
             SLA_EXP_ELAB ->
-                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr SLA_IR ty expandPureBase1 expandPureBase2), expandState2)
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr SAL_IR ty expandPureBase1 expandPureBase2), expandState2)
             SRA_EXP_ELAB ->
-                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr SRA_IR ty expandPureBase1 expandPureBase2), expandState2)
+                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr SAR_IR ty expandPureBase1 expandPureBase2), expandState2)
             LT_EXP_ELAB ->
                 (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr LT_IR ty expandPureBase1 expandPureBase2), expandState2)
             GT_EXP_ELAB ->

@@ -81,8 +81,8 @@ data PureBinopCatIr
     | AND_IR
     | XOR_IR
     | OR_IR
-    | SLA_IR
-    | SRA_IR
+    | SAL_IR
+    | SAR_IR
     -- boolean ops
     | LT_IR
     | GT_IR

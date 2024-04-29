@@ -20,7 +20,14 @@ data X86Instruction
     | IMUL_X86 ArgLocation ArgLocation
     | IDIV_X86 ArgLocation
     | XOR_X86 ArgLocation ArgLocation
+    | AND_X86 ArgLocation ArgLocation
+    | OR_X86 ArgLocation ArgLocation
+    | SAL_X86 ArgLocation ArgLocation
+    | SAR_X86 ArgLocation ArgLocation
+    | SHL_X86 ArgLocation ArgLocation
+    | SHR_X86 ArgLocation ArgLocation
     | NEG_X86 ArgLocation
+    | NOT_X86 ArgLocation
     | PUSH_X86 ArgLocation
     | JMP_X86 Label
     | CMP_X86 ArgLocation ArgLocation
@@ -55,8 +62,22 @@ instance Show X86Instruction where
                         Printf.printf "idiv %s" (displayArgLoc r)
                     XOR_X86 r1 r2 ->
                         Printf.printf "xor %s, %s" (displayArgLoc r1) (displayArgLoc r2)
+                    AND_X86 r1 r2 ->
+                        Printf.printf "and %s, %s" (displayArgLoc r1) (displayArgLoc r2)
+                    OR_X86 r1 r2 ->
+                        Printf.printf "or %s, %s" (displayArgLoc r1) (displayArgLoc r2)
+                    SAL_X86 r1 r2 ->
+                        Printf.printf "sal %s, %s" (displayArgLoc r1) (displayArgLoc r2)
+                    SAR_X86 r1 r2 ->
+                        Printf.printf "sar %s, %s" (displayArgLoc r1) (displayArgLoc r2)
+                    SHL_X86 r1 r2 ->
+                        Printf.printf "shl %s, %s" (displayArgLoc r1) (displayArgLoc r2)
+                    SHR_X86 r1 r2 ->
+                        Printf.printf "shr %s, %s" (displayArgLoc r1) (displayArgLoc r2)
                     NEG_X86 r ->
                         Printf.printf "neg %s" (displayArgLoc r)
+                    NOT_X86 r ->
+                        Printf.printf "not %s" (displayArgLoc r)
                     PUSH_X86 r ->
                         Printf.printf "push %s" (displayArgLoc r)
                     JMP_X86 l ->

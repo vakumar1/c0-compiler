@@ -3,4 +3,4 @@ module Common.Constants (
 ) where
 
 debugLogs :: Bool
-debugLogs = False
+debugLogs = True
