@@ -661,10 +661,10 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                         splitInst = 
                             [ CMP_X86 pureVarLoc (CONST_ARGLOC falseX86)
                             ] ++
-                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
                             [ JZ_X86 (bbToLabel splitFalse)
                             ] ++
-                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
                             [ JMP_X86 (bbToLabel splitTrue)
                             ]
                     in (splitInst, splitAlloc)
@@ -1109,6 +1109,11 @@ getConstLoc :: Const -> ArgLocation
 getConstLoc const =
     case const of
         INT_CONST int -> CONST_ARGLOC int
+        BOOL_CONST bool -> 
+            if bool
+                then CONST_ARGLOC trueX86
+                else CONST_ARGLOC falseX86
+
 
 
 getVarLoc :: VariableIr -> Map.Map VariableIr Int -> AllocState -> (ArgLocation, AllocState)

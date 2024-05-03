@@ -383,7 +383,8 @@ irRet (RetElab e) (FunctionElab _ (TypeElab retTy _) _) state =
                             retBbIr = (appendCommsToBb (irProcStateCurrBb state) comms)
                             retFnIr = addBbsToFunction [retBbIr] (irProcStateFunctionIr state)
                             retState = 
-                                ((irProcessingStateUpdateFn retFnIr) .
+                                ((irProcessingStateUpdateBB retBbIr) .
+                                (irProcessingStateUpdateFn retFnIr) .
                                 (irProcessingStateAppendErrs expErrs) .
                                 (irProcessingStateUpdateScopeState expScopeState))
                                 state
