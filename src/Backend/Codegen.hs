@@ -580,6 +580,7 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                     CONST_ARGLOC int ->
                                         [ XOR_X86 (REG_ARGLOC DX) (REG_ARGLOC DX)               -- 0 out DX
                                         , MOV_X86 (REG_ARGLOC AX) pureVarLoc1                   -- move dividend to AX
+                                        , CQO_X86                                               -- sign-extend dividend to DX:AX
                                         , PUSH_X86 pureVarLoc2                                  -- push divisor to stack
                                         , IDIV_X86 (STACK_ARGLOC 0)                             -- divide AX / S[0]
                                         , ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC registerSize)   -- pop divisor from stack
@@ -589,6 +590,7 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                     _ ->
                                         [ XOR_X86 (REG_ARGLOC DX) (REG_ARGLOC DX)               -- 0 out DX
                                         , MOV_X86 (REG_ARGLOC AX) pureVarLoc1                   -- mov dividend to AX
+                                        , CQO_X86                                               -- sign-extend dividend to DX:AX
                                         , IDIV_X86 pureVarLoc2                                  -- divide AX / divisor (in reg/on stack)
                                         , MOV_X86 asnVarLoc (REG_ARGLOC AX)                     -- move quotient to result
                                         ]
@@ -598,6 +600,7 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                     CONST_ARGLOC int ->
                                         [ XOR_X86 (REG_ARGLOC DX) (REG_ARGLOC DX)               -- 0 out DX
                                         , MOV_X86 (REG_ARGLOC AX) pureVarLoc1                   -- mov dividend to AX
+                                        , CQO_X86                                               -- sign-extend dividend to DX:AX
                                         , PUSH_X86 pureVarLoc2                                  -- push divisor to stack
                                         , IDIV_X86 (STACK_ARGLOC 0)                             -- divide AX / S[0]
                                         , ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC registerSize)   -- pop divisor from stack
@@ -607,6 +610,7 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                     _ ->
                                         [ XOR_X86 (REG_ARGLOC DX) (REG_ARGLOC DX)               -- 0 out DX
                                         , MOV_X86 (REG_ARGLOC AX) pureVarLoc1                   -- mov dividend to AX
+                                        , CQO_X86                                               -- sign-extend dividend to DX:AX
                                         , IDIV_X86 pureVarLoc2                                  -- divide AX / divisor (in reg/on stack)
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)                     -- move remainder to result
                                         ]

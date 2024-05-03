@@ -28,6 +28,7 @@ data X86Instruction
     | SHR_X86 ArgLocation ArgLocation
     | NEG_X86 ArgLocation
     | NOT_X86 ArgLocation
+    | CQO_X86
     | PUSH_X86 ArgLocation
     | JMP_X86 Label
     | CMP_X86 ArgLocation ArgLocation
@@ -78,6 +79,8 @@ instance Show X86Instruction where
                         Printf.printf "neg %s" (displayArgLoc r)
                     NOT_X86 r ->
                         Printf.printf "not %s" (displayArgLoc r)
+                    CQO_X86 ->
+                        Printf.printf "cqo"
                     PUSH_X86 r ->
                         Printf.printf "push %s" (displayArgLoc r)
                     JMP_X86 l ->

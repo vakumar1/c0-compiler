@@ -15,6 +15,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 import qualified Debug.Trace as Trace
+import qualified Text.Show.Pretty as Pretty
 
 regAllocColoring :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> Map.Map VariableIr Int
 regAllocColoring fnIr (root, leaves, dag, sccMap) =
@@ -75,8 +76,8 @@ constructIFGBasicBlock :: BasicBlockIr -> Set.Set VariableIr -> IFG -> IFG
 constructIFGBasicBlock bb liveVars ifg 
     | debugLogs && (Trace.trace 
         ("\n\nconstructIFGBasicBlock -- " ++
-            "\nbbIr=" ++ (show bb) ++
-            "\nliveVars=" ++ (show liveVars)
+            "\nbbIr=" ++ (Pretty.ppShow bb) ++
+            "\nliveVars=" ++ (Pretty.ppShow liveVars)
         )
         False) = undefined
 constructIFGBasicBlock bb liveVars ifg = 
