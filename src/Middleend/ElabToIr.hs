@@ -111,15 +111,19 @@ irSeq seq fnElab state =
 
         -- apply each statement in block
         (finalTerm, finalStartBb, finalPreds, finalState) =
-            foldl
-                (\(interTerm, interStartBb, interPreds, interState) stmt ->
-                    if interTerm
-                        -- short-circuit once fn has already been terminated
-                        then (interTerm, interStartBb, interPreds, interState)
-                        else irStatement stmt fnElab (interStartBb, interPreds, interState)
-                )
-                (False, False, predecessorCommandEmpty, innerState)
-                seq
+            if (null seq)
+                then
+                    (False, False, predecessorCommandsSingleton innerState, innerState)
+                else
+                    foldl
+                        (\(interTerm, interStartBb, interPreds, interState) stmt ->
+                            if interTerm
+                                -- short-circuit once fn has already been terminated
+                                then (interTerm, interStartBb, interPreds, interState)
+                                else irStatement stmt fnElab (interStartBb, interPreds, interState)
+                        )
+                        (False, False, predecessorCommandEmpty, innerState)
+                        seq
 
         -- remove inner scope
         outerScopeState = irProcessingScopeStatePopScopeMap (irProcScopeState finalState)
