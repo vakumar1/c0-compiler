@@ -29,6 +29,7 @@ data IrProcessingState = IrProcessingState
     , irProcStateBbCtr :: Int                       -- BasicBlock id counter
     , irProcScopeState :: IrProcessingScopeState    -- current scope state
     }
+    deriving Show
 
 data PredecessorCommands = PredecessorCommands
     { predecessorCommandsGotoBlocks :: [Int]            -- list of predecessor BasicBlock indexes to inject GOTO commands
@@ -41,11 +42,13 @@ data IrProcessingScopeState = IrProcessingScopeState
     , regCtr :: Int                                 -- current register id counter
     , mapCtr :: Int                                 -- current scope id counter
     }
+    deriving Show
 
 data Scope = Scope
     { scopeMap :: Map.Map String (VariableElab, Bool)   -- map of variables (w/ boolean for whether variable is a temp)
     , scopeId :: Int                                    -- scope id
     }
+    deriving Show
 
 irFunction :: FunctionElab -> (FunctionIr, [VerificationError])
 irFunction fnElab =
@@ -84,8 +87,7 @@ irStatement stmtElab fnElab (startBb, preds, state) =
                 then state
                 else
                     -- commit current basic block + create new basic block + apply predecessor injection
-                    let termFnIr = addBbsToFunction [(irProcStateCurrBb state)] (irProcStateFunctionIr state)
-                        termState = irProcessingStateUpdateFn termFnIr state
+                    let termState = irProcessingStateCommitBB state
                         (newBb, _state) = irProcessingStateAddBB termState
                         startState = irProcessingStateUpdateBB newBb _state
                         injectState = applyPredecessorCommands preds startState
@@ -141,16 +143,17 @@ irIf (IfElab condExp ifStmt Nothing) fnElab state =
             state
         termBbIndex = bbIndex termBbIr
 
-        -- evaluate inner stmt and return preds w/ split command for term block
+        -- evaluate inner stmt + commit curr BB and return preds w/ split command for term block
         termInnerPreds = predecessorCommandsAddSplit predecessorCommandEmpty termBbIndex 0
         (innerTerm, innerStartBb, innerPreds, innerState) = irStatement ifStmt fnElab (True, termInnerPreds, termState)
+        innerCommitState = irProcessingStateCommitBB innerState
         outerPreds = predecessorCommandsAddSplit innerPreds termBbIndex 1
 
         resetFinalTermBBIr = 
-            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ innerState) of
+            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ innerCommitState) of
                 Just bb -> bb
                 Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show . bbIndex $ termBbIr)
-        resetFinalTermState = irProcessingStateUpdateBB resetFinalTermBBIr innerState
+        resetFinalTermState = irProcessingStateUpdateBB resetFinalTermBBIr innerCommitState
     in (False, True, outerPreds, resetFinalTermState)
 
 irIf (IfElab condExp ifStmt (Just elseStmt)) fnElab state =
@@ -168,24 +171,26 @@ irIf (IfElab condExp ifStmt (Just elseStmt)) fnElab state =
             (irProcessingStateUpdateScopeState condScopeState))
             state
 
-        -- evaluate if stmt
+        -- evaluate if stmt + commit curr BB
         termIfPreds = predecessorCommandsAddSplit predecessorCommandEmpty (bbIndex termBbIr) 0
         (ifTerm, ifStartBb, ifPreds, ifState) = irStatement ifStmt fnElab (True, termIfPreds, termState)
+        ifCommitState = irProcessingStateCommitBB ifState
 
-        -- evaluate else stmt
+        -- evaluate else stmt (starting from cond BB) + commit curr BB
         resetElseTermBBIr = 
-            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ ifState) of
+            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ ifCommitState) of
                 Just bb -> bb
                 Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show . bbIndex $ termBbIr)
-        resetElseTermState = irProcessingStateUpdateBB resetElseTermBBIr ifState
+        resetElseTermState = irProcessingStateUpdateBB resetElseTermBBIr ifCommitState
         termElsePreds = predecessorCommandsAddSplit predecessorCommandEmpty (bbIndex termBbIr) 1
         (elseTerm, elseStartBb, elsePreds, elseState) = irStatement elseStmt fnElab (True, termElsePreds, resetElseTermState)
+        elseCommitState = irProcessingStateCommitBB elseState
 
         resetFinalTermBBIr = 
-            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ elseState) of
+            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ elseCommitState) of
                 Just bb -> bb
                 Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show . bbIndex $ termBbIr)
-        resetFinalTermState = irProcessingStateUpdateBB resetFinalTermBBIr elseState
+        resetFinalTermState = irProcessingStateUpdateBB resetFinalTermBBIr elseCommitState
     in (ifTerm && elseTerm, True, predecessorCommandsMerge ifPreds elsePreds, resetFinalTermState)
 
 irWhile :: WhileElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
@@ -233,7 +238,7 @@ irWhile (WhileElab condExp whileStmt) fnElab state =
         updatedCondTermBBIr = 
             case Map.lookup condBbIndex (functionIrBlocks stmtTermFnIr) of
                 Just bb -> bb
-                Nothing -> error (compilerError ("Attempted to retrieve updated cond BB but was never committed by while stmt: bbIndex=" ++ (show condBbIndex)))
+                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by while stmt: bbIndex=" ++ (show condBbIndex)
         stmtTermState = 
             (irProcessingStateUpdateBB updatedCondTermBBIr) .
             (irProcessingStateUpdateFn stmtTermFnIr) $
@@ -499,6 +504,10 @@ irProcessingStateAddBB state =
                 (irProcScopeState state)
     in (newBb, newIrProcState)
 
+irProcessingStateCommitBB :: IrProcessingState -> IrProcessingState
+irProcessingStateCommitBB state = 
+    irProcessingStateUpdateFn (addBbsToFunction [(irProcStateCurrBb state)] (irProcStateFunctionIr state)) state
+
 -- UPDATE AND APPLY PROCESSOR COMMANDS
 
 predecessorCommandEmpty :: PredecessorCommands
@@ -528,6 +537,13 @@ predecessorCommandsAddSplit predComms predIndex splitPos =
         ((predIndex, splitPos):(predecessorCommandsSplitBlocks predComms))
 
 applyPredecessorCommands :: PredecessorCommands -> IrProcessingState -> IrProcessingState
+applyPredecessorCommands predComms state
+    | debugLogs && (Trace.trace 
+        ("\n\napplyPredecessorCommands -- " ++ 
+            "\npredComms=" ++    (Pretty.ppShow predComms) ++
+            "\nstate=" ++    (Pretty.ppShow state)
+        ) 
+        False) = undefined
 applyPredecessorCommands predComms state = 
     let successorBbIndex = (bbIndex (irProcStateCurrBb state))
         fnIrAddedGotos = 
@@ -541,7 +557,7 @@ applyPredecessorCommands predComms state =
                                     (addBbsToFunction [newBBIr]))
                                     interFnIr
                             in newFnIr
-                        Nothing -> error (compilerError ("Attempted to insert successor after nonexistent predecessor BasicBlock GOTO: BasicBlockIr=" ++ (show predBlockIndex)))
+                        Nothing -> error . compilerError $ "Attempted to insert successor after nonexistent predecessor BasicBlock GOTO: predBB=" ++ (show predBlockIndex) ++ " succBB=" ++ (show successorBbIndex)
                 )
                 (irProcStateFunctionIr state)
                 (predecessorCommandsGotoBlocks predComms)
@@ -556,7 +572,7 @@ applyPredecessorCommands predComms state =
                                     (addBbsToFunction [newBBIr]))
                                     interFnIr
                             in newFnIr
-                        Nothing -> error (compilerError ("Attempted to insert successor after nonexistent predecessor BasicBlock SPLIT: BasicBlockIr=" ++ (show predBlockIndex)))
+                        Nothing -> error . compilerError $ "Attempted to insert successor after nonexistent predecessor BasicBlock SPLIT: predBB=" ++ (show predBlockIndex) ++ " succBB=" ++ (show successorBbIndex)
                 )
                 fnIrAddedGotos
                 (predecessorCommandsSplitBlocks predComms)
