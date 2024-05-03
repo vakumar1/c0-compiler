@@ -555,7 +555,7 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                 ]
                             LOGNOT_IR ->
                                 [ MOV_X86 asnVarLoc pureVarLoc
-                                , NOT_X86 asnVarLoc
+                                , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
                                 ]
                 in (unopInst, pureAlloc)
 
@@ -1031,7 +1031,7 @@ retToX86 coloring retPure bbX86 initAlloc =
                             ]
                         LOGNOT_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
-                            , NOT_X86 (REG_ARGLOC AX)
+                            , XOR_X86 (REG_ARGLOC AX) (CONST_ARGLOC trueX86)
                             , RET_X86
                             ]
             in (retInst, pureVarAlloc)
