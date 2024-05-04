@@ -9,6 +9,7 @@ import Model.Tokens
 data TypeCategory
     = INT_TYPE
     | BOOL_TYPE
+    | VOID_TYPE
     deriving (Eq, Show)
 
 data Const

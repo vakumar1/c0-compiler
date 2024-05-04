@@ -252,10 +252,10 @@ irWhile (WhileElab condExp whileStmt) fnElab state =
     in (False, True, condToNextPreds, condReTermState)
 
 irCond :: ExpElab -> IrProcessingState -> (Maybe PureIr, IrProcessingState)
-irCond e scopeState = 
+irCond e state = 
     let 
         -- evaluate if exp and create temp
-        (m_expPT, expState) = irExp e scopeState
+        (m_expPT, expState) = irExp e state
     in case m_expPT of
         -- fail if exp malformed
         Nothing -> 
@@ -370,6 +370,7 @@ irExp e state =
         IDENTIFIER_ELAB i -> irIdentifier i state
         BINOP_ELAB b -> irBinop b state
         LOG_BINOP_ELAB lb -> irLogBinop lb state
+        TERN_ELAB t -> irTernop t state
         UNOP_ELAB u -> irUnop u state
 
 irConst :: Const -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
@@ -390,6 +391,81 @@ irIdentifier tok state =
                     (Nothing, [USE_BEFORE_DECL (UseBeforeDeclarationError tok)])
     in (m_expPT, irProcessingStateAppendErrs errs state)
 
+irTernop :: TernopElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
+irTernop (TernopElab op eCond e1 e2) state = 
+    let
+        -- allocate cond temp (tCond) and asn temp (tAsn) + process eCond + add asn comm tCond = eCond
+        (tCondName, _scopeState) = irProcessingScopeStateAddTemp . irProcScopeState $ state
+        (tAsnName, newScopeState) = irProcessingScopeStateAddTemp _scopeState
+        tCond = VariableIr tCondName 0 BOOL_TYPE True
+        tCondPu = PURE_BASE_IR (VAR_IR tCond)
+        initState = irProcessingStateUpdateScopeState newScopeState state
+        (m_condExp, condState) = irCond eCond initState
+        asnCommCond = 
+            case m_condExp of
+                Just expPu -> ASN_PURE_IR tCond expPu
+                Nothing -> ASN_PURE_IR tCond dummyPureIr
+        
+        -- add SPLIT comm on tCond (and prepare predecessor injection) - then commit current BB
+        condBBIndex = bbIndex . irProcStateCurrBb $ condState
+        splitComm = SPLIT_BB_IR tCondPu 0 0
+        predSplitComm1 = predecessorCommandsAddSplit predecessorCommandEmpty condBBIndex 0
+        predSplitComm2 = predecessorCommandsAddSplit predecessorCommandEmpty condBBIndex 1
+        splitState = 
+            irProcessingStateCommitBB .
+            (irProcessingStateAddComms [splitComm, asnCommCond]) $
+            condState
+
+        -- start a new BB + inject BB->SPLIT comm + process exp1 + prepare GOTO injection - then commit
+        startState1 = 
+            (applyPredecessorCommands predSplitComm1) .
+            irProcessingStateAddAndUpdateBB $
+            splitState
+        (m_expPT1, expState1) = irExp e1 startState1
+        asnComm1 = 
+            case m_expPT1 of
+                Just (expPu1, expTy1) -> ASN_PURE_IR (VariableIr tAsnName 0 expTy1 True) expPu1
+                Nothing -> ASN_PURE_IR (dummyVariableIr tAsnName) dummyPureIr
+        predGotoComm1 = predecessorCommandsSingleton expState1
+        termState1 = 
+            irProcessingStateCommitBB .
+            (irProcessingStateAddComms [asnComm1]) $
+            expState1
+
+        -- start a new BB + inject BB->SPLIT comm + process exp1 + prepare GOTO injection - then commit
+        startState2 = 
+            (applyPredecessorCommands predSplitComm2) .
+            irProcessingStateAddAndUpdateBB $
+            termState1
+        (m_expPT2, expState2) = irExp e2 startState2
+        asnComm2 = 
+            case m_expPT2 of
+                Just (expPu2, expTy2) -> ASN_PURE_IR (VariableIr tAsnName 0 expTy2 True) expPu2
+                Nothing -> ASN_PURE_IR (dummyVariableIr tAsnName) dummyPureIr
+        predGotoComm2 = predecessorCommandsSingleton expState2
+        termState2 = 
+            irProcessingStateCommitBB .
+            (irProcessingStateAddComms [asnComm2]) $
+            expState2
+
+        -- type check expression values + start a new BB + inject BB->GOTO comms
+        (m_retPT, errs) = 
+            case (m_expPT1, m_expPT2) of
+                (Just (_, expTy1), Just (_, expTy2)) ->
+                    let errs = 
+                            if expTy1 == expTy2 
+                                then []
+                                else [OP_TYPE_MISMATCH (OpTypeMismatch op [expTy1, expTy2])]
+                    in (Just (PURE_BASE_IR (VAR_IR (VariableIr tAsnName 0 expTy1 True)), expTy1), errs)
+                _ -> (Nothing, [])
+        startState = 
+            (irProcessingStateAppendErrs errs) .
+            (applyPredecessorCommands (predecessorCommandsMerge predGotoComm1 predGotoComm2)) .
+            irProcessingStateAddAndUpdateBB $
+            termState2
+
+    in (m_retPT, startState)
+
 irLogBinop :: LogBinopElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irLogBinop (LogBinopElab cat op e1 e2) state = 
     let 
@@ -398,17 +474,11 @@ irLogBinop (LogBinopElab cat op e1 e2) state =
         temp = VariableIr tempName 0 BOOL_TYPE True
         tempPu = PURE_BASE_IR (VAR_IR temp)
         initState = irProcessingStateUpdateScopeState newScopeState state
-        (m_expPT1, expState1) = irExp e1 initState
-        (asnComm1, asnErrs1) = 
-            case m_expPT1 of
-                Just (expPu1, expTy1) ->
-                    -- type check sub exp
-                    if expTy1 == BOOL_TYPE
-                        then (ASN_PURE_IR temp expPu1, [])
-                        else (ASN_PURE_IR temp expPu1, [OP_TYPE_MISMATCH (OpTypeMismatch op [expTy1])])
-                -- add dummy asn comm for invalid exp1
-                Nothing ->
-                    (ASN_PURE_IR temp dummyPureIr, [])
+        (m_expPu1, expState1) = irCond e1 initState
+        asnComm1 = 
+            case m_expPu1 of
+                Just expPu1 -> ASN_PURE_IR temp expPu1
+                Nothing -> ASN_PURE_IR temp dummyPureIr
 
         -- add SPLIT comm on t (and prepare predecessor injection) - then commit current BB + start a new BB + inject BB to SPLIT comm
         splitComm = SPLIT_BB_IR tempPu 0 0
@@ -426,15 +496,11 @@ irLogBinop (LogBinopElab cat op e1 e2) state =
             expState1
 
         -- process e2 + add asn comm t = e2
-        (m_expPT2, expState2) = irExp e2 splitState
-        (asnComm2, asnErrs2) = 
-            case m_expPT2 of
-                Just (expPu2, expTy2) ->
-                    if expTy2 == BOOL_TYPE
-                        then (ASN_PURE_IR temp expPu2, [])
-                        else (ASN_PURE_IR temp expPu2, [OP_TYPE_MISMATCH (OpTypeMismatch op [expTy2])])
-                Nothing ->
-                    (ASN_PURE_IR temp dummyPureIr, [])
+        (m_expPu2, expState2) = irCond e2 splitState
+        asnComm2 = 
+            case m_expPu2 of
+                Just expPu2 -> ASN_PURE_IR temp expPu2
+                Nothing -> ASN_PURE_IR temp dummyPureIr
 
         -- prepare predecessor injection for GOTO + commit current BB + start a new BB + inject SPLIT/GOTO comms to BB
         predComm2 = predecessorCommandsMerge predSplitComm2 (predecessorCommandsSingleton expState2)
@@ -446,7 +512,7 @@ irLogBinop (LogBinopElab cat op e1 e2) state =
             expState2
 
         -- add errors and return state
-    in (Just (tempPu, BOOL_TYPE), irProcessingStateAppendErrs (asnErrs2 ++ asnErrs1) startState)
+    in (Just (tempPu, BOOL_TYPE), startState)
 
 irBinop :: BinopElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irBinop (BinopElab cat op e1 e2) state =

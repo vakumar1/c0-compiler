@@ -14,6 +14,7 @@ module Model.Ir (
     ImpureBinopIr (..),
     ImpureBinopCatIr (..),
     VariableIr (..),
+    dummyVariableIr,
     variableIrBaseEq,
     addBbsToFunction,
     addEdgeToCFG,
@@ -142,6 +143,10 @@ instance Ord VariableIr where
 variableIrBaseEq :: VariableIr -> VariableIr -> Bool
 variableIrBaseEq var1 var2 = 
     (variableIrName var1) == (variableIrName var2)
+
+dummyVariableIr :: String -> VariableIr
+dummyVariableIr name = 
+    VariableIr name 0 VOID_TYPE True
 
 -- HELPERS
 -- adds basic block to function's collection
