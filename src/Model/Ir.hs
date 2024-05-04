@@ -90,8 +90,6 @@ data PureBinopCatIr
     | GTE_IR
     | EQ_IR
     | NEQ_IR
-    | LOGAND_IR
-    | LOGOR_IR
     deriving (Show)
 
 data PureUnopIr = PureUnopIr

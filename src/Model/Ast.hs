@@ -16,6 +16,7 @@ module Model.Ast (
     Const (..),
     Unop (..),
     Binop (..),
+    Ternop (..),
     Type (..),
 ) where
 
@@ -109,7 +110,7 @@ data Exp
     | IDENTIFIER_EXP Token
     | BINOP_EXP Binop
     | UNOP_EXP Unop
-    | TERN_EXP Exp Exp Exp
+    | TERN_EXP Ternop
     deriving (Show)
 
 data Unop = Unop
@@ -122,6 +123,14 @@ data Binop = Binop
     { binop :: Token
     , binopLeftExpression :: Exp
     , binopRightExpression :: Exp
+    }
+    deriving (Show)
+
+data Ternop = Ternop
+    { ternop :: Token
+    , ternopCondExpression :: Exp
+    , ternopLeftExpression :: Exp
+    , ternopRightExpression :: Exp
     }
     deriving (Show)
 

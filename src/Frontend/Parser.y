@@ -257,7 +257,7 @@ Binop :
 
 Ternary :
     Exp '?' Exp ':' Exp
-                        %prec TERN { TERN_EXP $1 $3 $5 }
+                        %prec TERN { TERN_EXP (Ternop $2 $1 $3 $5) }
 
 {
 parseError :: [Token] -> a

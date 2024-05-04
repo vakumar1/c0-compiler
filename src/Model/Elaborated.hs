@@ -8,8 +8,11 @@ module Model.Elaborated (
     RetElab (..),
     SeqElab,
     ExpElab (..),
+    TernopElab (..),
     BinopElab (..),
     BinopCatElab (..),
+    LogBinopElab (..),
+    LogBinopCatElab (..),
     UnopElab (..),
     UnopCatElab (..),
     VariableElab (..),
@@ -75,8 +78,9 @@ data ExpElab
     = CONST_ELAB Const
     | IDENTIFIER_ELAB Token
     | BINOP_ELAB BinopElab
+    | LOG_BINOP_ELAB LogBinopElab
     | UNOP_ELAB UnopElab
-    | TERN_ELAB ExpElab ExpElab ExpElab
+    | TERN_ELAB TernopElab
     deriving Show
 
 data BinopElab = BinopElab
@@ -104,9 +108,21 @@ data BinopCatElab
     | GTE_EXP_ELAB
     | EQ_EXP_ELAB
     | NEQ_EXP_ELAB
-    | LOGAND_EXP_ELAB
+    deriving Show
+
+data LogBinopElab = LogBinopElab
+    { logBinopElabCat :: LogBinopCatElab
+    , logBinopElabOp :: Token
+    , logBinopElabExp1 :: ExpElab
+    , logBinopElabExp2 :: ExpElab
+    }
+    deriving Show
+
+data LogBinopCatElab
+    = LOGAND_EXP_ELAB
     | LOGOR_EXP_ELAB
     deriving Show
+
 
 data UnopElab = UnopElab
     { unopElabCat :: UnopCatElab
@@ -119,6 +135,14 @@ data UnopCatElab
     = NEG_EXP_ELAB
     | NOT_EXP_ELAB
     | LOGNOT_EXP_ELAB
+    deriving Show
+
+data TernopElab = TernopElab
+    { ternopElabOp :: Token
+    , ternopElabCondExp :: ExpElab
+    , ternopElabExp1 :: ExpElab
+    , ternopElabExp2 :: ExpElab
+    }
     deriving Show
 
 data VariableElab = VariableElab

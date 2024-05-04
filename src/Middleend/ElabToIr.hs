@@ -134,66 +134,57 @@ irIf :: IfElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorC
 irIf (IfElab condExp ifStmt Nothing) fnElab state = 
     let 
         -- evaluate if cond exp and add split comm (with both indices unfilled) to curr basic block
-        (m_condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
-        condComms = 
+        (m_condPu, condState) = irCond condExp state
+        splitComm = 
             case m_condPu of
-                Just condPu -> (SPLIT_BB_IR condPu 0 0):initCondComms
-                Nothing -> (SPLIT_BB_IR dummyPureIr 0 0):initCondComms
-        termBbIr = appendCommsToBb (irProcStateCurrBb state) condComms
-        termState = 
-            (irProcessingStateUpdateBB termBbIr) .
-            (irProcessingStateAppendErrs condErrs) .
-            (irProcessingStateUpdateScopeState condScopeState) $
-            state
-        termBbIndex = bbIndex termBbIr
+                Just condPu -> SPLIT_BB_IR condPu 0 0
+                Nothing -> SPLIT_BB_IR dummyPureIr 0 0
+        termState = irProcessingStateAddComms [splitComm] condState
+        termBBIndex = bbIndex . irProcStateCurrBb $ termState
 
         -- evaluate inner stmt + commit curr BB and return preds w/ split command for term block
-        termInnerPreds = predecessorCommandsAddSplit predecessorCommandEmpty termBbIndex 0
+        termInnerPreds = predecessorCommandsAddSplit predecessorCommandEmpty termBBIndex 0
         (innerTerm, innerStartBb, innerPreds, innerState) = irStatement ifStmt fnElab (True, termInnerPreds, termState)
         innerCommitState = irProcessingStateCommitBB innerState
-        outerPreds = predecessorCommandsAddSplit innerPreds termBbIndex 1
+        outerPreds = predecessorCommandsAddSplit innerPreds termBBIndex 1
 
         resetFinalTermBBIr = 
-            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ innerCommitState) of
+            case Map.lookup termBBIndex (functionIrBlocks . irProcStateFunctionIr $ innerCommitState) of
                 Just bb -> bb
-                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show . bbIndex $ termBbIr)
+                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show termBBIndex)
         resetFinalTermState = irProcessingStateUpdateBB resetFinalTermBBIr innerCommitState
     in (False, True, outerPreds, resetFinalTermState)
 
 irIf (IfElab condExp ifStmt (Just elseStmt)) fnElab state =
     let 
         -- evaluate if cond exp and add split comm (with both indices unfilled) to curr basic block
-        (m_condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
-        condComms = 
+        (m_condPu, condState) = irCond condExp state
+        splitComm = 
             case m_condPu of
-                Just condPu -> (SPLIT_BB_IR condPu 0 0):initCondComms
-                Nothing -> (SPLIT_BB_IR dummyPureIr 0 0):initCondComms
-        termBbIr = appendCommsToBb (irProcStateCurrBb state) condComms
-        termState = 
-            ((irProcessingStateUpdateBB termBbIr) .
-            (irProcessingStateAppendErrs condErrs) .
-            (irProcessingStateUpdateScopeState condScopeState))
-            state
+                Just condPu -> SPLIT_BB_IR condPu 0 0
+                Nothing -> SPLIT_BB_IR dummyPureIr 0 0
+        termState = irProcessingStateAddComms [splitComm] condState
+        termBBIndex = bbIndex . irProcStateCurrBb $ termState
 
         -- evaluate if stmt + commit curr BB
-        termIfPreds = predecessorCommandsAddSplit predecessorCommandEmpty (bbIndex termBbIr) 0
+        termIfPreds = predecessorCommandsAddSplit predecessorCommandEmpty termBBIndex 0
         (ifTerm, ifStartBb, ifPreds, ifState) = irStatement ifStmt fnElab (True, termIfPreds, termState)
         ifCommitState = irProcessingStateCommitBB ifState
 
         -- evaluate else stmt (starting from cond BB) + commit curr BB
         resetElseTermBBIr = 
-            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ ifCommitState) of
+            case Map.lookup termBBIndex (functionIrBlocks . irProcStateFunctionIr $ ifCommitState) of
                 Just bb -> bb
-                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show . bbIndex $ termBbIr)
+                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show termBBIndex)
         resetElseTermState = irProcessingStateUpdateBB resetElseTermBBIr ifCommitState
-        termElsePreds = predecessorCommandsAddSplit predecessorCommandEmpty (bbIndex termBbIr) 1
+        termElsePreds = predecessorCommandsAddSplit predecessorCommandEmpty termBBIndex 1
         (elseTerm, elseStartBb, elsePreds, elseState) = irStatement elseStmt fnElab (True, termElsePreds, resetElseTermState)
         elseCommitState = irProcessingStateCommitBB elseState
 
         resetFinalTermBBIr = 
-            case Map.lookup (bbIndex termBbIr) (functionIrBlocks . irProcStateFunctionIr $ elseCommitState) of
+            case Map.lookup termBBIndex (functionIrBlocks . irProcStateFunctionIr $ elseCommitState) of
                 Just bb -> bb
-                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show . bbIndex $ termBbIr)
+                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by if stmt: bbIndex=" ++ (show termBBIndex)
         resetFinalTermState = irProcessingStateUpdateBB resetFinalTermBBIr elseCommitState
     in (ifTerm && elseTerm, True, predecessorCommandsMerge ifPreds elsePreds, resetFinalTermState)
 
@@ -202,74 +193,81 @@ irWhile (WhileElab condExp whileStmt) fnElab state =
     let 
         -- PART I. cond block preparation
 
-        -- manually prepare the cond basic block
-        -- i. create the basic block
-        -- ii. add all cond commands + terminate with a split (with both indices unfilled)
-        (condBbIr, initState) = irProcessingStateAddBB state
-        (m_condPu, initCondComms, condScopeState, condErrs) = irCond condExp (irProcScopeState state)
-        condComms = 
-            case m_condPu of
-                Just condPu -> (SPLIT_BB_IR condPu 0 0):initCondComms
-                Nothing -> (SPLIT_BB_IR dummyPureIr 0 0):initCondComms
-        condTermBbIr = appendCommsToBb condBbIr condComms
-        condBbIndex = bbIndex condBbIr
-
-        -- terminate the current basic block w/ a direct GOTO to cond basic block
-        -- also manually add edge in function CFG
-        termBbIr = appendCommsToBb (irProcStateCurrBb initState) [(GOTO_BB_IR condBbIndex)]
-        manualInjectFnIr = (addEdgeToCFG (bbIndex termBbIr) condBbIndex (irProcStateFunctionIr initState))
-
-        -- commit the original term and cond basic blocks to fn
-        condTermFnIr = addBbsToFunction [termBbIr, condTermBbIr] manualInjectFnIr
-        condTermState = 
-            (irProcessingStateUpdateBB condTermBbIr) .
-            (irProcessingStateAppendErrs condErrs) .
-            (irProcessingStateUpdateScopeState condScopeState) .
-            (irProcessingStateUpdateFn condTermFnIr) $
+        -- terminate the current basic block and start the cond blocks
+        -- i. create the cond start basic block
+        -- ii. add edge to function CFG + terminate the current basic block w/ a direct GOTO to cond basic block
+        -- iii. commit current basic block + set current basic block to cond start block
+        (condStartBbIr, initState) = irProcessingStateAddBB state
+        condStartBBIndex = bbIndex condStartBbIr
+        condStartState = 
+            (irProcessingStateUpdateBB condStartBbIr) .
+            irProcessingStateCommitBB .
+            (irProcessingStateAddComms [GOTO_BB_IR condStartBBIndex]) .
+            (irProcessingStateUpdateFn (addEdgeToCFG (bbIndex . irProcStateCurrBb $ initState) condStartBBIndex (irProcStateFunctionIr initState))) $
             initState
+
+        -- process the cond exp
+        -- i. process the cond exp + append a SPLIT comm with indices left unfilled
+        -- ii. commit the cond term basic block
+        (m_condPu, condProcessedState) = irCond condExp condStartState
+        splitComm = 
+            case m_condPu of
+                Just condPu -> SPLIT_BB_IR condPu 0 0
+                Nothing -> SPLIT_BB_IR dummyPureIr 0 0
+        condTermState = 
+            irProcessingStateCommitBB .
+            (irProcessingStateAddComms [splitComm]) $
+            condProcessedState
+        condTermBBIndex = bbIndex . irProcStateCurrBb $ condTermState
 
         -- PART II. stmt block evaluation + manual injection
         
         -- evaluate stmt basic block (with cond->stmt SPLIT injection)
-        condToStmtPreds = predecessorCommandsAddSplit predecessorCommandEmpty condBbIndex 0
+        condToStmtPreds = predecessorCommandsAddSplit predecessorCommandEmpty condTermBBIndex 0
         (_, _, stmtToCondPreds, stmtState) = irStatement whileStmt fnElab (True, condToStmtPreds, condTermState)
 
         -- apply stmt->cond injection:
         -- i. commit the current basic block (whatever it is)
-        -- ii. set the current basic block to be the updated cond block
+        -- ii. set the current basic block to be the updated cond start block
         -- iii. manually apply stmt->cond injection
-        stmtTermFnIr = addBbsToFunction [(irProcStateCurrBb stmtState)] (irProcStateFunctionIr stmtState)
-        updatedCondTermBBIr = 
-            case Map.lookup condBbIndex (functionIrBlocks stmtTermFnIr) of
+        -- iv. commit the cond start block
+        updatedCondStartBBIr = 
+            case Map.lookup condStartBBIndex (functionIrBlocks . irProcStateFunctionIr $ stmtState) of
                 Just bb -> bb
-                Nothing -> error . compilerError $ "Attempted to retrieve updated cond BB but was never committed by while stmt: bbIndex=" ++ (show condBbIndex)
-        stmtTermState = 
-            (irProcessingStateUpdateBB updatedCondTermBBIr) .
-            (irProcessingStateUpdateFn stmtTermFnIr) $
+                Nothing -> error . compilerError $ "Attempted to retrieve updated cond start BB but was never committed by while stmt: bbIndex=" ++ (show condStartBBIndex)
+        injectedCondStartState = 
+            irProcessingStateCommitBB .
+            (applyPredecessorCommands stmtToCondPreds) .
+            (irProcessingStateUpdateBB updatedCondStartBBIr) .
+            irProcessingStateCommitBB $
             stmtState
-        injectedState = applyPredecessorCommands stmtToCondPreds stmtTermState
 
-        -- PART III. pass params to upcoming basic block
-        condToNextPreds = predecessorCommandsAddSplit predecessorCommandEmpty condBbIndex 1
-    in (False, True, condToNextPreds, injectedState)
+        -- PART III. set the current basic block to be the updated cond term block + pass params to upcoming basic block
+        updatedCondTermBBIr = 
+            case Map.lookup condTermBBIndex (functionIrBlocks . irProcStateFunctionIr $ injectedCondStartState) of
+                Just bb -> bb
+                Nothing -> error . compilerError $ "Attempted to retrieve updated cond term BB but was never committed by while stmt: bbIndex=" ++ (show condTermBBIndex)
+        condReTermState = irProcessingStateUpdateBB updatedCondTermBBIr injectedCondStartState
+        condToNextPreds = predecessorCommandsAddSplit predecessorCommandEmpty condTermBBIndex 1
+    in (False, True, condToNextPreds, condReTermState)
 
-irCond :: ExpElab -> IrProcessingScopeState -> (Maybe PureIr, [CommandIr], IrProcessingScopeState, [VerificationError])
+irCond :: ExpElab -> IrProcessingState -> (Maybe PureIr, IrProcessingState)
 irCond e scopeState = 
     let 
         -- evaluate if exp and create temp
-        (expComms, m_expPT, expScopeState, expErrs) = irExp e scopeState
+        (m_expPT, expState) = irExp e scopeState
     in case m_expPT of
         -- fail if exp malformed
         Nothing -> 
-            (Nothing, [], expScopeState, expErrs)
+            (Nothing, expState)
         Just (expPu, expTy) ->
             if (BOOL_TYPE /= expTy)
                 -- fail on non-bool exp type mismatch
                 then 
-                    (Just expPu, [], expScopeState, (IF_COND_TYPE_MISMATCH (IfCondTypeMismatch expTy)) : expErrs)
+                    (Just expPu, irProcessingStateAppendErrs [IF_COND_TYPE_MISMATCH (IfCondTypeMismatch expTy)] expState)
                 -- success - add asn command
                 else
-                    (Just expPu, expComms, expScopeState, expErrs)
+                    (Just expPu, expState)
 
 irDecl :: DeclElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
 irDecl (DeclElab varElab Nothing) state =
@@ -301,29 +299,21 @@ irDecl (DeclElab varElab (Just asn)) state =
 
 irAsn :: AsnElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
 irAsn (AsnElab tok e) state =
-    let scopeState = (irProcScopeState state)
-        (expComms, m_expPT, expScopeState, expErrs) = irExp e scopeState
-        m_varElab = identifierLookup tok (scopes expScopeState)
+    let (m_expPT, expState) = irExp e state
+        m_varElab = identifierLookup tok (scopes . irProcScopeState $ expState)
      in case m_varElab of
             -- fail if varElab is not declared
             Nothing ->
-                let errs = (USE_BEFORE_DECL (UseBeforeDeclarationError tok)) : expErrs
-                    asnState = 
-                        ((irProcessingStateAppendErrs errs) .
-                        (irProcessingStateUpdateScopeState expScopeState))
-                        state
+                let asnState = irProcessingStateAppendErrs [USE_BEFORE_DECL (UseBeforeDeclarationError tok)] expState
                 in (False, False, predecessorCommandsSingleton asnState, asnState)
             -- check that varElab is declared
             Just (varElab, _, varScopeId) ->
                 let varName = extractIdentifierName (variableElabIdentifier varElab)
-                    setScopeState = irProcessingScopeStateSetAssignedInScope expScopeState varName varElab varScopeId
+                    setScopeState = irProcessingScopeStateSetAssignedInScope (irProcScopeState expState) varName varElab varScopeId
                  in case m_expPT of
                         -- fail if exp is malformed
                         Nothing ->
-                            let asnState = 
-                                    ((irProcessingStateAppendErrs expErrs) .
-                                    (irProcessingStateUpdateScopeState setScopeState))
-                                    state
+                            let asnState = irProcessingStateUpdateScopeState setScopeState expState
                             in (False, False, predecessorCommandsSingleton asnState, asnState)
                         Just (expPu, expTy) ->
                             -- check that var and exp have the same type
@@ -332,98 +322,136 @@ irAsn (AsnElab tok e) state =
                              in if varTy /= expTy
                                     -- fail on type mismatch
                                     then
-                                        let errs = (ASN_TYPE_MISMATCH (AsnTypeMismatch tok varTy expTy)) : expErrs
-                                            asnState = 
-                                                ((irProcessingStateAppendErrs errs) .
-                                                (irProcessingStateUpdateScopeState setScopeState))
-                                                state
+                                        let asnState = 
+                                                (irProcessingStateAppendErrs [ASN_TYPE_MISMATCH (AsnTypeMismatch tok varTy expTy)]) .
+                                                (irProcessingStateUpdateScopeState setScopeState) $
+                                                expState
                                         in (False, False, predecessorCommandsSingleton asnState, asnState)
                                     -- success - add asn statement to basic block
                                     else
-                                        let asnBbIr = appendCommsToBb (irProcStateCurrBb state) (asnComm : expComms)
-                                            asnState = 
-                                                ((irProcessingStateUpdateBB asnBbIr) .
-                                                (irProcessingStateAppendErrs expErrs) .
-                                                (irProcessingStateUpdateScopeState setScopeState))
-                                                state
+                                        let asnState = 
+                                                (irProcessingStateAddComms [asnComm]) .
+                                                (irProcessingStateUpdateScopeState setScopeState) $
+                                                expState
                                          in (False, False, predecessorCommandsSingleton asnState, asnState)
 
 irExpStmt :: ExpElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
 irExpStmt e state =
-    let (expComms, _, expScopeState, expErrs) = irExp e (irProcScopeState state)
-        expBbIr = appendCommsToBb (irProcStateCurrBb state) expComms
-        expState = 
-            ((irProcessingStateUpdateBB expBbIr) .
-            (irProcessingStateUpdateScopeState expScopeState) .
-            (irProcessingStateAppendErrs expErrs))
-            state
+    let (_, expState) = irExp e state
     in (False, False, predecessorCommandsSingleton expState, expState)
 
 irRet :: RetElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
 irRet (RetElab e) (FunctionElab _ (TypeElab retTy _) _) state =
-    let scopeState = (irProcScopeState state)
-        (expComms, m_expPT, expScopeState, expErrs) = irExp e scopeState
+    let (m_expPT, expState) = irExp e state
     in case m_expPT of
             -- fail if exp is malformed
             Nothing ->
-                let retState = 
-                        ((irProcessingStateAppendErrs expErrs) .
-                        (irProcessingStateUpdateScopeState expScopeState))
-                        state
-                in (True, False, predecessorCommandEmpty, retState)
+                (True, False, predecessorCommandEmpty, expState)
             Just (expPu, expTy) ->
                 if (retTy /= expTy)
                     -- fail on ret/exp type mismatch
                     then 
-                        let errs = (RET_TYPE_MISMATCH (RetTypeMismatch retTy expTy)) : expErrs
-                            retState = 
-                                ((irProcessingStateAppendErrs errs) .
-                                (irProcessingStateUpdateScopeState expScopeState))
-                                state
+                        let retState = irProcessingStateAppendErrs [RET_TYPE_MISMATCH (RetTypeMismatch retTy expTy)] expState
                         in (True, False, predecessorCommandEmpty, retState)
-                    -- success - add ret statement to basic block and terminate
+                    -- success - add ret statement to basic block and commit
                     else
-                        let comms = (RET_PURE_IR expPu) : expComms
-                            retBbIr = (appendCommsToBb (irProcStateCurrBb state) comms)
-                            retFnIr = addBbsToFunction [retBbIr] (irProcStateFunctionIr state)
-                            retState = 
-                                ((irProcessingStateUpdateBB retBbIr) .
-                                (irProcessingStateUpdateFn retFnIr) .
-                                (irProcessingStateAppendErrs expErrs) .
-                                (irProcessingStateUpdateScopeState expScopeState))
-                                state
+                        let retState = 
+                                irProcessingStateCommitBB .
+                                irProcessingStateAddComms [RET_PURE_IR expPu] $
+                                expState
                         in (True, False, predecessorCommandEmpty, retState)
 
 -- EXP ELAB->IR
 
-irExp :: ExpElab -> IrProcessingScopeState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingScopeState, [VerificationError])
+irExp :: ExpElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irExp e state =
     case e of
         CONST_ELAB c -> irConst c state
         IDENTIFIER_ELAB i -> irIdentifier i state
         BINOP_ELAB b -> irBinop b state
+        LOG_BINOP_ELAB lb -> irLogBinop lb state
         UNOP_ELAB u -> irUnop u state
 
-irConst :: Const -> IrProcessingScopeState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingScopeState, [VerificationError])
-irConst const state = ([], Just (PURE_BASE_IR (CONST_IR const), constToType const), state, [])
+irConst :: Const -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
+irConst const state = (Just (PURE_BASE_IR (CONST_IR const), constToType const), state)
 
-irIdentifier :: Token -> IrProcessingScopeState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingScopeState, [VerificationError])
+irIdentifier :: Token -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irIdentifier tok state =
-    case identifierLookup tok (scopes state) of
-        Just (varElab, varAssigned, varScopeId) ->
-            if varAssigned
-                then
-                    let varIr = varElabToIr varElab varScopeId
-                        varTypeCat = (typeElabType (variableElabType varElab))
-                     in ([], Just (PURE_BASE_IR (VAR_IR varIr), varTypeCat), state, [])
-                else ([], Nothing, state, [(USE_BEFORE_ASN (UseBeforeAssignmentError tok))])
-        Nothing ->
-            ([], Nothing, state, [(USE_BEFORE_DECL (UseBeforeDeclarationError tok))])
+    let (m_expPT, errs) = 
+            case identifierLookup tok (scopes . irProcScopeState $ state) of
+                Just (varElab, varAssigned, varScopeId) ->
+                    if varAssigned
+                        then
+                            let varIr = varElabToIr varElab varScopeId
+                                varTypeCat = (typeElabType (variableElabType varElab))
+                            in (Just (PURE_BASE_IR (VAR_IR varIr), varTypeCat), [])
+                        else (Nothing, [USE_BEFORE_ASN (UseBeforeAssignmentError tok)])
+                Nothing ->
+                    (Nothing, [USE_BEFORE_DECL (UseBeforeDeclarationError tok)])
+    in (m_expPT, irProcessingStateAppendErrs errs state)
 
-irBinop :: BinopElab -> IrProcessingScopeState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingScopeState, [VerificationError])
+irLogBinop :: LogBinopElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
+irLogBinop (LogBinopElab cat op e1 e2) state = 
+    let 
+        -- allocate temp + process e1 + add asn comm t = e1
+        (tempName, newScopeState) = irProcessingScopeStateAddTemp . irProcScopeState $ state
+        temp = VariableIr tempName 0 BOOL_TYPE True
+        tempPu = PURE_BASE_IR (VAR_IR temp)
+        initState = irProcessingStateUpdateScopeState newScopeState state
+        (m_expPT1, expState1) = irExp e1 initState
+        (asnComm1, asnErrs1) = 
+            case m_expPT1 of
+                Just (expPu1, expTy1) ->
+                    -- type check sub exp
+                    if expTy1 == BOOL_TYPE
+                        then (ASN_PURE_IR temp expPu1, [])
+                        else (ASN_PURE_IR temp expPu1, [OP_TYPE_MISMATCH (OpTypeMismatch op [expTy1])])
+                -- add dummy asn comm for invalid exp1
+                Nothing ->
+                    (ASN_PURE_IR temp dummyPureIr, [])
+
+        -- add SPLIT comm on t (and prepare predecessor injection) - then commit current BB + start a new BB + inject BB to SPLIT comm
+        splitComm = SPLIT_BB_IR tempPu 0 0
+        (splitPos1, splitPos2) = 
+            case cat of
+                LOGAND_EXP_ELAB -> (0, 1)
+                LOGOR_EXP_ELAB -> (1, 0)
+        predSplitComm1 = predecessorCommandsAddSplit predecessorCommandEmpty (bbIndex . irProcStateCurrBb $ expState1) splitPos1
+        predSplitComm2 = predecessorCommandsAddSplit predecessorCommandEmpty (bbIndex . irProcStateCurrBb $ expState1) splitPos2
+        splitState = 
+            (applyPredecessorCommands predSplitComm1) .
+            irProcessingStateAddAndUpdateBB .
+            irProcessingStateCommitBB .
+            (irProcessingStateAddComms [splitComm, asnComm1]) $ 
+            expState1
+
+        -- process e2 + add asn comm t = e2
+        (m_expPT2, expState2) = irExp e2 splitState
+        (asnComm2, asnErrs2) = 
+            case m_expPT2 of
+                Just (expPu2, expTy2) ->
+                    if expTy2 == BOOL_TYPE
+                        then (ASN_PURE_IR temp expPu2, [])
+                        else (ASN_PURE_IR temp expPu2, [OP_TYPE_MISMATCH (OpTypeMismatch op [expTy2])])
+                Nothing ->
+                    (ASN_PURE_IR temp dummyPureIr, [])
+
+        -- prepare predecessor injection for GOTO + commit current BB + start a new BB + inject SPLIT/GOTO comms to BB
+        predComm2 = predecessorCommandsMerge predSplitComm2 (predecessorCommandsSingleton expState2)
+        startState = 
+            (applyPredecessorCommands predComm2) .
+            irProcessingStateAddAndUpdateBB .
+            irProcessingStateCommitBB .
+            (irProcessingStateAddComms [asnComm2]) $
+            expState2
+
+        -- add errors and return state
+    in (Just (tempPu, BOOL_TYPE), irProcessingStateAppendErrs (asnErrs2 ++ asnErrs1) startState)
+
+irBinop :: BinopElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irBinop (BinopElab cat op e1 e2) state =
-    let (expComms1, m_expPT1, expState1, expErrs1) = irExp e1 state
-        (expComms2, m_expPT2, expState2, expErrs2) = irExp e2 expState1
+    let (m_expPT1, expState1) = irExp e1 state
+        (m_expPT2, expState2) = irExp e2 expState1
      in case (m_expPT1, m_expPT2) of
             -- type check when we have 2 valid exps
             (Just (expPu1, expTy1), Just (expPu2, expTy2)) ->
@@ -431,18 +459,22 @@ irBinop (BinopElab cat op e1 e2) state =
                  in case m_infType of
                         -- return pure exp with inferred type
                         Just infType ->
-                            let (binopComms, binopPu, binopState) = binopOpTranslate cat infType expPu1 expPu2 expState2
-                             in (binopComms ++ expComms2 ++ expComms1, Just (binopPu, infType), binopState, expErrs2 ++ expErrs1)
+                            let (binopComms, binopPu, binopScopeState) = binopOpTranslate cat infType expPu1 expPu2 (irProcScopeState expState2)
+                                binopState = 
+                                    (irProcessingStateAddComms binopComms) .
+                                    (irProcessingStateUpdateScopeState binopScopeState) $
+                                    expState2
+                            in (Just (binopPu, infType), binopState)                            
                         -- fail when type for binop cannot be inferred
                         Nothing ->
-                            ([], Nothing, state, (OP_TYPE_MISMATCH (OpTypeMismatch op [expTy1, expTy2])) : (expErrs2 ++ expErrs1))
+                            (Nothing, irProcessingStateAppendErrs [OP_TYPE_MISMATCH (OpTypeMismatch op [expTy1, expTy2])] expState2)
             -- immediately fail if either exp is invalid
             _ ->
-                ([], Nothing, state, expErrs2 ++ expErrs1)
+                (Nothing, expState2)
 
-irUnop :: UnopElab -> IrProcessingScopeState -> ([CommandIr], Maybe (PureIr, TypeCategory), IrProcessingScopeState, [VerificationError])
+irUnop :: UnopElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irUnop (UnopElab cat op e) state =
-    let (expComms, m_expPT, expState, expErrs) = irExp e state
+    let (m_expPT, expState) = irExp e state
      in case m_expPT of
             -- type check when the exp is valid
             Just (expPu, expTy) ->
@@ -450,16 +482,20 @@ irUnop (UnopElab cat op e) state =
                  in case m_infType of
                         -- return pure exp with inferred type
                         Just infType ->
-                            let (unopComms, unopPu, unopState) = unopOpTranslate cat infType expPu expState
-                             in (unopComms ++ expComms, Just (unopPu, infType), unopState, expErrs)
+                            let (unopComms, unopPu, unopScopeState) = unopOpTranslate cat infType expPu (irProcScopeState expState)
+                                unopState = 
+                                    (irProcessingStateAddComms unopComms) .
+                                    (irProcessingStateUpdateScopeState unopScopeState) $
+                                    expState
+                             in (Just (unopPu, infType), unopState)
                         -- fail when type for unop cannot be inferred
                         Nothing ->
-                            ([], Nothing, state, (OP_TYPE_MISMATCH (OpTypeMismatch op [expTy])) : expErrs)
+                            (Nothing, irProcessingStateAppendErrs [OP_TYPE_MISMATCH (OpTypeMismatch op [expTy])] state)
             -- immediately fail if exp is invalid
             _ ->
-                ([], Nothing, state, expErrs)
+                (Nothing, state)
 
--- MANAGE AND ACCESS IR PROCESSING STATE
+-- MANAGE AND ACCESS IR PROCESSING STATE - BASE UTILITIES
 
 irProcessingStateUpdateBB :: BasicBlockIr -> IrProcessingState -> IrProcessingState
 irProcessingStateUpdateBB bb state = 
@@ -509,9 +545,22 @@ irProcessingStateAddBB state =
                 (irProcScopeState state)
     in (newBb, newIrProcState)
 
+-- MANAGE AND ACCESS IR PROCESSING STATE - HIGH-LEVEL UTILITIES
+
 irProcessingStateCommitBB :: IrProcessingState -> IrProcessingState
 irProcessingStateCommitBB state = 
     irProcessingStateUpdateFn (addBbsToFunction [(irProcStateCurrBb state)] (irProcStateFunctionIr state)) state
+
+irProcessingStateAddComms :: [CommandIr] -> IrProcessingState -> IrProcessingState
+irProcessingStateAddComms comms state = 
+    let updatedBBIr = appendCommsToBb (irProcStateCurrBb state) comms
+    in irProcessingStateUpdateBB updatedBBIr state
+
+irProcessingStateAddAndUpdateBB :: IrProcessingState -> IrProcessingState
+irProcessingStateAddAndUpdateBB state = 
+    let (newBb, _state) = irProcessingStateAddBB state
+        updatedState = irProcessingStateUpdateBB newBb _state
+    in updatedState
 
 -- UPDATE AND APPLY PROCESSOR COMMANDS
 
@@ -738,20 +787,12 @@ binopTypeInf cat t1 t2 =
                 (INT_TYPE, INT_TYPE) -> Just BOOL_TYPE
                 _ -> Nothing
         EQ_EXP_ELAB ->
-            case (t1, t2) of
-                (INT_TYPE, INT_TYPE) -> Just BOOL_TYPE
-                _ -> Nothing
+            if t1 == t2
+                then Just BOOL_TYPE
+                else Nothing
         NEQ_EXP_ELAB ->
             case (t1, t2) of
                 (INT_TYPE, INT_TYPE) -> Just BOOL_TYPE
-                _ -> Nothing
-        LOGAND_EXP_ELAB ->
-            case (t1, t2) of
-                (BOOL_TYPE, BOOL_TYPE) -> Just BOOL_TYPE
-                _ -> Nothing
-        LOGOR_EXP_ELAB ->
-            case (t1, t2) of
-                (BOOL_TYPE, BOOL_TYPE) -> Just BOOL_TYPE
                 _ -> Nothing
 
 binopOpTranslate :: BinopCatElab -> TypeCategory -> PureIr -> PureIr -> IrProcessingScopeState -> ([CommandIr], PureIr, IrProcessingScopeState)
@@ -799,11 +840,6 @@ binopOpTranslate cat ty p1 p2 state =
                 (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr EQ_IR ty expandPureBase1 expandPureBase2), expandState2)
             NEQ_EXP_ELAB ->
                 (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr NEQ_IR ty expandPureBase1 expandPureBase2), expandState2)
-            -- TODO: add short-circuiting for logical and/or
-            LOGAND_EXP_ELAB ->
-                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr LOGAND_IR ty expandPureBase1 expandPureBase2), expandState2)
-            LOGOR_EXP_ELAB ->
-                (expandComms2 ++ expandComms1, PURE_BINOP_IR (PureBinopIr LOGOR_IR ty expandPureBase1 expandPureBase2), expandState2)            
 
 unopTypeInf :: UnopCatElab -> TypeCategory -> Maybe TypeCategory
 unopTypeInf cat t1 =

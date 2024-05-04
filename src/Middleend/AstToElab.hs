@@ -54,7 +54,6 @@ elaborateBlock b = SEQ_ELAB (elaborateStmts b)
 elaborateStmts :: Statements -> SeqElab
 elaborateStmts ss = map elaborateStmt ss
 
--- TODO: fix comb assignment operators
 elaborateAsn :: Asn -> AsnElab
 elaborateAsn (Asn as (Lval id) e) =
     case (tokenCat as) of
@@ -115,12 +114,22 @@ elaborateExp e =
         DECNUM_EXP d -> CONST_ELAB (elaborateConst d)
         BOOL_EXP b -> CONST_ELAB (elaborateConst b)
         IDENTIFIER_EXP id -> IDENTIFIER_ELAB id
-        BINOP_EXP b -> BINOP_ELAB (elaborateBinop b)
+        TERN_EXP t -> TERN_ELAB (elaborateTernop t)
+        BINOP_EXP b -> 
+            case (elaborateBinop b) of
+                Left be -> BINOP_ELAB be
+                Right lbe -> LOG_BINOP_ELAB lbe
         UNOP_EXP u -> UNOP_ELAB (elaborateUnop u)
 
-elaborateBinop :: Binop -> BinopElab
+elaborateTernop :: Ternop -> TernopElab
+elaborateTernop (Ternop op eCond e1 e2) = 
+    TernopElab op (elaborateExp eCond) (elaborateExp e1) (elaborateExp e2)
+
+elaborateBinop :: Binop -> Either BinopElab LogBinopElab
 elaborateBinop (Binop op e1 e2) =
-    BinopElab (translateBinop (tokenCat op)) op (elaborateExp e1) (elaborateExp e2)
+    case (translateBinop (tokenCat op)) of
+        Left bop -> Left (BinopElab bop op (elaborateExp e1) (elaborateExp e2))
+        Right lbop -> Right (LogBinopElab lbop op (elaborateExp e1) (elaborateExp e2))
 
 elaborateUnop :: Unop -> UnopElab
 elaborateUnop (Unop op e) =
@@ -141,28 +150,28 @@ elaborateConst tok =
         TRUE -> BOOL_CONST True
         FALSE -> BOOL_CONST False
 
-translateBinop :: TokenCategory -> BinopCatElab
+translateBinop :: TokenCategory -> Either BinopCatElab LogBinopCatElab
 translateBinop cat = 
     case cat of
-        PLUS -> ADD_EXP_ELAB
-        DASH -> SUB_EXP_ELAB
-        STAR -> MUL_EXP_ELAB
-        SLASH -> DIV_EXP_ELAB
-        PERC -> MOD_EXP_ELAB
-        AMP -> AND_EXP_ELAB
-        CARET -> XOR_EXP_ELAB
-        PIPE -> OR_EXP_ELAB
-        LEFT_LEFT -> SLA_EXP_ELAB
-        RIGHT_RIGHT -> SRA_EXP_ELAB
-        LEFT -> LT_EXP_ELAB
-        RIGHT -> GT_EXP_ELAB
-        LEFT_EQ -> LTE_EXP_ELAB
-        RIGHT_EQ -> GTE_EXP_ELAB
-        EQ_EQ -> EQ_EXP_ELAB
-        EXCL_EQ -> NEQ_EXP_ELAB
-        AMP_AMP -> LOGAND_EXP_ELAB
-        PIPE_PIPE -> LOGOR_EXP_ELAB
-        _ -> error (compilerError "Attempt to translate non-binop exp token.")
+        PLUS -> Left ADD_EXP_ELAB
+        DASH -> Left SUB_EXP_ELAB
+        STAR -> Left MUL_EXP_ELAB
+        SLASH -> Left DIV_EXP_ELAB
+        PERC -> Left MOD_EXP_ELAB
+        AMP -> Left AND_EXP_ELAB
+        CARET -> Left XOR_EXP_ELAB
+        PIPE -> Left OR_EXP_ELAB
+        LEFT_LEFT -> Left SLA_EXP_ELAB
+        RIGHT_RIGHT -> Left SRA_EXP_ELAB
+        LEFT -> Left LT_EXP_ELAB
+        RIGHT -> Left GT_EXP_ELAB
+        LEFT_EQ -> Left LTE_EXP_ELAB
+        RIGHT_EQ -> Left GTE_EXP_ELAB
+        EQ_EQ -> Left EQ_EXP_ELAB
+        EXCL_EQ -> Left NEQ_EXP_ELAB
+        AMP_AMP -> Right LOGAND_EXP_ELAB
+        PIPE_PIPE -> Right LOGOR_EXP_ELAB
+        _ -> error . compilerError $ "Attempt to translate non-binop exp token."
 
 translateUnop :: TokenCategory -> UnopCatElab
 translateUnop cat = 
