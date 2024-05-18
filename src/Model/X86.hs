@@ -3,6 +3,8 @@ module Model.X86 (
     X86Instruction (..),
     ArgLocation (..),
     Register (..),
+    callerSavedRegisters,
+    calleeSavedRegisters,
     availableRegisters,
     registerSize,
     trueX86,
@@ -30,6 +32,7 @@ data X86Instruction
     | NOT_X86 ArgLocation
     | CQO_X86
     | PUSH_X86 ArgLocation
+    | POP_X86 ArgLocation 
     | JMP_X86 Label
     | CMP_X86 ArgLocation ArgLocation
     | JZ_X86 Label
@@ -83,6 +86,8 @@ instance Show X86Instruction where
                         Printf.printf "cqo"
                     PUSH_X86 r ->
                         Printf.printf "push %s" (displayArgLoc r)
+                    POP_X86 r ->
+                        Printf.printf "pop %s" (displayArgLoc r)
                     JMP_X86 l ->
                         Printf.printf "jmp %s" l
                     CMP_X86 r1 r2 ->
@@ -136,6 +141,14 @@ data Register
     | DX
     | SI
     | DI
+    | R8
+    | R9
+    | R10
+    | R11
+    | R12
+    | R13
+    | R14
+    | R15
     | SP
     | BP
     deriving (Eq)
@@ -148,12 +161,26 @@ instance Show Register where
             DX -> "rdx"
             SI -> "rsi"
             DI -> "rdi"
+            R8 -> "r8"
+            R9 -> "r9"
+            R10 -> "r10"
+            R11 -> "r11"
+            R12 -> "r12"
+            R13 -> "r13"
+            R14 -> "r14"
+            R15 -> "r15"
             SP -> "rsp"
             BP -> "rbp"
 
+callerSavedRegisters :: [Register]
+callerSavedRegisters = [AX, CX, DX, R8, R9, R10, R11]
+
+calleeSavedRegisters :: [Register]
+calleeSavedRegisters = [BX, BP, DI, SI, R12, R13, R14, R15]
+
 -- returns registers initially available for arguments
 availableRegisters :: [Register]
-availableRegisters = [BX, CX, SI, DI]
+availableRegisters = [BX, CX, SI, DI, R8, R9, R10, R11, R12, R13, R14, R15]
 
 registerSize :: Int
 registerSize = 8

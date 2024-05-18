@@ -24,29 +24,28 @@ irToX86 coloring fnIr
         ) False) = undefined
 irToX86 coloring fnIr =
     let 
-        -- initialize function spillover at SP - 8 and w/ all available registers
-        initAlloc = AllocState Map.empty 8 availableRegisters
+        (alloc, preprocessingInst) = fnIrPreprocessing coloring fnIr
 
         -- apply phiFn Ir->x86 translation
-        (phiBlockMap, _) = 
+        phiBlockMap = 
             foldl
-                ( \(interBlockMap, interAlloc) index ->
+                ( \interBlockMap index ->
                     case Map.lookup index (functionIrBlocks fnIr) of
-                        Just bb -> phiFnIrToX86 coloring fnIr index (bbIrPhiFn bb) interBlockMap interAlloc
+                        Just bb -> phiFnIrToX86 coloring fnIr index (bbIrPhiFn bb) interBlockMap alloc
                         Nothing -> error . compilerError $ "Attempted to access basic block during phi-fn x86 translation: index=" ++ (show index)
                 )
-                (Map.empty, commAlloc)
+                Map.empty
                 [0..((length . functionIrBlocks $ fnIr) - 1)]
 
         -- apply command Ir->x86 translation
-        (commBlockMap, commAlloc) =
+        commBlockMap =
             foldl
-                ( \(interBlockMap, interAlloc) index ->
+                ( \interBlockMap index ->
                     case Map.lookup index (functionIrBlocks fnIr) of
-                        Just bb -> bbIrCommsToX86 coloring bb interBlockMap interAlloc
+                        Just bb -> bbIrCommsToX86 coloring bb interBlockMap alloc
                         Nothing -> error . compilerError $ "Attempted to access basic block during command x86 translation: index=" ++ (show index)
                 )
-                (phiBlockMap, initAlloc)
+                phiBlockMap
                 [0..((length . functionIrBlocks $ fnIr) - 1)]
 
         -- concatenate x86 instructions
@@ -57,37 +56,37 @@ irToX86 coloring fnIr =
                         Just bbX86 -> interInstr ++ (basicBlockX86MainCommands bbX86) ++ (basicBlockX86TailCommands bbX86)
                         Nothing -> error . compilerError $ "Attempted to access basic block during final X86 translation: index=" ++ (show index)
                 )
-                []
+                preprocessingInst
                 [0..((length . functionIrBlocks $ fnIr) - 1)]
      in finalInstr
 
-phiFnIrToX86 :: Coloring -> FunctionIr -> Int -> PhiFnIr -> Map.Map Int BasicBlockX86 -> AllocState -> (Map.Map Int BasicBlockX86, AllocState)
-phiFnIrToX86 coloring fnIr index phi initBlockMap initAlloc = 
+phiFnIrToX86 :: Coloring -> FunctionIr -> Int -> PhiFnIr -> Map.Map Int BasicBlockX86 -> AllocState -> Map.Map Int BasicBlockX86
+phiFnIrToX86 coloring fnIr index phi initBlockMap alloc = 
     foldr
         -- generate an X86 inst for each asn var in the phi-fn and
         -- each load var in the predmap
-        (\(var, varPredMap) (interBlockMap, interAlloc) ->
+        (\(var, varPredMap) interBlockMap ->
             foldr
-                (\(predIndex, predVar) (predInterBlockMap, predInterAlloc)->
-                    phiFnArgToX86 coloring fnIr (index, var) (predIndex, predVar) predInterBlockMap predInterAlloc
+                (\(predIndex, predVar) predInterBlockMap->
+                    phiFnArgToX86 coloring fnIr (index, var) (predIndex, predVar) predInterBlockMap alloc
                 )
-                (interBlockMap, interAlloc)
+                interBlockMap
                 (Map.toList varPredMap)
         )
-        (initBlockMap, initAlloc)
+        initBlockMap
         (Map.toList phi)
 
 -- converts a phi-fn arg (an entry in the pred map) to x86 + appends to the predecessor block
-phiFnArgToX86 :: Coloring -> FunctionIr -> (Int, VariableIr) -> (Int, VariableIr) -> Map.Map Int BasicBlockX86 -> AllocState -> (Map.Map Int BasicBlockX86, AllocState)
-phiFnArgToX86 coloring fnIr (succIndex, asnVar) (predIndex, predVar) initBlockMap initAlloc = 
+phiFnArgToX86 :: Coloring -> FunctionIr -> (Int, VariableIr) -> (Int, VariableIr) -> Map.Map Int BasicBlockX86 -> AllocState -> Map.Map Int BasicBlockX86
+phiFnArgToX86 coloring fnIr (succIndex, asnVar) (predIndex, predVar) initBlockMap alloc = 
     let currBBX86 = 
             case Map.lookup predIndex initBlockMap of
                 Just currBBX86 -> currBBX86
                 Nothing -> BasicBlockX86 [] [] [] []
 
         -- allocate regs for asn var and pred var
-        (asnVarLoc, asnAlloc) = getVarLoc asnVar coloring initAlloc
-        (predVarLoc, predAlloc) = getVarLoc predVar coloring asnAlloc
+        asnVarLoc = getVarLoc asnVar coloring alloc
+        predVarLoc = getVarLoc predVar coloring alloc
 
         -- set asn var to pred var
         asnInst = 
@@ -105,51 +104,51 @@ phiFnArgToX86 coloring fnIr (succIndex, asnVar) (predIndex, predVar) initBlockMa
             case Map.lookup predIndex (functionIrBlocks fnIr) of
                 Just bb -> injectPhiFnPredCommand (head . bbIrCommands $ bb) asnInst succIndex currBBX86
                 Nothing -> error . compilerError $ "Attempted to access basic block during phi-fn pred injection: predIndex=" ++ (show predIndex)
-        in (Map.insert predIndex newBBX86 initBlockMap, predAlloc)
+        in Map.insert predIndex newBBX86 initBlockMap
 
 -- converts bb main + tail commands to x86 
-bbIrCommsToX86 :: Coloring -> BasicBlockIr -> Map.Map Int BasicBlockX86 -> AllocState -> (Map.Map Int BasicBlockX86, AllocState)
-bbIrCommsToX86 coloring bb initBlockMap initAlloc = 
+bbIrCommsToX86 :: Coloring -> BasicBlockIr -> Map.Map Int BasicBlockX86 -> AllocState -> Map.Map Int BasicBlockX86
+bbIrCommsToX86 coloring bb initBlockMap alloc = 
     let currBBX86 = 
             case Map.lookup (bbIndex bb) initBlockMap of
                 Just currBBX86 -> currBBX86
                 Nothing -> BasicBlockX86 [] [] [] []
 
         -- convert main commands first
-        (mainInst, mainAlloc) = 
+        mainInst = 
             foldr
-                ( \comm (interInstr, interAlloc) ->
-                    let (commInstr, newAlloc) = mainCommIrToX86 coloring comm interAlloc
-                    in (interInstr ++ commInstr, newAlloc)
+                (\comm interInstr ->
+                    let commInstr = mainCommIrToX86 coloring comm alloc
+                    in interInstr ++ commInstr
                 )
-                ([LABEL_X86 (bbToLabel (bbIndex bb))], initAlloc)
+                [LABEL_X86 (bbToLabel (bbIndex bb))]
                 (tail . bbIrCommands $ bb)
 
         -- convert tail command w/ phi-fn succ injection
-        (tailInst, tailAlloc) = tailCommIrToX86 coloring (head . bbIrCommands $ bb) currBBX86 mainAlloc
+        tailInst = tailCommIrToX86 coloring (head . bbIrCommands $ bb) currBBX86 alloc
 
         -- remove phi-fn insts and commit final BBX86
         newBBX86 = BasicBlockX86 mainInst tailInst [] []
         updatedBbBlockMap = Map.insert (bbIndex bb) newBBX86 initBlockMap
-    in (updatedBbBlockMap, tailAlloc)
+    in updatedBbBlockMap
 
 -- MAIN COMM IR->x86
 
-mainCommIrToX86 :: Coloring -> CommandIr -> AllocState -> ([X86Instruction], AllocState)
-mainCommIrToX86 coloring comm initAlloc =
+mainCommIrToX86 :: Coloring -> CommandIr -> AllocState -> [X86Instruction]
+mainCommIrToX86 coloring comm alloc =
     case comm of
         INIT_IR var -> 
-            ([], initAlloc)
+            []
         ASN_PURE_IR asnVar asnPure -> 
-            asnPureIrToX86 coloring asnVar asnPure initAlloc
+            asnPureIrToX86 coloring asnVar asnPure alloc
         ASN_IMPURE_IR asnVar asnImpure -> 
-            asnImpureIrToX86 coloring asnVar asnImpure initAlloc
+            asnImpureIrToX86 coloring asnVar asnImpure alloc
         _ ->
             error . compilerError $ "Attempted to translate ir->X86 non-main command as a main command: comm=" ++ (show comm)
 
-asnPureIrToX86 :: Coloring -> VariableIr -> PureIr -> AllocState -> ([X86Instruction], AllocState)
-asnPureIrToX86 coloring asnVar asnPure initAlloc =
-    let (asnVarLoc, asnAlloc) = getVarLoc asnVar coloring initAlloc
+asnPureIrToX86 :: Coloring -> VariableIr -> PureIr -> AllocState -> [X86Instruction]
+asnPureIrToX86 coloring asnVar asnPure alloc =
+    let asnVarLoc = getVarLoc asnVar coloring alloc
     in case asnPure of
             PURE_BASE_IR base ->
                 case base of
@@ -159,10 +158,10 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                             constInst =
                                 [ MOV_X86 asnVarLoc constLoc
                                 ]
-                        in (constInst, asnAlloc)
+                        in constInst
                     -- x = VAR
                     VAR_IR pureVar ->
-                        let (pureVarLoc, pureAlloc) = getVarLoc pureVar coloring asnAlloc
+                        let pureVarLoc = getVarLoc pureVar coloring alloc
                             pureInst = 
                                 case pureVarLoc of
                                     REG_ARGLOC pureVarReg ->
@@ -172,17 +171,17 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         ]
-                        in (pureInst, pureAlloc)
+                        in pureInst
             -- x = y ? z
             PURE_BINOP_IR (PureBinopIr cat ty base1 base2) ->
-                let (pureVarLoc1, pureVar1Alloc) =
+                let pureVarLoc1 =
                         case base1 of
-                            CONST_IR const -> (getConstLoc const, asnAlloc)
-                            VAR_IR pureVar -> getVarLoc pureVar coloring asnAlloc
-                    (pureVarLoc2, pureVar2Alloc) =
+                            CONST_IR const -> getConstLoc const
+                            VAR_IR pureVar -> getVarLoc pureVar coloring alloc
+                    pureVarLoc2 =
                         case base2 of
-                            CONST_IR const -> (getConstLoc const, pureVar1Alloc)
-                            VAR_IR pureVar -> getVarLoc pureVar coloring pureVar1Alloc
+                            CONST_IR const -> getConstLoc const
+                            VAR_IR pureVar -> getVarLoc pureVar coloring alloc
                     binopInst = 
                         case cat of
                             -- arithmetic binop insts.
@@ -537,12 +536,12 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                         , SHR_X86 (REG_ARGLOC DX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         ]
-                in (binopInst, pureVar2Alloc)
+                in binopInst
             PURE_UNOP_IR (PureUnopIr cat ty base) ->
-                let (pureVarLoc, pureAlloc) =
+                let pureVarLoc =
                         case base of
-                            CONST_IR const -> (getConstLoc const, asnAlloc)
-                            VAR_IR pureVar -> getVarLoc pureVar coloring asnAlloc
+                            CONST_IR const -> getConstLoc const
+                            VAR_IR pureVar -> getVarLoc pureVar coloring alloc
                     unopInst = 
                         case cat of
                             NEG_IR ->
@@ -557,21 +556,21 @@ asnPureIrToX86 coloring asnVar asnPure initAlloc =
                                 [ MOV_X86 asnVarLoc pureVarLoc
                                 , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
                                 ]
-                in (unopInst, pureAlloc)
+                in unopInst
 
-asnImpureIrToX86 :: Coloring -> VariableIr -> ImpureIr -> AllocState -> ([X86Instruction], AllocState)
-asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
-    let (asnVarLoc, asnAlloc) = getVarLoc asnVar coloring initAlloc
+asnImpureIrToX86 :: Coloring -> VariableIr -> ImpureIr -> AllocState -> [X86Instruction]
+asnImpureIrToX86 coloring asnVar asnImpure alloc =
+    let asnVarLoc = getVarLoc asnVar coloring alloc
     in case asnImpure of
             IMPURE_BINOP_IR (ImpureBinopIr cat ty base1 base2) ->
-                let (pureVarLoc1, pureVar1Alloc) =
+                let pureVarLoc1 =
                         case base1 of
-                            CONST_IR const -> (getConstLoc const, asnAlloc)
-                            VAR_IR pureVar -> getVarLoc pureVar coloring asnAlloc
-                    (pureVarLoc2, pureVar2Alloc) =
+                            CONST_IR const -> getConstLoc const
+                            VAR_IR pureVar -> getVarLoc pureVar coloring alloc
+                    pureVarLoc2 =
                         case base2 of
-                            CONST_IR const -> (getConstLoc const, pureVar1Alloc)
-                            VAR_IR pureVar -> getVarLoc pureVar coloring pureVar1Alloc
+                            CONST_IR const -> getConstLoc const
+                            VAR_IR pureVar -> getVarLoc pureVar coloring alloc
                     binopInst = 
                         case cat of
                             DIV_IR ->
@@ -614,24 +613,24 @@ asnImpureIrToX86 coloring asnVar asnImpure initAlloc =
                                         , IDIV_X86 pureVarLoc2                                  -- divide AX / divisor (in reg/on stack)
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)                     -- move remainder to result
                                         ]
-                in (binopInst, pureVar2Alloc)
+                in binopInst
 
 -- TAIL COMM IR->x86
 
-tailCommIrToX86 :: Coloring -> CommandIr -> BasicBlockX86 -> AllocState -> ([X86Instruction], AllocState)
-tailCommIrToX86 coloring comm bbX86 initAlloc =
+tailCommIrToX86 :: Coloring -> CommandIr -> BasicBlockX86 -> AllocState -> [X86Instruction]
+tailCommIrToX86 coloring comm bbX86 alloc =
     case comm of
         GOTO_BB_IR bbIndex ->
-            gotoToX86 bbIndex bbX86 initAlloc
+            gotoToX86 bbIndex bbX86 alloc
         SPLIT_BB_IR condPure splitTrue splitFalse ->
-            splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc
+            splitToX86 coloring condPure splitTrue splitFalse bbX86 alloc
         RET_PURE_IR retPure ->
-            retToX86 coloring retPure bbX86 initAlloc
+            retToX86 coloring retPure bbX86 alloc
 
 -- GOTO: prepends phi-fn-1  instrs. to JUMP instr.
-gotoToX86 :: Int -> BasicBlockX86 -> AllocState -> ([X86Instruction], AllocState)
-gotoToX86 index bbX86 initAlloc = 
-    ((basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++ [JMP_X86 (bbToLabel index)], initAlloc)
+gotoToX86 :: Int -> BasicBlockX86 -> AllocState -> [X86Instruction]
+gotoToX86 index bbX86 alloc = 
+    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++ [JMP_X86 (bbToLabel index)]
 
 -- SPLIT: prepends phi-fn-1/2 instrs. to CMP/JMP instrs. in the following order:
 --   CMP
@@ -639,8 +638,8 @@ gotoToX86 index bbX86 initAlloc =
 --   JMP (true)
 --   [false cond x86 insts.]
 --   JMP (false)
-splitToX86 :: Map.Map VariableIr Int -> PureIr -> Int -> Int -> BasicBlockX86 -> AllocState -> ([X86Instruction], AllocState)
-splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =         
+splitToX86 :: Map.Map VariableIr Int -> PureIr -> Int -> Int -> BasicBlockX86 -> AllocState -> [X86Instruction]
+splitToX86 coloring condPure splitTrue splitFalse bbX86 alloc =         
     case condPure of
         PURE_BASE_IR base ->
             case base of
@@ -655,9 +654,9 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
                                     [ JMP_X86 (bbToLabel splitFalse)
                                     ]
-                    in (splitInst, initAlloc)
+                    in splitInst
                 VAR_IR pureVar ->
-                    let (pureVarLoc, splitAlloc) = getVarLoc pureVar coloring initAlloc
+                    let pureVarLoc = getVarLoc pureVar coloring alloc
                         splitInst = 
                             [ CMP_X86 pureVarLoc (CONST_ARGLOC falseX86)
                             ] ++
@@ -667,17 +666,17 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                             (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
                             [ JMP_X86 (bbToLabel splitTrue)
                             ]
-                    in (splitInst, splitAlloc)
+                    in splitInst
         
         PURE_BINOP_IR (PureBinopIr cat ty base1 base2) ->
-            let (pureVarLoc1, pureVar1Alloc) =
+            let pureVarLoc1 =
                     case base1 of
-                        CONST_IR const -> (getConstLoc const, initAlloc)
-                        VAR_IR pureVar -> getVarLoc pureVar coloring initAlloc
-                (pureVarLoc2, pureVar2Alloc) =
+                        CONST_IR const -> getConstLoc const
+                        VAR_IR pureVar -> getVarLoc pureVar coloring alloc
+                pureVarLoc2 =
                     case base2 of
-                        CONST_IR const -> (getConstLoc const, pureVar1Alloc)
-                        VAR_IR pureVar -> getVarLoc pureVar coloring pureVar1Alloc
+                        CONST_IR const -> getConstLoc const
+                        VAR_IR pureVar -> getVarLoc pureVar coloring alloc
                 splitInst = 
                     case cat of
                         LT_IR -> 
@@ -884,13 +883,13 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
                                     [ JMP_X86 (bbToLabel splitFalse)
                                     ]
-            in (splitInst, pureVar2Alloc)
+            in splitInst
 
         PURE_UNOP_IR (PureUnopIr cat ty base) ->
-            let (pureVarLoc, pureVarAlloc) =
+            let pureVarLoc =
                     case base of
-                        CONST_IR const -> (getConstLoc const, initAlloc)
-                        VAR_IR pureVar -> getVarLoc pureVar coloring initAlloc
+                        CONST_IR const -> getConstLoc const
+                        VAR_IR pureVar -> getVarLoc pureVar coloring alloc
                 splitInst = 
                     case cat of
                         LOGNOT_IR ->
@@ -902,100 +901,100 @@ splitToX86 coloring condPure splitTrue splitFalse bbX86 initAlloc =
                             (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
                             [ JMP_X86 (bbToLabel splitFalse)
                             ]
-            in (splitInst, pureVarAlloc)
+            in splitInst
 
 -- RET: prepends no phi-fn insts. to ret inst.
-retToX86 :: Map.Map VariableIr Int -> PureIr -> BasicBlockX86 -> AllocState -> ([X86Instruction], AllocState)
-retToX86 coloring retPure bbX86 initAlloc =
+retToX86 :: Map.Map VariableIr Int -> PureIr -> BasicBlockX86 -> AllocState -> [X86Instruction]
+retToX86 coloring retPure bbX86 alloc =
     case retPure of
         PURE_BASE_IR base ->
-            let (pureVarLoc, pureVarAlloc) =
+            let pureVarLoc =
                     case base of
-                        CONST_IR const -> (getConstLoc const, initAlloc)
-                        VAR_IR pureVar -> getVarLoc pureVar coloring initAlloc
+                        CONST_IR const -> getConstLoc const
+                        VAR_IR pureVar -> getVarLoc pureVar coloring alloc
                 retInst = 
                     [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
-                    , RET_X86
-                    ]
-            in (retInst, pureVarAlloc)
+                    ] ++
+                    (fnIrStackCleanup alloc)
+            in retInst
         -- ret y ? z
         PURE_BINOP_IR (PureBinopIr cat ty base1 base2) ->
-            let (pureVarLoc1, pureVar1Alloc) =
+            let pureVarLoc1 =
                     case base1 of
-                        CONST_IR const -> (getConstLoc const, initAlloc)
-                        VAR_IR pureVar -> getVarLoc pureVar coloring initAlloc
-                (pureVarLoc2, pureVar2Alloc) =
+                        CONST_IR const -> getConstLoc const
+                        VAR_IR pureVar -> getVarLoc pureVar coloring alloc
+                pureVarLoc2 =
                     case base2 of
-                        CONST_IR const -> (getConstLoc const, pureVar1Alloc)
-                        VAR_IR pureVar -> getVarLoc pureVar coloring pureVar1Alloc
+                        CONST_IR const -> getConstLoc const
+                        VAR_IR pureVar -> getVarLoc pureVar coloring alloc
                 retInst = 
                     case cat of
                         ADD_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , ADD_X86 (REG_ARGLOC AX) pureVarLoc2
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         SUB_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc2
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         MUL_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , IMUL_X86 (REG_ARGLOC AX) pureVarLoc2
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         AND_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , AND_X86 (REG_ARGLOC AX) pureVarLoc2
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         XOR_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , XOR_X86 (REG_ARGLOC AX) pureVarLoc2
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         OR_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , OR_X86 (REG_ARGLOC AX) pureVarLoc2
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         SAL_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SAL_X86 (REG_ARGLOC AX) pureVarLoc2
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         SAR_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SAR_X86 (REG_ARGLOC AX) pureVarLoc2
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         LT_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc2
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         GT_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc2
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         LTE_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc2
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc1
                             , NOT_X86 (REG_ARGLOC AX)
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         GTE_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc2
                             , NOT_X86 (REG_ARGLOC AX)
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         EQ_IR ->
                             [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                             , MOV_X86 (REG_ARGLOC AX) pureVarLoc2
@@ -1004,8 +1003,8 @@ retToX86 coloring retPure bbX86 initAlloc =
                             , OR_X86 (REG_ARGLOC AX) (REG_ARGLOC DX)
                             , NOT_X86 (REG_ARGLOC AX)
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         NEQ_IR ->
                             [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                             , MOV_X86 (REG_ARGLOC AX) pureVarLoc2
@@ -1013,34 +1012,77 @@ retToX86 coloring retPure bbX86 initAlloc =
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc1
                             , OR_X86 (REG_ARGLOC AX) (REG_ARGLOC DX)
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
-                            , RET_X86
-                            ]
-            in (retInst, pureVar2Alloc)
+                            ] ++
+                            (fnIrStackCleanup alloc)
+            in retInst
         PURE_UNOP_IR (PureUnopIr cat ty base) ->
-            let (pureVarLoc, pureVarAlloc) =
+            let pureVarLoc =
                     case base of
-                        CONST_IR const -> (getConstLoc const, initAlloc)
-                        VAR_IR pureVar -> getVarLoc pureVar coloring initAlloc
+                        CONST_IR const -> getConstLoc const
+                        VAR_IR pureVar -> getVarLoc pureVar coloring alloc
                 retInst = 
                     case cat of
                         NEG_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
                             , NEG_X86 (REG_ARGLOC AX)
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         NOT_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
                             , NOT_X86 (REG_ARGLOC AX)
-                            , RET_X86
-                            ]
+                            ] ++
+                            (fnIrStackCleanup alloc)
                         LOGNOT_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
                             , XOR_X86 (REG_ARGLOC AX) (CONST_ARGLOC trueX86)
-                            , RET_X86
-                            ]
-            in (retInst, pureVarAlloc)
+                            ] ++
+                            (fnIrStackCleanup alloc)
+            in retInst
 
 -- HELPERS
+
+fnIrPreprocessing :: Coloring -> FunctionIr -> (AllocState, [X86Instruction])
+fnIrPreprocessing coloring fnIr = 
+    let 
+        -- initialize function spillover at SP + 0 and w/ all available registers
+        -- for each color allocate a register if the color has not been alloc'd yet
+        alloc = 
+            foldr
+                (\(var, color) interAlloc ->
+                    case Map.lookup color (allocStateRegMap interAlloc) of
+                        Just argLoc -> interAlloc
+                        Nothing -> allocColor color interAlloc
+                )
+                (AllocState Map.empty 0 availableRegisters)
+                (Map.toList coloring)
+
+        -- pre-processing: 
+        -- - push callee-saved registers (including BP) onto stack
+        -- - decrement SP to make room for alloc'd vars
+        -- TODO: copy function arguments from SP + 8, 16, ... into their locations on the stack
+        fnLabel = [LABEL_X86 (fnToLabel fnIr)]
+        calleeSavePushInst = 
+            map (\reg -> PUSH_X86 (REG_ARGLOC reg)) .
+            filter (\reg -> not (elem reg (allocStateAvailableReg alloc))) $
+            calleeSavedRegisters
+        spDecrInst = [SUB_X86 (REG_ARGLOC SP) (CONST_ARGLOC (allocStateStackCtr alloc))]
+        preprocessingInst = fnLabel ++ calleeSavePushInst ++ spDecrInst
+    in (alloc, preprocessingInst)
+
+fnIrStackCleanup :: AllocState -> [X86Instruction]
+fnIrStackCleanup alloc = 
+    let 
+        -- post-processing:
+        -- - increment SP to clear alloc'd vars
+        -- - pop callee-saved registers from stack
+        spIncrInst = [ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC (allocStateStackCtr alloc))]
+        calleeSavePopInst = 
+            map (\reg -> POP_X86 (REG_ARGLOC reg)) .
+            filter (\reg -> not (elem reg (allocStateAvailableReg alloc))) $
+            calleeSavedRegisters
+        retInst = [RET_X86]
+        postprocessingInst = spIncrInst ++ calleeSavePopInst ++ retInst
+    in postprocessingInst
 
 data BasicBlockX86 = BasicBlockX86
     { basicBlockX86MainCommands :: [X86Instruction] -- non-terminating commands
@@ -1114,19 +1156,17 @@ getConstLoc const =
                 then CONST_ARGLOC trueX86
                 else CONST_ARGLOC falseX86
 
-
-
-getVarLoc :: VariableIr -> Map.Map VariableIr Int -> AllocState -> (ArgLocation, AllocState)
+getVarLoc :: VariableIr -> Map.Map VariableIr Int -> AllocState -> ArgLocation
 getVarLoc var coloring alloc = 
     case Map.lookup var coloring of
         Just color ->
             case Map.lookup color (allocStateRegMap alloc) of
-                Just argLoc -> (argLoc, alloc)
-                Nothing -> allocColor color alloc
+                Just argLoc -> argLoc
+                Nothing -> error . compilerError $ "Attempted to lookup var alloc for color that was not alloc'd: color=" ++ (show color)
         Nothing -> error . compilerError $ "Attempted to lookup color for var that does not exist: var=" ++ (show var)
 
 -- explicitly allocate a register/stack loc for new color on assignment
-allocColor :: Int -> AllocState -> (ArgLocation, AllocState)
+allocColor :: Int -> AllocState -> AllocState
 allocColor color initAlloc =
     case (allocStateAvailableReg initAlloc) of
         [] ->
@@ -1136,7 +1176,7 @@ allocColor color initAlloc =
                         (Map.insert color argLoc (allocStateRegMap initAlloc))
                         ((allocStateStackCtr initAlloc) + registerSize)
                         (allocStateAvailableReg initAlloc)
-             in (argLoc, newAlloc)
+             in newAlloc
         reg : _ ->
             let argLoc = REG_ARGLOC reg
                 newAlloc =
@@ -1144,10 +1184,12 @@ allocColor color initAlloc =
                         (Map.insert color argLoc (allocStateRegMap initAlloc))
                         (allocStateStackCtr initAlloc)
                         (tail (allocStateAvailableReg initAlloc))
-             in (argLoc, newAlloc)
+             in newAlloc
 
+-- TODO: add function-specific identifier to make each function label unique
+fnToLabel :: FunctionIr -> Label
+fnToLabel fnIr = "main"
+
+-- TODO: update with function-specific identifier to make each BB label unique
 bbToLabel :: Int -> Label
-bbToLabel bbIndex =
-    if bbIndex == 0
-        then "main"
-        else "l" ++ (show bbIndex)
+bbToLabel bbIndex = "l" ++ (show bbIndex)
