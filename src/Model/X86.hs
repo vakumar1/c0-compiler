@@ -41,7 +41,8 @@ data X86Instruction
     | JG_X86 Label
     | JGE_X86 Label
     | JE_X86 Label
-    | JNE_X86 Label 
+    | JNE_X86 Label
+    | CALL_X86 Label
     | RET_X86
 instance Show X86Instruction where
     show instr =
@@ -106,6 +107,8 @@ instance Show X86Instruction where
                         Printf.printf "je %s" l
                     JNE_X86 l ->
                         Printf.printf "jne %s" l
+                    CALL_X86 l ->
+                        Printf.printf "call %s" l
                     RET_X86 ->
                         "ret"
          in prefix ++ instrStr ++ suffix

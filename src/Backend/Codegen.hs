@@ -24,7 +24,7 @@ irToX86 coloring fnIr
         ) False) = undefined
 irToX86 coloring fnIr =
     let 
-        (alloc, preprocessingInst) = fnIrPreprocessing coloring fnIr
+        (alloc, preprocessingInst) = fnCalleePreprocessing coloring fnIr
 
         -- apply phiFn Ir->x86 translation
         phiBlockMap = 
@@ -562,6 +562,40 @@ asnImpureIrToX86 :: Coloring -> VariableIr -> ImpureIr -> AllocState -> [X86Inst
 asnImpureIrToX86 coloring asnVar asnImpure alloc =
     let asnVarLoc = getVarLoc asnVar coloring alloc
     in case asnImpure of
+            IMPURE_FNCALL_IR (ImpureFnCallIr fnIdentifier argBases) ->
+                let argVarLocs = 
+                        map
+                            (\argBase ->
+                                case argBase of
+                                    CONST_IR const -> getConstLoc const
+                                    VAR_IR pureVar -> getVarLoc pureVar coloring alloc
+                            )
+                            argBases
+
+                    callerSavePushInst = fnCallerPreprocessing alloc
+                    argPushInst = 
+                        concat $
+                        map
+                            (\argVarLoc -> 
+                                case argVarLoc of
+                                    REG_ARGLOC argVarReg ->
+                                        [ PUSH_X86 argVarLoc
+                                        ]
+                                    STACK_ARGLOC argVarStackLoc ->
+                                        [ MOV_X86 (REG_ARGLOC DX) argVarLoc
+                                        , PUSH_X86 (REG_ARGLOC DX)
+                                        ]
+                            )
+                            argVarLocs
+                    callInst = 
+                        [ CALL_X86 fnIdentifier
+                        ]
+                    argClearInst = 
+                        [ ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC (registerSize * (length argVarLocs)))
+                        ]
+                    callerSavePopInst = fnCallerPostprocessing alloc
+                in callerSavePushInst ++ argPushInst ++ callInst ++ argClearInst ++ callerSavePopInst
+
             IMPURE_BINOP_IR (ImpureBinopIr cat ty base1 base2) ->
                 let pureVarLoc1 =
                         case base1 of
@@ -915,7 +949,7 @@ retToX86 coloring retPure bbX86 alloc =
                 retInst = 
                     [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
                     ] ++
-                    (fnIrStackCleanup alloc)
+                    (fnCalleePostprocessing alloc)
             in retInst
         -- ret y ? z
         PURE_BINOP_IR (PureBinopIr cat ty base1 base2) ->
@@ -933,68 +967,68 @@ retToX86 coloring retPure bbX86 alloc =
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , ADD_X86 (REG_ARGLOC AX) pureVarLoc2
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         SUB_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc2
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         MUL_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , IMUL_X86 (REG_ARGLOC AX) pureVarLoc2
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         AND_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , AND_X86 (REG_ARGLOC AX) pureVarLoc2
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         XOR_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , XOR_X86 (REG_ARGLOC AX) pureVarLoc2
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         OR_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , OR_X86 (REG_ARGLOC AX) pureVarLoc2
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         SAL_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SAL_X86 (REG_ARGLOC AX) pureVarLoc2
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         SAR_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SAR_X86 (REG_ARGLOC AX) pureVarLoc2
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         LT_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc2
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         GT_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc2
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         LTE_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc2
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc1
                             , NOT_X86 (REG_ARGLOC AX)
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         GTE_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc1
                             , SUB_X86 (REG_ARGLOC AX) pureVarLoc2
                             , NOT_X86 (REG_ARGLOC AX)
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         EQ_IR ->
                             [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                             , MOV_X86 (REG_ARGLOC AX) pureVarLoc2
@@ -1004,7 +1038,7 @@ retToX86 coloring retPure bbX86 alloc =
                             , NOT_X86 (REG_ARGLOC AX)
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         NEQ_IR ->
                             [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                             , MOV_X86 (REG_ARGLOC AX) pureVarLoc2
@@ -1013,7 +1047,7 @@ retToX86 coloring retPure bbX86 alloc =
                             , OR_X86 (REG_ARGLOC AX) (REG_ARGLOC DX)
                             , SHR_X86 (REG_ARGLOC AX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
             in retInst
         PURE_UNOP_IR (PureUnopIr cat ty base) ->
             let pureVarLoc =
@@ -1026,23 +1060,23 @@ retToX86 coloring retPure bbX86 alloc =
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
                             , NEG_X86 (REG_ARGLOC AX)
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         NOT_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
                             , NOT_X86 (REG_ARGLOC AX)
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
                         LOGNOT_IR ->
                             [ MOV_X86 (REG_ARGLOC AX) pureVarLoc
                             , XOR_X86 (REG_ARGLOC AX) (CONST_ARGLOC trueX86)
                             ] ++
-                            (fnIrStackCleanup alloc)
+                            (fnCalleePostprocessing alloc)
             in retInst
 
 -- HELPERS
 
-fnIrPreprocessing :: Coloring -> FunctionIr -> (AllocState, [X86Instruction])
-fnIrPreprocessing coloring fnIr = 
+fnCalleePreprocessing :: Coloring -> FunctionIr -> (AllocState, [X86Instruction])
+fnCalleePreprocessing coloring fnIr = 
     let 
         -- initialize function spillover at SP + 0 and w/ all available registers
         -- for each color allocate a register if the color has not been alloc'd yet
@@ -1059,18 +1093,35 @@ fnIrPreprocessing coloring fnIr =
         -- pre-processing: 
         -- - push callee-saved registers (including BP) onto stack
         -- - decrement SP to make room for alloc'd vars
-        -- TODO: copy function arguments from SP + 8, 16, ... into their locations on the stack
+        -- - copy function arguments from SP + 8, 16, ... into their locations on the stack
         fnLabel = [LABEL_X86 (fnToLabel fnIr)]
         calleeSavePushInst = 
             map (\reg -> PUSH_X86 (REG_ARGLOC reg)) .
             filter (\reg -> not (elem reg (allocStateAvailableReg alloc))) $
             calleeSavedRegisters
         spDecrInst = [SUB_X86 (REG_ARGLOC SP) (CONST_ARGLOC (allocStateStackCtr alloc))]
-        preprocessingInst = fnLabel ++ calleeSavePushInst ++ spDecrInst
+        (argAsnInst, _) = 
+            foldl
+                (\(interInst, interArgSPOffset) asnVar ->
+                    let asnVarLoc = getVarLoc asnVar coloring alloc
+                        asnInst = 
+                            case asnVarLoc of
+                                REG_ARGLOC asnVarReg ->
+                                    [ MOV_X86 asnVarLoc (STACK_ARGLOC interArgSPOffset)
+                                    ]
+                                STACK_ARGLOC asnVarStackLoc ->
+                                    [ MOV_X86 (REG_ARGLOC DX) (STACK_ARGLOC interArgSPOffset)
+                                    , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                    ]
+                    in (interInst ++ asnInst, interArgSPOffset + registerSize)
+                )
+                ([], registerSize * (length calleeSavePushInst) + (allocStateStackCtr alloc))
+                (functionIrArgs fnIr)
+        preprocessingInst = fnLabel ++ calleeSavePushInst ++ spDecrInst ++ argAsnInst
     in (alloc, preprocessingInst)
 
-fnIrStackCleanup :: AllocState -> [X86Instruction]
-fnIrStackCleanup alloc = 
+fnCalleePostprocessing :: AllocState -> [X86Instruction]
+fnCalleePostprocessing alloc = 
     let 
         -- post-processing:
         -- - increment SP to clear alloc'd vars
@@ -1083,6 +1134,19 @@ fnIrStackCleanup alloc =
         retInst = [RET_X86]
         postprocessingInst = spIncrInst ++ calleeSavePopInst ++ retInst
     in postprocessingInst
+
+fnCallerPreprocessing :: AllocState -> [X86Instruction]
+fnCallerPreprocessing alloc = 
+    map (\reg -> PUSH_X86 (REG_ARGLOC reg)) .
+    filter (\reg -> not (elem reg (allocStateAvailableReg alloc))) $
+    callerSavedRegisters
+
+fnCallerPostprocessing :: AllocState -> [X86Instruction]
+fnCallerPostprocessing alloc = 
+    map (\reg -> POP_X86 (REG_ARGLOC reg)) .
+    filter (\reg -> not (elem reg (allocStateAvailableReg alloc))) .
+    reverse $
+    callerSavedRegisters
 
 data BasicBlockX86 = BasicBlockX86
     { basicBlockX86MainCommands :: [X86Instruction] -- non-terminating commands

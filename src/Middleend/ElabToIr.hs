@@ -53,7 +53,7 @@ data Scope = Scope
 irFunction :: FunctionElab -> (FunctionIr, [VerificationError])
 irFunction fnElab =
     let initBbIr = BasicBlockIr 0 Map.empty []
-        initFnIr = FunctionIr Map.empty emptyGraph
+        initFnIr = FunctionIr "main" [] Map.empty emptyGraph
         initScopeState = IrProcessingScopeState [] 0 0
         initState = IrProcessingState initBbIr initFnIr [] 1 initScopeState
         (finalTerm, _, _, finalState) = irSeq (functionElabBlock fnElab) fnElab initState

@@ -11,6 +11,7 @@ module Model.Ir (
     PureUnopCatIr (..),
     dummyPureIr,
     ImpureIr (..),
+    ImpureFnCallIr (..),
     ImpureBinopIr (..),
     ImpureBinopCatIr (..),
     VariableIr (..),
@@ -30,8 +31,12 @@ import Common.Graphs
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+type ProgramIr = [FunctionIr]
+
 data FunctionIr = FunctionIr
-    { functionIrBlocks :: Map.Map Int BasicBlockIr
+    { functionIrIdentifier :: String
+    , functionIrArgs :: [VariableIr]
+    , functionIrBlocks :: Map.Map Int BasicBlockIr
     , functionIrCFG :: DirectedGraph Int
     }
     deriving (Show)
@@ -111,7 +116,14 @@ dummyPureIr = PURE_BASE_IR (CONST_IR (BOOL_CONST False))
 
 -- impure operations
 data ImpureIr
-    = IMPURE_BINOP_IR ImpureBinopIr
+    = IMPURE_FNCALL_IR ImpureFnCallIr
+    | IMPURE_BINOP_IR ImpureBinopIr
+    deriving (Show)
+
+data ImpureFnCallIr = ImpureFnCallIr
+    { impureFnCallIdentifier :: String
+    , impureFnVariableIrArgs :: [PureBaseIr]
+    }
     deriving (Show)
 
 data ImpureBinopIr = ImpureBinopIr
@@ -165,14 +177,22 @@ addBbsToFunction bbs fn =
                 addNode 
                 (functionIrCFG fn) 
                 (map bbIndex bbs)
-     in FunctionIr newBlocks newCFG
+     in FunctionIr 
+            (functionIrIdentifier fn)
+            (functionIrArgs fn)
+            newBlocks
+            newCFG
 
 -- adds edge from source->dest to function's CFG
 -- * may add loops in the CFG in the event of while statements
 addEdgeToCFG :: Int -> Int -> FunctionIr -> FunctionIr
 addEdgeToCFG source dest fn =
     let newCFG = addEdge source dest (functionIrCFG fn)
-    in FunctionIr (functionIrBlocks fn) (addEdge source dest (functionIrCFG fn))
+    in FunctionIr 
+            (functionIrIdentifier fn)
+            (functionIrArgs fn)
+            (functionIrBlocks fn) 
+            (addEdge source dest (functionIrCFG fn))
 
 appendCommsToBb :: BasicBlockIr -> [CommandIr] -> BasicBlockIr
 appendCommsToBb bb comms = BasicBlockIr (bbIndex bb) (bbIrPhiFn bb) (comms ++ (bbIrCommands bb))
