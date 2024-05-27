@@ -1,6 +1,6 @@
 // Result: 32
 
-int main(void) {
+int main() {
     int a = 1;
     while (a < 30) {
         if (a % 2 == 0)

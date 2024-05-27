@@ -1,5 +1,5 @@
 module Middleend.ElabToIr (
-    irFunction,
+    irProg,
 )
 where
 
@@ -50,17 +50,25 @@ data Scope = Scope
     }
     deriving Show
 
+-- TODO: add IR translation for full program functions
+irProg :: ProgramElab -> (FunctionIr, [VerificationError])
+irProg progElab = 
+    case (head progElab) of
+        FNDEFN_GDECL_ELAB fnElab -> irFunction fnElab
+        _ -> error . compilerError $ "Unhandled gdecl"
+
 irFunction :: FunctionElab -> (FunctionIr, [VerificationError])
 irFunction fnElab =
-    let initBbIr = BasicBlockIr 0 Map.empty []
-        initFnIr = FunctionIr "main" [] Map.empty emptyGraph
+    let fnName = functionSignatureElabName . functionElabSignature $ fnElab
+        initBbIr = BasicBlockIr 0 Map.empty []
+        initFnIr = FunctionIr (extractIdentifierName fnName) [] Map.empty emptyGraph
         initScopeState = IrProcessingScopeState [] 0 0
         initState = IrProcessingState initBbIr initFnIr [] 1 initScopeState
         (finalTerm, _, _, finalState) = irSeq (functionElabBlock fnElab) fnElab initState
         errs = 
             if finalTerm
                 then (irProcStateErrors finalState)
-                else (INVALID_RET (InvalidReturnError (functionElabName fnElab))):(irProcStateErrors finalState)
+                else (INVALID_RET (InvalidReturnError fnName)):(irProcStateErrors finalState)
         fnIr = (irProcStateFunctionIr finalState)
     in (fnIr, errs)
 
@@ -341,7 +349,7 @@ irExpStmt e state =
     in (False, False, predecessorCommandsSingleton expState, expState)
 
 irRet :: RetElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
-irRet (RetElab e) (FunctionElab _ (TypeElab retTy _) _) state =
+irRet (RetElab e) (FunctionElab (FunctionSignatureElab _ _ (TypeElab retTy _)) _) state =
     let (m_expPT, expState) = irExp e state
     in case m_expPT of
             -- fail if exp is malformed

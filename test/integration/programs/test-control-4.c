@@ -1,6 +1,6 @@
 // Result: 100000
 
-int main(void) {
+int main() {
     int a = 0;
     int limit = 10;
     for (int i = 0; i < limit; i++) {

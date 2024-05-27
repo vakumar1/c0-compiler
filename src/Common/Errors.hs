@@ -1,8 +1,6 @@
 module Common.Errors (
-    LexerError (..),
     LexerErrorCategory (..),
-    ParserError (..),
-    ParserErrorCategory (..),
+    LexerError (..),
     UseBeforeDeclarationError (..),
     DoubleDeclarationError (..),
     UseBeforeAssignmentError (..),
@@ -21,11 +19,23 @@ import Model.Types
 compilerError :: String -> String
 compilerError msg = "[INTERNAL COMPILER ERROR OCCURRED.]: " ++ msg
 
+data NonexistentTypeError = NonexistentTypeError
+    { nonexistentTypeAlias :: Token
+    }
+    deriving (Show)
+
+data CircularTypeResolutionError = CircularTypeResolutionError
+    { circularTypeResolutionAlias :: Token
+    }
+    deriving (Show)
+
 data LexerErrorCategory
-    = InvalidTokenError
-    | DanglingCommentError
-    | DanglingOpenEncloserError
-    | DanglingClosedEncloserError
+    = INVALID_TOKEN
+    | DANGLING_COMMENT
+    | DANGLING_OPEN_ENCLOSER
+    | DANGLING_CLOSED_ENCLOSER
+    | NONEXISTENT_TYPE NonexistentTypeError
+    | CIRCULAR_TYPE_RESOLUTION CircularTypeResolutionError
     deriving (Show)
 
 data LexerError = LexerError
@@ -33,95 +43,23 @@ data LexerError = LexerError
     , errorLinePos :: Int
     , lexerErrorCat :: LexerErrorCategory
     }
-instance Show LexerError where
-    show l = ((show . lexerErrorCat) l) ++ " -- lineNo=" ++ ((show . errorLineNo) l) ++ " linePos=" ++ ((show . errorLinePos) l)
-
-data ParserErrorCategory
-    = -- EXP ERRORS
-      EmptyExpression
-    | DanglingOpenParen
-    | DanglingCloseParen
-    | DanglingUnaryOp
-    | DanglingBinaryOp
-    | ExpectedExpression
-    | UnexpectedExpression
-    | UnexpectedTokenInExpression
-    | -- STMT ERRORS
-      ExpectedSemicolon
-    | DanglingType
-    | UnexpectedType
-    | UnexpectedIdentifier
-    | UnexpectedReturn
-    | UnexpectedASNOp
-    | UnexpectedTokenInStatement
     deriving (Show)
-
-data ParserError = ParserError
-    { parserErrorCat :: ParserErrorCategory
-    , parserErrorToken :: Token
-    }
-instance Show ParserError where
-    show p =
-        ((show . parserErrorCat) p)
-            ++ " --"
-            ++ " lineNo="
-            ++ ((show . tokenLineNo . tokenData . parserErrorToken) p)
-            ++ " linePos="
-            ++ ((show . tokenLinePos . tokenData . parserErrorToken) p)
-            ++ " token="
-            ++ ((show . tokenCat . parserErrorToken) p)
 
 data UseBeforeDeclarationError = UseBeforeDeclarationError
     { useBeforeInitializationErrorUse :: Token
     }
-instance Show UseBeforeDeclarationError where
-    show e =
-        "UseBeforeDeclarationError"
-            ++ " --\n"
-            ++ " lineNo="
-            ++ ((show . tokenLineNo . tokenData . useBeforeInitializationErrorUse) e)
-            ++ " linePos="
-            ++ ((show . tokenLinePos . tokenData . useBeforeInitializationErrorUse) e)
-            ++ " token="
-            ++ ((show . tokenCat . useBeforeInitializationErrorUse) e)
+    deriving (Show)
 
 data DoubleDeclarationError = DoubleDeclarationError
     { doubleInitializationErrorFirstInit :: Token
     , doubleInitializationErrorSecondInit :: Token
     }
-instance Show DoubleDeclarationError where
-    show e =
-        "DoubleDeclarationError"
-            ++ "\n"
-            ++ " firstInit --"
-            ++ " lineNo="
-            ++ ((show . tokenLineNo . tokenData . doubleInitializationErrorFirstInit) e)
-            ++ " linePos="
-            ++ ((show . tokenLinePos . tokenData . doubleInitializationErrorFirstInit) e)
-            ++ " token="
-            ++ ((show . tokenCat . doubleInitializationErrorFirstInit) e)
-            ++ " \n"
-            ++ " secondInit --"
-            ++ " lineNo="
-            ++ ((show . tokenLineNo . tokenData . doubleInitializationErrorSecondInit) e)
-            ++ " linePos="
-            ++ ((show . tokenLinePos . tokenData . doubleInitializationErrorSecondInit) e)
-            ++ " token="
-            ++ ((show . tokenCat . doubleInitializationErrorSecondInit) e)
+    deriving (Show)
 
 data UseBeforeAssignmentError = UseBeforeAssignmentError
     { useBeforeAssignmentErrorUse :: Token
     }
-instance Show UseBeforeAssignmentError where
-    show e =
-        "UseBeforeAssignmentError"
-            ++ " --\n"
-            ++ " lineNo="
-            ++ ((show . tokenLineNo . tokenData . useBeforeAssignmentErrorUse) e)
-            ++ " linePos="
-            ++ ((show . tokenLinePos . tokenData . useBeforeAssignmentErrorUse) e)
-            ++ " token="
-            ++ ((show . tokenCat . useBeforeAssignmentErrorUse) e)
+    deriving (Show)
 
 data OpTypeMismatch = OpTypeMismatch
     { opTypeMismatchOp :: Token
@@ -150,12 +88,7 @@ data RetTypeMismatch = RetTypeMismatch
 data InvalidReturnError = InvalidReturnError
     { invalidReturnErrorFn :: Token
     }
-instance Show InvalidReturnError where
-    show e =
-        "InvalidReturnErr"
-            ++ "\n"
-            ++ "function -- "
-            ++ (show (invalidReturnErrorFn e))
+    deriving (Show)
 
 data VerificationError
     = USE_BEFORE_DECL UseBeforeDeclarationError

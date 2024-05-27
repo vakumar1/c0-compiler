@@ -1,5 +1,9 @@
 module Model.Elaborated (
+    ProgramElab (..),
+    GlobalDeclElab (..),
     FunctionElab (..),
+    FunctionSignatureElab (..),
+    ParamElab (..),
     StatementElab (..),
     DeclElab (..),
     AsnElab (..),
@@ -26,10 +30,26 @@ import Model.Types
 
 import qualified Data.Map as Map
 
+type ProgramElab = [GlobalDeclElab]
+
+data GlobalDeclElab 
+    = FNDECL_GDECL_ELAB FunctionSignatureElab
+    | FNDEFN_GDECL_ELAB FunctionElab
+
 data FunctionElab = FunctionElab
-    { functionElabName :: Token
-    , functionElabReturnType :: TypeElab
+    { functionElabSignature :: FunctionSignatureElab
     , functionElabBlock :: SeqElab
+    }
+
+data FunctionSignatureElab = FunctionSignatureElab
+    { functionSignatureElabName :: Token
+    , functionSignatureElabArgs :: [ParamElab]
+    , functionSignatureElabRetType :: TypeElab
+    }
+
+data ParamElab = ParamElab
+    { paramElabIdentifier :: Token
+    , paramElabType :: TypeElab
     }
 
 data StatementElab

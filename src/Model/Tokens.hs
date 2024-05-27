@@ -4,6 +4,8 @@ module Model.Tokens (
     TokenData (..),
 ) where
 
+import Model.Types
+
 data Token = Token
     { tokenCat :: TokenCategory
     , tokenData :: TokenData
@@ -34,6 +36,7 @@ data TokenCategory
     | PIPE
     | QUEST
     | COLON
+    | COMMA
     -- double-char delims
     | LEFT_LEFT
     | RIGHT_RIGHT
@@ -60,6 +63,7 @@ data TokenCategory
     | IDENTIFIER String
     | DECNUM String
     | HEXNUM String
+    | TYPE TypeCategory
     | IF
     | ELSE
     | WHILE
@@ -73,11 +77,7 @@ data TokenCategory
     | NULL
     | ALLOC
     | ALLOC_ARRAY
-    | INT
-    | BOOL
-    | VOID
-    | CHAR
-    | STRING
+    | TYPEDEF
     | EOF
     deriving (Eq, Show)
 data TokenData = TokenData

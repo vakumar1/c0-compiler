@@ -44,6 +44,7 @@ import Model.Ast
     '||'            { Token PIPE_PIPE _ }
     '?'             { Token QUEST _ }
     ':'             { Token COLON _ }
+    ','             { Token COMMA _ }
 
     '='             { Token EQUAL _ }
     '+='            { Token PLUS_EQ _ }
@@ -60,7 +61,6 @@ import Model.Ast
     '++'            { Token PLUS_PLUS _ }
     '--'            { Token DASH_DASH _ }
 
-    main            { Token (IDENTIFIER "main") _ }
     ident           { Token (IDENTIFIER _) _ }
     dec             { Token (DECNUM _) _ }
     hex             { Token (HEXNUM _) _ }
@@ -77,11 +77,8 @@ import Model.Ast
     null            { Token NULL _ }
     alloc           { Token ALLOC _ }
     alloc_arr       { Token ALLOC_ARRAY _ }
-    int             { Token INT _ }
-    bool            { Token BOOL _ }
-    void            { Token VOID _ }
-    char            { Token CHAR _ }
-    string          { Token STRING _ }
+    type            { Token (TYPE _) _ }
+    typedef         { Token TYPEDEF _ }
     eof             { Token EOF _ }
 
 
@@ -153,8 +150,31 @@ import Model.Ast
 %right '('
 %%
 
-Function : int main '(' void ')' Block   
-                        { Function $2 (Type INT_TYPE $1) $6 }
+Program :               { [] }
+    | GDecl Program     { ($1):($2) }
+
+GDecl : Typedef         { TYPEDEF_GDECL $1 }
+    | FunctionDecl      { FNDECL_GDECL $1 }
+    | Function          { FNDEFN_GDECL $1 }
+
+Typedef : typedef Type ident ';'
+                        { Typedef $2 $3 }
+
+FunctionDecl : Type ident Params ';'
+                        { FunctionSignature $2 $3 $1 }
+
+Function : Type ident Params Block   
+                        { Function (FunctionSignature $2 $3 $1) $4 }
+
+Params : '(' ')'        { [] }  
+    | '(' Param ParamFollow ')'
+                        { ($2):($3) }
+
+ParamFollow :           { [] }
+    | ',' Param ParamFollow
+                        { ($2):($3) }
+
+Param : Type ident      { Param $2 $1 }
 
 Block : '{' Stmts '}'   { $2 }
 
@@ -181,8 +201,7 @@ Asn : Lval Asnop Exp    %prec ASNOP { Asn $2 $1 $3 }
 Decl : Type ident        { Decl $2 $1 Nothing Nothing }
     | Type ident '=' Exp { Decl $2 $1 (Just $3) (Just $4) }
 
-Type : int              { Type INT_TYPE $1 }
-    | bool              { Type BOOL_TYPE $1 }
+Type : type             { Type $1 }
 
 Post : Lval Postop      { Post $2 $1 }
 

@@ -1,5 +1,5 @@
 module Middleend.AstToElab (
-    elaborate,
+    elaborateProg,
 ) where
 
 import Model.Ast
@@ -9,6 +9,8 @@ import Model.Tokens
 import Model.Types
 
 import qualified Data.Map as Map
+import qualified Data.Set as Set
+import qualified Data.Maybe as Maybe
 import qualified Numeric
 
 {-
@@ -17,11 +19,34 @@ ELABORATION
 
 -}
 
--- TODO: update program after adding functions + multiple statements allowed per program
-elaborate :: Function -> FunctionElab
-elaborate fn =
-    let seq = elaborateStmts (functionBlock fn)
-     in FunctionElab (functionName fn) (elaborateType (functionReturnType fn)) seq
+elaborateProg :: Program -> ProgramElab
+elaborateProg prog = Maybe.mapMaybe elaborateGDecl prog
+
+elaborateGDecl :: GlobalDecl -> Maybe GlobalDeclElab
+elaborateGDecl gdecl = 
+    case gdecl of
+        TYPEDEF_GDECL td -> Nothing
+        FNDECL_GDECL fndecl -> Just (FNDECL_GDECL_ELAB (elaborateFnSignature fndecl))
+        FNDEFN_GDECL fndefn -> Just (FNDEFN_GDECL_ELAB (elaborateFn fndefn))
+
+elaborateFn :: Function -> FunctionElab
+elaborateFn fn =
+    FunctionElab
+        (elaborateFnSignature . functionSignature $ fn)
+        (elaborateStmts . functionBlock $ fn)
+
+elaborateFnSignature :: FunctionSignature -> FunctionSignatureElab
+elaborateFnSignature fnSign = 
+    FunctionSignatureElab
+        (functionSignatureName fnSign)
+        (map elaborateParam (functionSignatureArgs fnSign))
+        (elaborateType . functionSignatureRetType $ fnSign)
+
+elaborateParam :: Param -> ParamElab
+elaborateParam param = 
+    ParamElab
+        (paramIdentifier param)
+        (elaborateType . paramType $ param)
 
 elaborateStmt :: Statement -> StatementElab
 elaborateStmt st = 
@@ -136,8 +161,11 @@ elaborateUnop (Unop op e) =
     UnopElab (translateUnop (tokenCat op)) op (elaborateExp e)
 
 elaborateType :: Type -> TypeElab
-elaborateType t = TypeElab (typeCategory t) (typeToken t)
-
+elaborateType ty = 
+    case (tokenCat . typeToken $ ty) of
+        TYPE typeCat -> TypeElab typeCat (typeToken ty)
+        _ -> error . compilerError $ "Attempted to elaborate non-type token as type: " ++ (show . typeToken $ ty)
+    
 elaborateConst :: Token -> Const
 elaborateConst tok =
     case (tokenCat tok) of

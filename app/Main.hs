@@ -18,41 +18,33 @@ import Model.X86
 -- import Parser
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Debug.Trace as Trace
+import qualified Text.Show.Pretty as Pretty
 import System.Environment
 
 handleLexerErrors :: [LexerError] -> String
 handleLexerErrors errors =
-    "Lexer Error(s) occurred: " ++ (prettyPrintList errors)
+    "Lexer Error(s) occurred: " ++ (Pretty.ppShow errors)
 
-handleParserErrors :: [ParserError] -> String
-handleParserErrors errors =
-    "Parser Error(s) occurred: \n" ++ (prettyPrintList errors)
-
-prettyPrintList :: (Show a) => [a] -> String
-prettyPrintList l =
-    ( foldl
-        ( \s e ->
-            s ++ (show e) ++ "\n"
-        )
-        ""
-        l
-    )
+handleVerificationErrors :: [VerificationError] -> String
+handleVerificationErrors errors =
+    "Program Verification Error(s) occurred: " ++ (Pretty.ppShow errors)
 
 compiler :: String -> String
 compiler code =
     let (tokens, lexerErrors) = lexer code
-        ast = parser (reverse tokens)
-        elaborated = elaborate ast
-        (ir, verErrors) = irFunction elaborated
+        ast = (Trace.trace (show tokens)) parser (reverse tokens)
+        elaborated = elaborateProg ast
+        (ir, verErrors) = irProg elaborated
         (root, leaves, dag, sccMap) = tarjansAlgo 0 (functionIrCFG ir)
         maxSSAIr = irToMaximalSSA ir (root, leaves, dag, sccMap)
         coloring = regAllocColoring maxSSAIr (root, leaves, dag, sccMap)
         x86asm = foldl (\interCode instr -> interCode ++ (show instr)) "" (irToX86 coloring maxSSAIr)
      in if not (null lexerErrors)
-            then prettyPrintList lexerErrors
+            then error . handleLexerErrors $ lexerErrors
             else
                 if not (null verErrors)
-                    then prettyPrintList verErrors
+                    then error . handleVerificationErrors $ verErrors
                     else x86asm
 
 main :: IO ()

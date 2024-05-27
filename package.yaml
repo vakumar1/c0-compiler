@@ -50,6 +50,8 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - text
+    - pretty-show
     - containers
     - c0-compiler
 

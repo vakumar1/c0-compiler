@@ -1,6 +1,6 @@
 // Result: 3
 
-int main(void) {
+int main() {
     bool a = 1 != 2;
     if (!!a) {
         if (1 > 3) {

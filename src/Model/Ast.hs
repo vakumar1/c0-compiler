@@ -1,5 +1,10 @@
 module Model.Ast (
+    Program (..),
+    GlobalDecl (..),
+    Typedef (..),
     Function (..),
+    FunctionSignature (..),
+    Param (..),
     Block,
     Statements,
     Statement (..),
@@ -23,9 +28,31 @@ module Model.Ast (
 import Model.Tokens
 import Model.Types
 
+type Program = [GlobalDecl]
+
+data GlobalDecl
+    = TYPEDEF_GDECL Typedef
+    | FNDECL_GDECL FunctionSignature
+    | FNDEFN_GDECL Function
+
+data Typedef = Typedef
+    { typedefType :: Type
+    , typedefAlias :: Token
+    }
+
+data FunctionSignature = FunctionSignature
+    { functionSignatureName :: Token
+    , functionSignatureArgs :: [Param]
+    , functionSignatureRetType :: Type
+    }
+
+data Param = Param
+    { paramIdentifier :: Token
+    , paramType :: Type
+    }
+
 data Function = Function
-    { functionName :: Token
-    , functionReturnType :: Type
+    { functionSignature :: FunctionSignature
     , functionBlock :: Block
     }
 
@@ -135,7 +162,6 @@ data Ternop = Ternop
     deriving (Show)
 
 data Type = Type
-    { typeCategory :: TypeCategory
-    , typeToken :: Token
+    { typeToken :: Token
     }
     deriving (Show)

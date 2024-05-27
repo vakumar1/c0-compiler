@@ -3,11 +3,16 @@ module Frontend.Lexer (
 ) where
 
 import Common.Errors
+import Common.Constants
 import Model.Tokens
+import Model.Types
 
+import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Char as C
 import qualified Data.Foldable as F
+import qualified Debug.Trace as Trace
+import qualified Text.Show.Pretty as Pretty
 
 lineNoStart :: Int
 lineNoStart = 1
@@ -15,13 +20,13 @@ linePosStart :: Int
 linePosStart = 1
 
 lexer :: String -> ([Token], [LexerError])
-lexer code = lexerHelper [] [] [] "" (code ++ ['\n']) lineNoStart linePosStart
+lexer code = lexerHelper [] [] [] "" (code ++ ['\n']) Map.empty lineNoStart linePosStart
 
-lexerHelper :: [Token] -> [Token] -> [LexerError] -> String -> String -> Int -> Int -> ([Token], [LexerError])
-lexerHelper finishedTokens openerStack errors currToken remainingStr lineNo linePos
+lexerHelper :: [Token] -> [Token] -> [LexerError] -> String -> String -> TypeAliasContext -> Int -> Int -> ([Token], [LexerError])
+lexerHelper finishedTokens openerStack errors currToken remainingStr aliasCtx lineNo linePos
     -- EOF
     | null remainingStr =
-        let errorsAddDangler = foldr (\o l -> (LexerError ((tokenLineNo . tokenData) o) ((tokenLinePos . tokenData) o) DanglingOpenEncloserError) : l) errors openerStack
+        let errorsAddDangler = foldr (\o l -> (LexerError ((tokenLineNo . tokenData) o) ((tokenLinePos . tokenData) o) DANGLING_OPEN_ENCLOSER) : l) errors openerStack
          in (finishedTokens, errorsAddDangler)
     -- delimiters
     | isDelim remainingStr =
@@ -30,7 +35,7 @@ lexerHelper finishedTokens openerStack errors currToken remainingStr lineNo line
                 Just (c, l) -> (Just c, l)
                 Nothing -> (Nothing, 1)
             newRemainingStr = (drop delimLength remainingStr)
-            finishedTokenCat = classifyToken currToken
+            finishedTokenCat = classifyToken currToken aliasCtx
             tokensAddCurr =
                 if currToken == ""
                     then finishedTokens
@@ -45,62 +50,63 @@ lexerHelper finishedTokens openerStack errors currToken remainingStr lineNo line
                 if currToken == ""
                     then errors
                     else case finishedTokenCat of
-                        Nothing -> ((LexerError lineNo (linePos - (length currToken)) InvalidTokenError)) : errors
+                        Nothing -> ((LexerError lineNo (linePos - (length currToken)) INVALID_TOKEN)) : errors
                         _ -> errors
+            newTypeAliasContext = updateTypeAliasContext newFinishedTokens aliasCtx
          in case remainingStr of
                 -- comment: immediately go into comment mode
                 '/' : '*' : _ ->
-                    multilineComment tokensAddCurr openerStack newErrors (drop 2 remainingStr) lineNo linePos lineNo linePos
+                    multilineComment tokensAddCurr openerStack newErrors (drop 2 remainingStr) newTypeAliasContext lineNo linePos lineNo linePos
                 '/' : '/' : _ ->
-                    oneLineComment tokensAddCurr openerStack newErrors (drop 2 remainingStr) lineNo
+                    oneLineComment tokensAddCurr openerStack newErrors (drop 2 remainingStr) newTypeAliasContext lineNo
                 -- whitespace
                 '\n' : _ ->
-                    lexerHelper tokensAddCurr openerStack newErrors "" newRemainingStr (lineNo + 1) 0
+                    lexerHelper tokensAddCurr openerStack newErrors "" newRemainingStr newTypeAliasContext (lineNo + 1) 0
                 _
                     | elem (head remainingStr) whitespaceDelims ->
-                        lexerHelper tokensAddCurr openerStack newErrors "" newRemainingStr lineNo (linePos + 1)
+                        lexerHelper tokensAddCurr openerStack newErrors "" newRemainingStr newTypeAliasContext lineNo (linePos + 1)
                 -- open enclosure: add delim token to tokens and add opener to stack
                 _
                     | elem (head remainingStr) "{[(" ->
-                        lexerHelper newFinishedTokens ((head newFinishedTokens) : openerStack) newErrors "" newRemainingStr lineNo (linePos + 1)
+                        lexerHelper newFinishedTokens ((head newFinishedTokens) : openerStack) newErrors "" newRemainingStr newTypeAliasContext lineNo (linePos + 1)
                 -- close enclousre: validate against stack and try to collapse the enclosure
                 _
                     | elem (head remainingStr) "}])" ->
                         if closerMatchesLastOpener openerStack (head remainingStr)
-                            then lexerHelper newFinishedTokens (tail openerStack) newErrors "" newRemainingStr lineNo (linePos + 1)
+                            then lexerHelper newFinishedTokens (tail openerStack) newErrors "" newRemainingStr newTypeAliasContext lineNo (linePos + 1)
                             else
-                                let errorsAddDangler = ((LexerError lineNo linePos DanglingClosedEncloserError) : newErrors)
-                                 in lexerHelper (tail newFinishedTokens) openerStack errorsAddDangler "" newRemainingStr lineNo (linePos + 1)
+                                let errorsAddDangler = ((LexerError lineNo linePos DANGLING_CLOSED_ENCLOSER) : newErrors)
+                                 in lexerHelper (tail newFinishedTokens) openerStack errorsAddDangler "" newRemainingStr newTypeAliasContext lineNo (linePos + 1)
                 -- general delim case: add delim token to tokens
                 _ ->
-                    lexerHelper newFinishedTokens openerStack newErrors "" newRemainingStr lineNo (linePos + delimLength)
+                    lexerHelper newFinishedTokens openerStack newErrors "" newRemainingStr newTypeAliasContext lineNo (linePos + delimLength)
     -- general case
-    | otherwise = lexerHelper finishedTokens openerStack errors (currToken ++ [(head remainingStr)]) (tail remainingStr) lineNo (linePos + 1)
+    | otherwise = lexerHelper finishedTokens openerStack errors (currToken ++ [(head remainingStr)]) (tail remainingStr) aliasCtx lineNo (linePos + 1)
 
 -- COMMENT HELPERS
 
-oneLineComment :: [Token] -> [Token] -> [LexerError] -> String -> Int -> ([Token], [LexerError])
-oneLineComment finishedTokens openerStack errors remainingStr lineNo =
+oneLineComment :: [Token] -> [Token] -> [LexerError] -> String -> TypeAliasContext -> Int -> ([Token], [LexerError])
+oneLineComment finishedTokens openerStack errors remainingStr aliasCtx lineNo =
     case remainingStr of
         "" ->
-            lexerHelper finishedTokens openerStack errors "" (tail remainingStr) (lineNo + 1) linePosStart
+            lexerHelper finishedTokens openerStack errors "" (tail remainingStr) aliasCtx (lineNo + 1) linePosStart
         '\n' : _ ->
-            lexerHelper finishedTokens openerStack errors "" (tail remainingStr) (lineNo + 1) linePosStart
+            lexerHelper finishedTokens openerStack errors "" (tail remainingStr) aliasCtx (lineNo + 1) linePosStart
         _ ->
-            oneLineComment finishedTokens openerStack errors (tail remainingStr) lineNo
+            oneLineComment finishedTokens openerStack errors (tail remainingStr) aliasCtx lineNo
 
-multilineComment :: [Token] -> [Token] -> [LexerError] -> String -> Int -> Int -> Int -> Int -> ([Token], [LexerError])
-multilineComment finishedTokens openerStack errors remainingStr commentStartLineNo commentStartLinePos lineNo linePos =
+multilineComment :: [Token] -> [Token] -> [LexerError] -> String -> TypeAliasContext -> Int -> Int -> Int -> Int -> ([Token], [LexerError])
+multilineComment finishedTokens openerStack errors remainingStr aliasCtx commentStartLineNo commentStartLinePos lineNo linePos =
     case remainingStr of
         "" ->
-            let errorsAddDangler = ((LexerError commentStartLineNo commentStartLinePos DanglingCommentError) : errors)
-             in lexerHelper finishedTokens openerStack errorsAddDangler "" remainingStr lineNo linePos
+            let errorsAddDangler = ((LexerError commentStartLineNo commentStartLinePos DANGLING_COMMENT) : errors)
+             in lexerHelper finishedTokens openerStack errorsAddDangler "" remainingStr aliasCtx lineNo linePos
         '*' : '/' : leftover ->
-            lexerHelper finishedTokens openerStack errors "" leftover lineNo (linePos + 2)
+            lexerHelper finishedTokens openerStack errors "" leftover aliasCtx lineNo (linePos + 2)
         '\n' : _ ->
-            multilineComment finishedTokens openerStack errors (tail remainingStr) commentStartLineNo commentStartLinePos (lineNo + 1) linePosStart
+            multilineComment finishedTokens openerStack errors (tail remainingStr) aliasCtx commentStartLineNo commentStartLinePos (lineNo + 1) linePosStart
         _ ->
-            multilineComment finishedTokens openerStack errors (tail remainingStr) commentStartLineNo commentStartLinePos lineNo (linePos + 1)
+            multilineComment finishedTokens openerStack errors (tail remainingStr) aliasCtx commentStartLineNo commentStartLinePos lineNo (linePos + 1)
 
 -- ENCLOSING (){}[] HELPERS
 
@@ -193,12 +199,16 @@ reservedCharTok s =
         '|' : _ -> Just PIPE
         '?' : _ -> Just QUEST
         ':' : _ -> Just COLON
+        ',' : _ -> Just COMMA
         _ -> Nothing
 
-classifyToken :: String -> Maybe TokenCategory
-classifyToken s =
+classifyToken :: String -> TypeAliasContext -> Maybe TokenCategory
+classifyToken s aliasCtx =
     F.asum
         [ case reservedKeywordTok s of
+            Just t -> Just t
+            _ -> Nothing
+        , case typeTok s aliasCtx of
             Just t -> Just t
             _ -> Nothing
         , case decnumTok s of
@@ -228,11 +238,7 @@ reservedKeywordTok s =
         "NULL" -> Just NULL
         "alloc" -> Just ALLOC
         "alloc_array" -> Just ALLOC_ARRAY
-        "int" -> Just INT
-        "bool" -> Just BOOL
-        "void" -> Just VOID
-        "char" -> Just CHAR
-        "string" -> Just STRING
+        "typedef" -> Just TYPEDEF
         _ -> Nothing
 
 decnumTok :: String -> Maybe TokenCategory
@@ -254,6 +260,19 @@ hexnumTok s =
                 Just (HEXNUM s)
         _ -> Nothing
 
+typeTok :: String -> TypeAliasContext -> Maybe TokenCategory
+typeTok s aliasCtx = 
+    case s of
+        "int" -> Just (TYPE INT_TYPE)
+        "bool" -> Just (TYPE BOOL_TYPE)
+        "void" -> Just (TYPE VOID_TYPE)
+        "char" -> Just (TYPE CHAR_TYPE)
+        "string" -> Just (TYPE STRING_TYPE)
+        _ ->
+            case Map.lookup s aliasCtx of
+                Just resolved -> Just (TYPE resolved)
+                Nothing -> Nothing
+
 identifierTok :: String -> Maybe TokenCategory
 identifierTok s =
     let alphaUnder = \c -> C.isLetter c || c == '_'
@@ -263,3 +282,10 @@ identifierTok s =
                     && (all (\c -> alphaUnder c || C.isDigit c) s) ->
                     Just (IDENTIFIER s)
             _ -> Nothing
+
+updateTypeAliasContext :: [Token] -> TypeAliasContext -> TypeAliasContext
+updateTypeAliasContext finishedTokens aliasCtx = 
+    let finishedTokenCats = map tokenCat finishedTokens
+    in case finishedTokenCats of
+            SEMICOLON : IDENTIFIER alias : TYPE target : TYPEDEF : _ -> Map.insert alias target aliasCtx
+            _ -> aliasCtx

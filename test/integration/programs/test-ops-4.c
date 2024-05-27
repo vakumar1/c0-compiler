@@ -1,8 +1,8 @@
 // Result: 11
 
-int main(void) {
+int main() {
     bool x = true || (false && true || true); // true
-    bool y = false && (true || true || true); // false
+    bool y = (false && true) && (true || true || true); // false
     if (x && y) {
         return 1;
     } else {

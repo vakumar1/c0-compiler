@@ -1,14 +1,19 @@
 module Model.Types (
+    TypeAliasContext (..),
     TypeCategory (..),
     Const (..),
     constToType,
 ) where
 
-import Model.Tokens
+import qualified Data.Map as Map
+
+type TypeAliasContext = Map.Map String TypeCategory
 
 data TypeCategory
     = INT_TYPE
     | BOOL_TYPE
+    | CHAR_TYPE
+    | STRING_TYPE
     | VOID_TYPE
     deriving (Eq, Show)
 
