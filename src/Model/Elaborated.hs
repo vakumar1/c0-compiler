@@ -22,6 +22,8 @@ module Model.Elaborated (
     VariableElab (..),
     TypeElab (..),
     extractIdentifierName,
+    isMainFunction,
+    generateFnIdentifier,
 ) where
 
 import Common.Errors
@@ -35,22 +37,34 @@ type ProgramElab = [GlobalDeclElab]
 data GlobalDeclElab 
     = FNDECL_GDECL_ELAB FunctionSignatureElab
     | FNDEFN_GDECL_ELAB FunctionElab
+    deriving Show
 
 data FunctionElab = FunctionElab
     { functionElabSignature :: FunctionSignatureElab
     , functionElabBlock :: SeqElab
     }
+    deriving Show
 
 data FunctionSignatureElab = FunctionSignatureElab
     { functionSignatureElabName :: Token
     , functionSignatureElabArgs :: [ParamElab]
     , functionSignatureElabRetType :: TypeElab
     }
+    deriving Show
+instance Eq FunctionSignatureElab where
+    fnSign1 == fnSign2 = 
+        (extractIdentifierName . functionSignatureElabName $ fnSign1) == (extractIdentifierName . functionSignatureElabName $ fnSign2)
+        && (functionSignatureElabRetType fnSign1) == (functionSignatureElabRetType fnSign2)
+        && (length . functionSignatureElabArgs $ fnSign1) == (length . functionSignatureElabArgs $ fnSign2)
+        && (all 
+                (\(param1, param2) -> (paramElabType param1) == (paramElabType param2)) 
+                (zip (functionSignatureElabArgs fnSign1) (functionSignatureElabArgs fnSign2)))
 
 data ParamElab = ParamElab
     { paramElabIdentifier :: Token
     , paramElabType :: TypeElab
     }
+    deriving Show
 
 data StatementElab
     = DECL_ELAB DeclElab
@@ -176,6 +190,8 @@ data TypeElab = TypeElab
     , typeElabToken :: Token
     }
     deriving (Show)
+instance Eq TypeElab where
+    t1 == t2 = (typeElabType t1) == (typeElabType t2)
 
 -- HELPERS
 
@@ -184,3 +200,12 @@ extractIdentifierName token =
     case (tokenCat token) of
         IDENTIFIER name -> name
         _ -> error (compilerError "Expected an identifer token but got token=" ++ (show token))
+
+isMainFunction :: FunctionSignatureElab -> Bool
+isMainFunction fnSignElab = 
+    ((extractIdentifierName . functionSignatureElabName $ fnSignElab) == "main")
+        && (length . functionSignatureElabArgs $ fnSignElab) == 0
+        && (typeElabType . functionSignatureElabRetType $ fnSignElab) == INT_TYPE
+
+generateFnIdentifier :: String -> String -> Int -> String
+generateFnIdentifier progIdentifier fnName fnIndex = progIdentifier ++ "_" ++ fnName ++ "_" ++ (show fnIndex)

@@ -35,11 +35,18 @@ compiler code =
     let (tokens, lexerErrors) = lexer code
         ast = (Trace.trace (show tokens)) parser (reverse tokens)
         elaborated = elaborateProg ast
-        (ir, verErrors) = irProg elaborated
-        (root, leaves, dag, sccMap) = tarjansAlgo 0 (functionIrCFG ir)
-        maxSSAIr = irToMaximalSSA ir (root, leaves, dag, sccMap)
-        coloring = regAllocColoring maxSSAIr (root, leaves, dag, sccMap)
-        x86asm = foldl (\interCode instr -> interCode ++ (show instr)) "" (irToX86 coloring maxSSAIr)
+        (ir, verErrors) = irProg "program" elaborated
+        colorings = 
+            map
+                (\fnIr ->
+                    let (root, leaves, dag, sccMap) = tarjansAlgo 0 (functionIrCFG fnIr)
+                        maxSSAIr = irToMaximalSSA fnIr (root, leaves, dag, sccMap)
+                        coloring = regAllocColoring maxSSAIr (root, leaves, dag, sccMap)
+                    in coloring
+                )
+                ir
+        x86inst = zippedProgIrToX86 (zip ir colorings)
+        x86asm = concat $ map show x86inst
      in if not (null lexerErrors)
             then error . handleLexerErrors $ lexerErrors
             else

@@ -1,4 +1,5 @@
 module Model.Ir (
+    ProgramIr (..),
     FunctionIr (..),
     BasicBlockIr (..),
     CommandIr (..),

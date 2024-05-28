@@ -13,6 +13,7 @@ import Common.Constants
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.List as List
 
 import qualified Debug.Trace as Trace
 import qualified Text.Show.Pretty as Pretty
@@ -39,6 +40,7 @@ data PredecessorCommands = PredecessorCommands
 
 data IrProcessingScopeState = IrProcessingScopeState
     { scopes :: [Scope]                             -- current ordered list of scopes
+    , globalFnScope :: GlobalFnScope                -- current fn signatures in global scope
     , regCtr :: Int                                 -- current register id counter
     , mapCtr :: Int                                 -- current scope id counter
     }
@@ -50,27 +52,71 @@ data Scope = Scope
     }
     deriving Show
 
--- TODO: add IR translation for full program functions
-irProg :: ProgramElab -> (FunctionIr, [VerificationError])
-irProg progElab = 
-    case (head progElab) of
-        FNDEFN_GDECL_ELAB fnElab -> irFunction fnElab
-        _ -> error . compilerError $ "Unhandled gdecl"
+data GlobalFnScope = GlobalFnScope
+    { globalFnScopeProgramIdentifier :: String
+    , globalFnScopeSignatures :: [(FunctionSignatureElab, Bool)]
+    , globalFnScopeCounter :: Int
+    }
+    deriving Show
 
-irFunction :: FunctionElab -> (FunctionIr, [VerificationError])
-irFunction fnElab =
+irProg :: String -> ProgramElab -> (ProgramIr, [VerificationError])
+irProg progIdentifier progElab = 
+    let initGlobalFnScope = 
+            GlobalFnScope
+                progIdentifier
+                []
+                0
+        (finalGlobalFnScope, fnIrs, errs) = 
+            foldl
+                (\(interFnScope, interFnIrs, interErrs) gdeclElab ->
+                    case gdeclElab of
+                        FNDECL_GDECL_ELAB fndeclElab ->
+                            let (newGlobalFnScope, fndeclErrs) = irFunctionDecl interFnScope fndeclElab
+                            in (newGlobalFnScope, interFnIrs, interErrs ++ fndeclErrs)
+                        FNDEFN_GDECL_ELAB fndefnElab ->
+                            let (newGlobalFnScope, fnIr, fndefnErrs) = irFunction interFnScope fndefnElab
+                            in (newGlobalFnScope, interFnIrs ++ [fnIr], interErrs ++ fndefnErrs)
+                )
+                (initGlobalFnScope, [], [])
+                progElab
+    in (fnIrs, errs)
+
+irFunctionDecl :: GlobalFnScope -> FunctionSignatureElab -> (GlobalFnScope, [VerificationError])
+irFunctionDecl fnScope fnSignElab = 
+    (GlobalFnScope
+        (globalFnScopeProgramIdentifier fnScope)
+        ((fnSignElab, False) : (globalFnScopeSignatures fnScope))
+        (globalFnScopeCounter fnScope),
+    [])
+
+irFunction :: GlobalFnScope -> FunctionElab -> (GlobalFnScope, FunctionIr, [VerificationError])
+irFunction fnScope fnElab =
     let fnName = functionSignatureElabName . functionElabSignature $ fnElab
+        fnIndex = globalFnScopeCounter fnScope
+        fnIdentifier = 
+            if (isMainFunction . functionElabSignature $ fnElab) 
+                then "main" 
+                else generateFnIdentifier (globalFnScopeProgramIdentifier fnScope) (extractIdentifierName fnName) fnIndex
+        globalDefnErrs = 
+            case (findDuplicateFnDefn fnScope (functionElabSignature fnElab)) of
+                Just dup -> [DUPLICATE_FN_DEFN (DuplicateFnDefnError (functionSignatureElabName dup) fnName)]
+                Nothing -> []
+        newFnScope =
+            GlobalFnScope
+                (globalFnScopeProgramIdentifier fnScope)
+                (((functionElabSignature fnElab), True) : (globalFnScopeSignatures fnScope))
+                ((globalFnScopeCounter fnScope) + 1)
         initBbIr = BasicBlockIr 0 Map.empty []
-        initFnIr = FunctionIr (extractIdentifierName fnName) [] Map.empty emptyGraph
-        initScopeState = IrProcessingScopeState [] 0 0
+        initFnIr = FunctionIr fnIdentifier [] Map.empty emptyGraph
+        initScopeState = IrProcessingScopeState [] newFnScope 0 0
         initState = IrProcessingState initBbIr initFnIr [] 1 initScopeState
         (finalTerm, _, _, finalState) = irSeq (functionElabBlock fnElab) fnElab initState
-        errs = 
+        translationErrs = 
             if finalTerm
                 then (irProcStateErrors finalState)
                 else (INVALID_RET (InvalidReturnError fnName)):(irProcStateErrors finalState)
         fnIr = (irProcStateFunctionIr finalState)
-    in (fnIr, errs)
+    in (newFnScope, fnIr, globalDefnErrs ++ translationErrs)
 
 -- each statement processor returns
 --   Bool: whether the statement definitely terminates the function (within its parent statement context)
@@ -734,6 +780,7 @@ irProcessingScopeStateAddTemp state =
         newIrProcScopeState = 
             IrProcessingScopeState
                 (scopes state) 
+                (globalFnScope state)
                 ((regCtr state) + 1) 
                 (mapCtr state)
     in (tempName, newIrProcScopeState)
@@ -743,6 +790,7 @@ irProcessingScopeStateAddScope state =
     let newScope = Scope Map.empty (mapCtr state)
     in IrProcessingScopeState
             (newScope : (scopes state)) 
+            (globalFnScope state)
             (regCtr state) 
             ((mapCtr state) + 1)
 
@@ -755,6 +803,7 @@ irProcessingScopeStateInsertToTopScope state name varElab =
                 (scopeId topScope)
     in IrProcessingScopeState
             (varScope : (tail (scopes state))) 
+            (globalFnScope state)
             (regCtr state) 
             (mapCtr state)
 
@@ -772,6 +821,7 @@ irProcessingScopeStateSetAssignedInScope state varName varElab varScopeId =
                 (scopes state)
      in IrProcessingScopeState 
             newScopes 
+            (globalFnScope state)
             (regCtr state) 
             (mapCtr state)
 
@@ -779,6 +829,7 @@ irProcessingScopeStatePopScopeMap :: IrProcessingScopeState -> IrProcessingScope
 irProcessingScopeStatePopScopeMap state = 
     IrProcessingScopeState 
         (tail (scopes state)) 
+        (globalFnScope state)
         (regCtr state) 
         (mapCtr state)
 
@@ -798,6 +849,15 @@ varElabToIr varElab varScopeId =
         0
         (typeElabType (variableElabType varElab))
         False
+
+findDuplicateFnDefn :: GlobalFnScope -> FunctionSignatureElab -> Maybe FunctionSignatureElab
+findDuplicateFnDefn fnScope fnSignElab = 
+    fmap
+        (\(matchFnScopeSign, isDefn) -> matchFnScopeSign)
+        (List.find
+            (\(currFnScopeSign, isDefn) -> isDefn && currFnScopeSign == fnSignElab)
+            (globalFnScopeSignatures fnScope)
+        )
 
 -- OP TRANSLATION
 

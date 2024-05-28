@@ -9,6 +9,7 @@ module Common.Errors (
     IfCondTypeMismatch (..),
     RetTypeMismatch (..),
     InvalidReturnError (..),
+    DuplicateFnDefnError (..),
     VerificationError (..),
     compilerError,
 ) where
@@ -90,6 +91,12 @@ data InvalidReturnError = InvalidReturnError
     }
     deriving (Show)
 
+data DuplicateFnDefnError = DuplicateFnDefnError
+    { duplicateFnDefnName1 :: Token
+    , duplicateFnDefnName2 :: Token
+    }
+    deriving (Show)
+
 data VerificationError
     = USE_BEFORE_DECL UseBeforeDeclarationError
     | DOUBLE_DECL DoubleDeclarationError
@@ -99,4 +106,5 @@ data VerificationError
     | IF_COND_TYPE_MISMATCH IfCondTypeMismatch
     | RET_TYPE_MISMATCH RetTypeMismatch
     | INVALID_RET InvalidReturnError
+    | DUPLICATE_FN_DEFN DuplicateFnDefnError
     deriving (Show)

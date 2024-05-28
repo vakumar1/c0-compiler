@@ -1,5 +1,5 @@
 module Backend.Codegen (
-    irToX86,
+    zippedProgIrToX86,
 )
 where
 
@@ -15,6 +15,13 @@ import qualified Data.Set as Set
 
 import qualified Text.Show.Pretty as Pretty
 import qualified Debug.Trace as Trace
+
+zippedProgIrToX86 :: [(FunctionIr, Coloring)] -> [X86Instruction]
+zippedProgIrToX86 zippedProgIr = 
+    concat $
+    map
+        (\(fnIr, coloring) -> irToX86 coloring fnIr)
+        zippedProgIr
 
 irToX86 :: Coloring -> FunctionIr -> [X86Instruction]
 irToX86 coloring fnIr
