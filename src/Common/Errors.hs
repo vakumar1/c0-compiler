@@ -12,6 +12,7 @@ module Common.Errors (
     ConflictingFnDeclError (..),
     DuplicateFnDefnError (..),
     VerificationError (..),
+    ArgMismatchError (..),
     compilerError,
 ) where
 
@@ -106,6 +107,13 @@ data DuplicateFnDefnError = DuplicateFnDefnError
     }
     deriving (Show)
 
+data ArgMismatchError = ArgMismatchError
+    { argMistmatchFnCaller :: Token 
+    , argMismatchFnArgs :: [TypeCategory]
+    , argMismatchCallerArgs :: [TypeCategory]
+    }
+    deriving (Show)
+
 data VerificationError
     = USE_BEFORE_DECL UseBeforeDeclarationError
     | DOUBLE_DECL DoubleDeclarationError
@@ -117,4 +125,5 @@ data VerificationError
     | INVALID_RET InvalidReturnError
     | CONFLICTING_FN_DECL ConflictingFnDeclError
     | DUPLICATE_FN_DEFN DuplicateFnDefnError
+    | ARG_MISMATCH ArgMismatchError
     deriving (Show)

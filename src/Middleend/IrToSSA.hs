@@ -75,6 +75,7 @@ initPhiFn fnIr liveMap =
                                 liveInVars
                         initPhiBb = 
                             BasicBlockIr
+                                (functionIrIdentifier fnIr)
                                 index
                                 newPhiFn
                                 (bbIrCommands bb)
@@ -132,7 +133,7 @@ bbIrToMaximalSSA bb versions =
                 )
                 ([], phiUpdateVersions)
                 (bbIrCommands bb)
-    in (BasicBlockIr (bbIndex bb) (Map.fromList newPhiFnIrPairs) newComms, commsUpdateVersions)
+    in (BasicBlockIr (bbIrFnName bb) (bbIndex bb) (Map.fromList newPhiFnIrPairs) newComms, commsUpdateVersions)
 
 commandIrToMaximalSSA :: CommandIr -> VariableIrVersion -> (CommandIr, VariableIrVersion)
 commandIrToMaximalSSA comm versions = 
@@ -175,6 +176,8 @@ impureIrToMaximalSSA impure versions =
     case impure of
         IMPURE_BINOP_IR (ImpureBinopIr cat ty base1 base2) ->
             IMPURE_BINOP_IR (ImpureBinopIr cat ty (pureBaseIrToMaximalSSA base1 versions) (pureBaseIrToMaximalSSA base2 versions))
+        IMPURE_FNCALL_IR (ImpureFnCallIr name base) ->
+            IMPURE_FNCALL_IR (ImpureFnCallIr name (map (\b -> pureBaseIrToMaximalSSA b versions) base))
 
 pureBaseIrToMaximalSSA :: PureBaseIr -> VariableIrVersion -> PureBaseIr
 pureBaseIrToMaximalSSA base versions =
@@ -234,4 +237,4 @@ succBbInjectPhiFn bbIr liveMap versions predBbIndex =
                 )
                 (bbIrPhiFn bbIr)
                 liveVars
-    in BasicBlockIr (bbIndex bbIr) newPhiFn (bbIrCommands bbIr)
+    in BasicBlockIr (bbIrFnName bbIr) (bbIndex bbIr) newPhiFn (bbIrCommands bbIr)

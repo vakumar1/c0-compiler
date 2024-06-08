@@ -22,6 +22,7 @@ module Model.Ast (
     Unop (..),
     Binop (..),
     Ternop (..),
+    FunctionCall (..),
     Type (..),
 ) where
 
@@ -138,6 +139,7 @@ data Exp
     | BINOP_EXP Binop
     | UNOP_EXP Unop
     | TERN_EXP Ternop
+    | FN_CALL_EXP FunctionCall
     deriving (Show)
 
 data Unop = Unop
@@ -158,6 +160,12 @@ data Ternop = Ternop
     , ternopCondExpression :: Exp
     , ternopLeftExpression :: Exp
     , ternopRightExpression :: Exp
+    }
+    deriving (Show)
+
+data FunctionCall = FunctionCall
+    { functionCallName :: Token
+    , functionCallArgs :: [Exp]
     }
     deriving (Show)
 

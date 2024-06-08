@@ -245,6 +245,7 @@ getUsedVarsImpure :: ImpureIr -> Set.Set VariableIr
 getUsedVarsImpure impure =
     case impure of
         IMPURE_BINOP_IR (ImpureBinopIr _ _ base1 base2) -> Set.union (getUsedVarsPureBase base1) (getUsedVarsPureBase base2)
+        IMPURE_FNCALL_IR (ImpureFnCallIr _ base) -> mconcat (map getUsedVarsPureBase base)
 
 getUsedVarsPureBase :: PureBaseIr -> Set.Set VariableIr
 getUsedVarsPureBase base =

@@ -145,6 +145,7 @@ elaborateExp e =
                 Left be -> BINOP_ELAB be
                 Right lbe -> LOG_BINOP_ELAB lbe
         UNOP_EXP u -> UNOP_ELAB (elaborateUnop u)
+        FN_CALL_EXP f -> FN_CALL_ELAB (elaborateFunctionCall f)
 
 elaborateTernop :: Ternop -> TernopElab
 elaborateTernop (Ternop op eCond e1 e2) = 
@@ -177,6 +178,10 @@ elaborateConst tok =
                 [(i, _)] -> INT_CONST i
         TRUE -> BOOL_CONST True
         FALSE -> BOOL_CONST False
+
+elaborateFunctionCall :: FunctionCall -> FunctionCallElab
+elaborateFunctionCall fnCall = 
+    FunctionCallElab (functionCallName fnCall) (map elaborateExp (functionCallArgs fnCall))
 
 translateBinop :: TokenCategory -> Either BinopCatElab LogBinopCatElab
 translateBinop cat = 

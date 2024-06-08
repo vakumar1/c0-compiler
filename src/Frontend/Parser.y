@@ -248,6 +248,7 @@ Exp :
     | Unop              { $1 }
     | Binop             { $1 }
     | Ternary           { $1 }
+    | FunctionCall      { FN_CALL_EXP $1 }
 
 Unop :
     '-' Exp             %prec UNOP { UNOP_EXP (Unop $1 $2) }
@@ -277,6 +278,16 @@ Binop :
 Ternary :
     Exp '?' Exp ':' Exp
                         %prec TERN { TERN_EXP (Ternop $2 $1 $3 $5) }
+
+FunctionCall :
+    ident Args          { FunctionCall $1 $2 }
+
+Args : '(' ')'          { [] }
+    | '(' Exp ArgFollow ')'
+                        { ($2):($3) }
+
+ArgFollow :             { [] }
+    | ',' Exp ArgFollow { ($2):($3) }
 
 {
 parseError :: [Token] -> a

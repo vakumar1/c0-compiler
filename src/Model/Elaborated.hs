@@ -19,6 +19,7 @@ module Model.Elaborated (
     LogBinopCatElab (..),
     UnopElab (..),
     UnopCatElab (..),
+    FunctionCallElab (..),
     VariableElab (..),
     TypeElab (..),
     extractIdentifierName,
@@ -115,6 +116,7 @@ data ExpElab
     | LOG_BINOP_ELAB LogBinopElab
     | UNOP_ELAB UnopElab
     | TERN_ELAB TernopElab
+    | FN_CALL_ELAB FunctionCallElab
     deriving Show
 
 data BinopElab = BinopElab
@@ -176,6 +178,12 @@ data TernopElab = TernopElab
     , ternopElabCondExp :: ExpElab
     , ternopElabExp1 :: ExpElab
     , ternopElabExp2 :: ExpElab
+    }
+    deriving Show
+
+data FunctionCallElab = FunctionCallElab
+    { functionCallElabName :: Token
+    , functionCallElabArgs :: [ExpElab]
     }
     deriving Show
 

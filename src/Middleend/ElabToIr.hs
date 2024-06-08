@@ -14,6 +14,7 @@ import Common.Constants
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
+import qualified Data.Maybe as Maybe
 
 import qualified Debug.Trace as Trace
 import qualified Text.Show.Pretty as Pretty
@@ -112,18 +113,14 @@ irFunction fnScope fnElab =
         -- update global fn scope and translate fnElab
         fnName = extractIdentifierName . functionSignatureElabName . functionElabSignature $ fnElab
         fnIndex = globalFnScopeCounter fnScope
-        fnIdentifier = 
-            if (isMainFunction . functionElabSignature $ fnElab) 
-                then "main" 
-                else generateFnIdentifier (globalFnScopeProgramIdentifier fnScope) fnName fnIndex
         newFnScope =
             GlobalFnScope
                 (globalFnScopeProgramIdentifier fnScope)
                 (Map.insert fnName (functionElabSignature fnElab) (globalFnScopeSignatures fnScope))
                 (Set.insert fnName (globalFnScopeDefined fnScope))
                 ((globalFnScopeCounter fnScope) + 1)
-        initBbIr = BasicBlockIr 0 Map.empty []
-        initFnIr = FunctionIr fnIdentifier [] Map.empty emptyGraph
+        initBbIr = BasicBlockIr fnName 0 Map.empty []
+        initFnIr = FunctionIr fnName [] Map.empty emptyGraph
         initScopeState = IrProcessingScopeState [] newFnScope 0 0
         initState = IrProcessingState initBbIr initFnIr [] 1 initScopeState
         (finalTerm, _, _, finalState) = irSeq (functionElabBlock fnElab) fnElab initState
@@ -472,6 +469,7 @@ irExp e state =
         LOG_BINOP_ELAB lb -> irLogBinop lb state
         TERN_ELAB t -> irTernop t state
         UNOP_ELAB u -> irUnop u state
+        FN_CALL_ELAB f -> irFunctionCall f state
 
 irConst :: Const -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irConst const state = (Just (PURE_BASE_IR (CONST_IR const), constToType const), state)
@@ -661,6 +659,85 @@ irUnop (UnopElab cat op e) state =
             _ ->
                 (Nothing, state)
 
+irFunctionCall :: FunctionCallElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
+irFunctionCall fnCallElab state = 
+    let (m_argsPT, argExtractState) = 
+            foldl
+                (\(interArgs, interState) argExpElab ->
+                    let (m_expPT, newState) = irExp argExpElab interState
+                    in (interArgs ++ [m_expPT], newState)
+                )
+                ([], state)
+                (functionCallElabArgs fnCallElab)
+        expExtractFailed = any Maybe.isNothing m_argsPT
+    in if not expExtractFailed
+            -- verify all argument processing succeeded
+            then
+                case Map.lookup (extractIdentifierName . functionCallElabName $ fnCallElab) (globalFnScopeSignatures . globalFnScope . irProcScopeState $ state) of
+                    -- verify the function is defined
+                    Just fnSignElab ->
+                        let 
+                            -- extract pure/types from caller args
+                            (callerArgsPuBase, callerArgsTy) = 
+                                unzip
+                                (map
+                                    (\m_argPT ->
+                                        case m_argPT of
+                                            Just pt -> pt
+                                            Nothing -> error. compilerError $ "Attempted to extract caller arg type in fn translation from Nothing when should have aborted"
+                                    )
+                                    m_argsPT)
+                            
+                            -- verify type matches with function signature
+                            fnElabTy = map (typeElabType . paramElabType) (functionSignatureElabArgs fnSignElab)
+                            typeMismatchErrs = 
+                                if irFunctionArgsMismatchedErrs fnElabTy callerArgsTy
+                                    then [ARG_MISMATCH (ArgMismatchError (functionCallElabName fnCallElab) fnElabTy callerArgsTy)]
+                                    else []
+                            
+                            -- extract pure base from pure args and generate fn call comm(s)
+                            (argsPuBase, argsProcessComms, argsProcessScopeState)  = 
+                                foldl
+                                    (\(interArgs, interComms, interScopeState) argPu ->
+                                        let (comms, argPuBase, newScopeState) = expandPureIr argPu interScopeState
+                                        in (interArgs ++ [argPuBase], comms ++ interComms, newScopeState)
+                                    )
+                                    ([], [], irProcScopeState argExtractState)
+                                    callerArgsPuBase
+                            fnRetTy = typeElabType . functionSignatureElabRetType $ fnSignElab
+                            (fnCallTempName, fnCallScopeState) = irProcessingScopeStateAddTemp argsProcessScopeState
+                            fnCallTemp = VariableIr fnCallTempName 0 fnRetTy True
+                            fnCallPu = PURE_BASE_IR (VAR_IR fnCallTemp)
+                            fnCallComm = 
+                                ASN_IMPURE_IR 
+                                    fnCallTemp
+                                    (IMPURE_FNCALL_IR
+                                        (ImpureFnCallIr 
+                                            (extractIdentifierName . functionCallElabName $ fnCallElab)
+                                            argsPuBase))
+                            fnCallState = 
+                                (irProcessingStateAppendErrs typeMismatchErrs) .
+                                (irProcessingStateUpdateScopeState argsProcessScopeState) .
+                                (irProcessingStateAddComms (fnCallComm:argsProcessComms)) $ 
+                                argExtractState
+                        in (Just (fnCallPu, fnRetTy), fnCallState)
+                    Nothing -> 
+                        (Nothing, irProcessingStateAppendErrs [USE_BEFORE_DECL (UseBeforeDeclarationError (functionCallElabName fnCallElab))] state)
+            else
+                (Nothing, state)
+
+irFunctionArgsMismatchedErrs :: [TypeCategory] -> [TypeCategory] -> Bool
+irFunctionArgsMismatchedErrs fnElabTy fnCallTy = 
+    if (length fnElabTy) /= (length fnCallTy)
+        then True
+        else
+            if 
+                any
+                    (\(argElabTy, argCallTy) -> argCallTy == VOID_TYPE || argElabTy /= argCallTy)
+                    (zip fnElabTy fnCallTy)
+                then True
+                else False
+
 -- MANAGE AND ACCESS IR PROCESSING STATE - BASE UTILITIES
 
 irProcessingStateUpdateBB :: BasicBlockIr -> IrProcessingState -> IrProcessingState
@@ -701,7 +778,7 @@ irProcessingStateUpdateScopeState scopeState state =
 
 irProcessingStateAddBB :: IrProcessingState -> (BasicBlockIr, IrProcessingState)
 irProcessingStateAddBB state = 
-    let newBb = BasicBlockIr (irProcStateBbCtr state) Map.empty []
+    let newBb = BasicBlockIr (functionIrIdentifier . irProcStateFunctionIr $ state) (irProcStateBbCtr state) Map.empty []
         newIrProcState = 
             IrProcessingState
                 (irProcStateCurrBb state)
@@ -814,7 +891,7 @@ applyPredecessorSplit predBlock succIndex splitPos =
                         1 -> SPLIT_BB_IR base left succIndex
                         _ -> error (compilerError ("Attempted to insert successor after predecessor BasicBlock with invalid split index: BasicBlockIr=" ++ (show predBlock) ++ " Index=" ++ (show splitPos)))
                 newCommands = newSplit:(tail (bbIrCommands predBlock))
-                newBBIr = BasicBlockIr (bbIndex predBlock) (bbIrPhiFn predBlock) newCommands
+                newBBIr = BasicBlockIr (bbIrFnName predBlock) (bbIndex predBlock) (bbIrPhiFn predBlock) newCommands
             in newBBIr
         _ -> error (compilerError ("Attempted to insert successor after predecessor BasicBlock with no SPLIT command: BasicBlockIr=" ++ (show predBlock)))
 

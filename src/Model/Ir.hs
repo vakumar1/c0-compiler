@@ -43,7 +43,8 @@ data FunctionIr = FunctionIr
     deriving (Show)
 
 data BasicBlockIr = BasicBlockIr
-    { bbIndex :: Int
+    { bbIrFnName :: String
+    , bbIndex :: Int
     , bbIrPhiFn :: PhiFnIr
     , bbIrCommands :: [CommandIr]
     }
@@ -196,7 +197,7 @@ addEdgeToCFG source dest fn =
             (addEdge source dest (functionIrCFG fn))
 
 appendCommsToBb :: BasicBlockIr -> [CommandIr] -> BasicBlockIr
-appendCommsToBb bb comms = BasicBlockIr (bbIndex bb) (bbIrPhiFn bb) (comms ++ (bbIrCommands bb))
+appendCommsToBb bb comms = BasicBlockIr (bbIrFnName bb) (bbIndex bb) (bbIrPhiFn bb) (comms ++ (bbIrCommands bb))
 
 bbTerminates :: BasicBlockIr -> Bool
 bbTerminates bb =
