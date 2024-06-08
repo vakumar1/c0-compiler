@@ -54,7 +54,8 @@ data Scope = Scope
 
 data GlobalFnScope = GlobalFnScope
     { globalFnScopeProgramIdentifier :: String
-    , globalFnScopeSignatures :: [(FunctionSignatureElab, Bool)]
+    , globalFnScopeSignatures :: Map.Map String FunctionSignatureElab
+    , globalFnScopeDefined :: Set.Set String
     , globalFnScopeCounter :: Int
     }
     deriving Show
@@ -64,7 +65,8 @@ irProg progIdentifier progElab =
     let initGlobalFnScope = 
             GlobalFnScope
                 progIdentifier
-                []
+                Map.empty
+                Set.empty
                 0
         (finalGlobalFnScope, fnIrs, errs) = 
             foldl
@@ -83,40 +85,84 @@ irProg progIdentifier progElab =
 
 irFunctionDecl :: GlobalFnScope -> FunctionSignatureElab -> (GlobalFnScope, [VerificationError])
 irFunctionDecl fnScope fnSignElab = 
-    (GlobalFnScope
-        (globalFnScopeProgramIdentifier fnScope)
-        ((fnSignElab, False) : (globalFnScopeSignatures fnScope))
-        (globalFnScopeCounter fnScope),
-    [])
+    let fnName = functionSignatureElabName fnSignElab
+        newFnScope = 
+            GlobalFnScope
+                (globalFnScopeProgramIdentifier fnScope)
+                (Map.insert (extractIdentifierName fnName) fnSignElab (globalFnScopeSignatures fnScope))
+                (globalFnScopeDefined fnScope)
+                (globalFnScopeCounter fnScope)
+        conflictErrs = 
+            case findConflictFnDecl fnScope fnSignElab of
+                Just currFnSignElab -> 
+                    [
+                        CONFLICTING_FN_DECL
+                            (ConflictingFnDeclError
+                                ((map (typeElabType . paramElabType)) (functionSignatureElabArgs currFnSignElab))
+                                (typeElabType . functionSignatureElabRetType $ currFnSignElab)
+                                ((map (typeElabType . paramElabType)) (functionSignatureElabArgs fnSignElab))
+                                (typeElabType . functionSignatureElabRetType $ fnSignElab))
+                    ]
+                Nothing -> []
+    in (newFnScope, conflictErrs)
 
 irFunction :: GlobalFnScope -> FunctionElab -> (GlobalFnScope, FunctionIr, [VerificationError])
 irFunction fnScope fnElab =
-    let fnName = functionSignatureElabName . functionElabSignature $ fnElab
+    let 
+        -- update global fn scope and translate fnElab
+        fnName = extractIdentifierName . functionSignatureElabName . functionElabSignature $ fnElab
         fnIndex = globalFnScopeCounter fnScope
         fnIdentifier = 
             if (isMainFunction . functionElabSignature $ fnElab) 
                 then "main" 
-                else generateFnIdentifier (globalFnScopeProgramIdentifier fnScope) (extractIdentifierName fnName) fnIndex
-        globalDefnErrs = 
-            case (findDuplicateFnDefn fnScope (functionElabSignature fnElab)) of
-                Just dup -> [DUPLICATE_FN_DEFN (DuplicateFnDefnError (functionSignatureElabName dup) fnName)]
-                Nothing -> []
+                else generateFnIdentifier (globalFnScopeProgramIdentifier fnScope) fnName fnIndex
         newFnScope =
             GlobalFnScope
                 (globalFnScopeProgramIdentifier fnScope)
-                (((functionElabSignature fnElab), True) : (globalFnScopeSignatures fnScope))
+                (Map.insert fnName (functionElabSignature fnElab) (globalFnScopeSignatures fnScope))
+                (Set.insert fnName (globalFnScopeDefined fnScope))
                 ((globalFnScopeCounter fnScope) + 1)
         initBbIr = BasicBlockIr 0 Map.empty []
         initFnIr = FunctionIr fnIdentifier [] Map.empty emptyGraph
         initScopeState = IrProcessingScopeState [] newFnScope 0 0
         initState = IrProcessingState initBbIr initFnIr [] 1 initScopeState
         (finalTerm, _, _, finalState) = irSeq (functionElabBlock fnElab) fnElab initState
-        translationErrs = 
-            if finalTerm
-                then (irProcStateErrors finalState)
-                else (INVALID_RET (InvalidReturnError fnName)):(irProcStateErrors finalState)
-        fnIr = (irProcStateFunctionIr finalState)
-    in (newFnScope, fnIr, globalDefnErrs ++ translationErrs)
+        fnIr = irProcStateFunctionIr finalState
+        
+        -- compile errors
+        translationErrs = irProcStateErrors finalState
+        retErrs = 
+            if not finalTerm
+                then
+                    [
+                        INVALID_RET 
+                            (InvalidReturnError 
+                                (functionSignatureElabName . functionElabSignature $ fnElab))
+                    ]
+                else []
+        conflictErrs = 
+            case findConflictFnDecl fnScope (functionElabSignature fnElab) of
+                Just currFnSignElab -> 
+                    [
+                        CONFLICTING_FN_DECL
+                            (ConflictingFnDeclError
+                                ((map (typeElabType . paramElabType)) (functionSignatureElabArgs currFnSignElab))
+                                (typeElabType . functionSignatureElabRetType $ currFnSignElab)
+                                ((map (typeElabType . paramElabType)) (functionSignatureElabArgs . functionElabSignature $ fnElab))
+                                (typeElabType . functionSignatureElabRetType . functionElabSignature $ fnElab))
+                    ]
+                Nothing -> []
+        duplicateErrs = 
+            case findDuplicateFnDefn fnScope (functionElabSignature fnElab) of
+                Just currFnSignElab ->
+                    [
+                        DUPLICATE_FN_DEFN 
+                            (DuplicateFnDefnError 
+                                (functionSignatureElabName currFnSignElab) 
+                                (functionSignatureElabName . functionElabSignature $ fnElab))
+                    ]
+                Nothing -> []
+    in (newFnScope, fnIr, translationErrs ++ retErrs ++ conflictErrs ++ duplicateErrs)
 
 -- each statement processor returns
 --   Bool: whether the statement definitely terminates the function (within its parent statement context)
@@ -850,14 +896,21 @@ varElabToIr varElab varScopeId =
         (typeElabType (variableElabType varElab))
         False
 
+findConflictFnDecl :: GlobalFnScope -> FunctionSignatureElab -> Maybe FunctionSignatureElab
+findConflictFnDecl fnScope fnSignElab = 
+    Map.lookup (extractIdentifierName . functionSignatureElabName $ fnSignElab) (globalFnScopeSignatures fnScope)
+
 findDuplicateFnDefn :: GlobalFnScope -> FunctionSignatureElab -> Maybe FunctionSignatureElab
 findDuplicateFnDefn fnScope fnSignElab = 
-    fmap
-        (\(matchFnScopeSign, isDefn) -> matchFnScopeSign)
-        (List.find
-            (\(currFnScopeSign, isDefn) -> isDefn && currFnScopeSign == fnSignElab)
-            (globalFnScopeSignatures fnScope)
-        )
+    let fnName = extractIdentifierName . functionSignatureElabName $ fnSignElab
+    in if not (Set.member fnName (globalFnScopeDefined fnScope))
+            then Nothing
+            else 
+                case Map.lookup fnName (globalFnScopeSignatures fnScope) of
+                    Just currFnSignElab ->
+                        if fnSignElab == currFnSignElab
+                            then Just currFnSignElab
+                            else Nothing
 
 -- OP TRANSLATION
 

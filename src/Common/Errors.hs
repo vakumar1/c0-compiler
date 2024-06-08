@@ -9,6 +9,7 @@ module Common.Errors (
     IfCondTypeMismatch (..),
     RetTypeMismatch (..),
     InvalidReturnError (..),
+    ConflictingFnDeclError (..),
     DuplicateFnDefnError (..),
     VerificationError (..),
     compilerError,
@@ -91,6 +92,14 @@ data InvalidReturnError = InvalidReturnError
     }
     deriving (Show)
 
+data ConflictingFnDeclError = ConflictingFnDeclError
+    { conflictingFnDecl1Args :: [TypeCategory]
+    , conflictingFnDecl1Ret :: TypeCategory
+    , conflictingFnDecl2Args :: [TypeCategory]
+    , conflictingFnDecl2Ret :: TypeCategory
+    }
+    deriving (Show)
+
 data DuplicateFnDefnError = DuplicateFnDefnError
     { duplicateFnDefnName1 :: Token
     , duplicateFnDefnName2 :: Token
@@ -106,5 +115,6 @@ data VerificationError
     | IF_COND_TYPE_MISMATCH IfCondTypeMismatch
     | RET_TYPE_MISMATCH RetTypeMismatch
     | INVALID_RET InvalidReturnError
+    | CONFLICTING_FN_DECL ConflictingFnDeclError
     | DUPLICATE_FN_DEFN DuplicateFnDefnError
     deriving (Show)
