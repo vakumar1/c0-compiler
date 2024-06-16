@@ -118,12 +118,14 @@ type Label = String
 data ArgLocation
     = REG_ARGLOC Register
     | STACK_ARGLOC Int
+    | BASE_ARGLOC Int
     | CONST_ARGLOC Int
 instance Eq ArgLocation where
     argLoc1 == argLoc2 = 
         case (argLoc1, argLoc2) of
             (REG_ARGLOC r1, REG_ARGLOC r2) -> r1 == r2
             (STACK_ARGLOC sp1, STACK_ARGLOC sp2) -> sp1 == sp2
+            (BASE_ARGLOC bp1, BASE_ARGLOC bp2) -> bp1 == bp2
             (CONST_ARGLOC c1, CONST_ARGLOC c2) -> c1 == c2
             _ -> False
 
@@ -135,6 +137,10 @@ displayArgLoc argLoc =
             if (stackPtr >= 0)
                 then Printf.printf "QWORD [%s + %s]" (show SP) (show stackPtr)
                 else Printf.printf "QWORD [%s - %s]" (show SP) (show (-stackPtr))
+        BASE_ARGLOC basePtr ->
+            if (basePtr >= 0)
+                then Printf.printf "QWORD [%s + %s]" (show BP) (show basePtr)
+                else Printf.printf "QWORD [%s - %s]" (show BP) (show (-basePtr))
         CONST_ARGLOC const -> show const
 
 data Register

@@ -3,7 +3,6 @@ module Model.Elaborated (
     GlobalDeclElab (..),
     FunctionElab (..),
     FunctionSignatureElab (..),
-    ParamElab (..),
     StatementElab (..),
     DeclElab (..),
     AsnElab (..),
@@ -48,7 +47,7 @@ data FunctionElab = FunctionElab
 
 data FunctionSignatureElab = FunctionSignatureElab
     { functionSignatureElabName :: Token
-    , functionSignatureElabArgs :: [ParamElab]
+    , functionSignatureElabArgs :: [VariableElab]
     , functionSignatureElabRetType :: TypeElab
     }
     deriving Show
@@ -58,14 +57,8 @@ instance Eq FunctionSignatureElab where
         && (functionSignatureElabRetType fnSign1) == (functionSignatureElabRetType fnSign2)
         && (length . functionSignatureElabArgs $ fnSign1) == (length . functionSignatureElabArgs $ fnSign2)
         && (all 
-                (\(param1, param2) -> (paramElabType param1) == (paramElabType param2)) 
+                (\(param1, param2) -> (variableElabType param1) == (variableElabType param2)) 
                 (zip (functionSignatureElabArgs fnSign1) (functionSignatureElabArgs fnSign2)))
-
-data ParamElab = ParamElab
-    { paramElabIdentifier :: Token
-    , paramElabType :: TypeElab
-    }
-    deriving Show
 
 data StatementElab
     = DECL_ELAB DeclElab

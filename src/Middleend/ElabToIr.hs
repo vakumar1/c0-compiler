@@ -99,9 +99,11 @@ irFunctionDecl fnScope fnSignElab =
                     [
                         CONFLICTING_FN_DECL
                             (ConflictingFnDeclError
-                                ((map (typeElabType . paramElabType)) (functionSignatureElabArgs currFnSignElab))
+                                (functionSignatureElabName currFnSignElab)
+                                ((map (typeElabType . variableElabType)) (functionSignatureElabArgs currFnSignElab))
                                 (typeElabType . functionSignatureElabRetType $ currFnSignElab)
-                                ((map (typeElabType . paramElabType)) (functionSignatureElabArgs fnSignElab))
+                                (functionSignatureElabName fnSignElab)
+                                ((map (typeElabType . variableElabType)) (functionSignatureElabArgs fnSignElab))
                                 (typeElabType . functionSignatureElabRetType $ fnSignElab))
                     ]
                 Nothing -> []
@@ -120,8 +122,21 @@ irFunction fnScope fnElab =
                 (Set.insert fnName (globalFnScopeDefined fnScope))
                 ((globalFnScopeCounter fnScope) + 1)
         initBbIr = BasicBlockIr fnName 0 Map.empty []
-        initFnIr = FunctionIr fnName [] Map.empty emptyGraph
-        initScopeState = IrProcessingScopeState [] newFnScope 0 0
+        (fnIrArgVars, initScopeState, initDeclErrs) = 
+            foldl
+                (\(interArgVars, interScopeState, interDeclErrs) varElab ->
+                    let varName = extractIdentifierName . variableElabIdentifier $ varElab
+                        varIr = varElabToIr varElab 0
+                    in
+                        case Map.lookup varName (scopeMap . head . scopes $ interScopeState) of
+                            Just (prevVarElab, _) ->
+                                (interArgVars ++ [varIr], interScopeState, interDeclErrs ++ [DOUBLE_DECL (DoubleDeclarationError (variableElabIdentifier prevVarElab) (variableElabIdentifier varElab))])
+                            Nothing ->
+                                (interArgVars ++ [varIr], irProcessingScopeStateInsertToTopScope interScopeState varName varElab True, interDeclErrs)
+                )
+                ([], irProcessingScopeStateAddScope (IrProcessingScopeState [] newFnScope 0 0), [])
+                (functionSignatureElabArgs . functionElabSignature $ fnElab)
+        initFnIr = FunctionIr fnName fnIrArgVars Map.empty emptyGraph
         initState = IrProcessingState initBbIr initFnIr [] 1 initScopeState
         (finalTerm, _, _, finalState) = irSeq (functionElabBlock fnElab) fnElab initState
         fnIr = irProcStateFunctionIr finalState
@@ -143,9 +158,11 @@ irFunction fnScope fnElab =
                     [
                         CONFLICTING_FN_DECL
                             (ConflictingFnDeclError
-                                ((map (typeElabType . paramElabType)) (functionSignatureElabArgs currFnSignElab))
+                                (functionSignatureElabName currFnSignElab)
+                                ((map (typeElabType . variableElabType)) (functionSignatureElabArgs currFnSignElab))
                                 (typeElabType . functionSignatureElabRetType $ currFnSignElab)
-                                ((map (typeElabType . paramElabType)) (functionSignatureElabArgs . functionElabSignature $ fnElab))
+                                (functionSignatureElabName . functionElabSignature $ fnElab)
+                                ((map (typeElabType . variableElabType)) (functionSignatureElabArgs . functionElabSignature $ fnElab))
                                 (typeElabType . functionSignatureElabRetType . functionElabSignature $ fnElab))
                     ]
                 Nothing -> []
@@ -159,7 +176,7 @@ irFunction fnScope fnElab =
                                 (functionSignatureElabName . functionElabSignature $ fnElab))
                     ]
                 Nothing -> []
-    in (newFnScope, fnIr, translationErrs ++ retErrs ++ conflictErrs ++ duplicateErrs)
+    in (newFnScope, fnIr, initDeclErrs ++ translationErrs ++ retErrs ++ conflictErrs ++ duplicateErrs)
 
 -- each statement processor returns
 --   Bool: whether the statement definitely terminates the function (within its parent statement context)
@@ -382,7 +399,7 @@ irDecl (DeclElab varElab Nothing) state =
                 let var = varElabToIr varElab (scopeId (head (scopes scopeState)))
                     comm = INIT_IR var
                     declBbIr = appendCommsToBb (irProcStateCurrBb state) [comm]
-                    declScopeState = irProcessingScopeStateInsertToTopScope scopeState name varElab
+                    declScopeState = irProcessingScopeStateInsertToTopScope scopeState name varElab False
                     declState = 
                         ((irProcessingStateUpdateBB declBbIr) .
                         (irProcessingStateUpdateScopeState declScopeState))
@@ -689,7 +706,7 @@ irFunctionCall fnCallElab state =
                                     m_argsPT)
                             
                             -- verify type matches with function signature
-                            fnElabTy = map (typeElabType . paramElabType) (functionSignatureElabArgs fnSignElab)
+                            fnElabTy = map (typeElabType . variableElabType) (functionSignatureElabArgs fnSignElab)
                             typeMismatchErrs = 
                                 if irFunctionArgsMismatchedErrs fnElabTy callerArgsTy
                                     then [ARG_MISMATCH (ArgMismatchError (functionCallElabName fnCallElab) fnElabTy callerArgsTy)]
@@ -917,12 +934,12 @@ irProcessingScopeStateAddScope state =
             (regCtr state) 
             ((mapCtr state) + 1)
 
-irProcessingScopeStateInsertToTopScope :: IrProcessingScopeState -> String -> VariableElab -> IrProcessingScopeState
-irProcessingScopeStateInsertToTopScope state name varElab =
+irProcessingScopeStateInsertToTopScope :: IrProcessingScopeState -> String -> VariableElab -> Bool -> IrProcessingScopeState
+irProcessingScopeStateInsertToTopScope state name varElab initAssigned =
     let topScope = head (scopes state)
         varScope = 
             Scope 
-                (Map.insert name (varElab, False) (scopeMap topScope)) 
+                (Map.insert name (varElab, initAssigned) (scopeMap topScope)) 
                 (scopeId topScope)
     in IrProcessingScopeState
             (varScope : (tail (scopes state))) 
@@ -975,7 +992,12 @@ varElabToIr varElab varScopeId =
 
 findConflictFnDecl :: GlobalFnScope -> FunctionSignatureElab -> Maybe FunctionSignatureElab
 findConflictFnDecl fnScope fnSignElab = 
-    Map.lookup (extractIdentifierName . functionSignatureElabName $ fnSignElab) (globalFnScopeSignatures fnScope)
+    case Map.lookup (extractIdentifierName . functionSignatureElabName $ fnSignElab) (globalFnScopeSignatures fnScope) of
+        Just currFnSignElab ->
+            if currFnSignElab /= fnSignElab
+                then Just currFnSignElab
+                else Nothing
+        Nothing -> Nothing
 
 findDuplicateFnDefn :: GlobalFnScope -> FunctionSignatureElab -> Maybe FunctionSignatureElab
 findDuplicateFnDefn fnScope fnSignElab = 

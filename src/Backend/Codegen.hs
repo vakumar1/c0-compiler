@@ -591,6 +591,9 @@ asnImpureIrToX86 coloring asnVar asnImpure alloc =
                         map
                             (\argVarLoc -> 
                                 case argVarLoc of
+                                    CONST_ARGLOC argVarConst ->
+                                        [ PUSH_X86 argVarLoc
+                                        ]
                                     REG_ARGLOC argVarReg ->
                                         [ PUSH_X86 argVarLoc
                                         ]
@@ -599,7 +602,7 @@ asnImpureIrToX86 coloring asnVar asnImpure alloc =
                                         , PUSH_X86 (REG_ARGLOC DX)
                                         ]
                             )
-                            argVarLocs
+                            (reverse argVarLocs)
                     callInst = 
                         [ CALL_X86 fnIdentifier
                         , MOV_X86 asnVarLoc (REG_ARGLOC AX)
@@ -1106,6 +1109,7 @@ fnCalleePreprocessing coloring fnIr =
 
         -- pre-processing: 
         -- - push callee-saved registers (including BP) onto stack
+        -- - save old SP in BP
         -- - decrement SP to make room for alloc'd vars
         -- - copy function arguments from SP + 8, 16, ... into their locations on the stack
         fnLabel = [LABEL_X86 (fnToLabel fnIr)]
@@ -1113,6 +1117,7 @@ fnCalleePreprocessing coloring fnIr =
             map (\reg -> PUSH_X86 (REG_ARGLOC reg)) .
             filter (\reg -> not (elem reg (allocStateAvailableReg alloc))) $
             calleeSavedRegisters
+        saveSPInst = [MOV_X86 (REG_ARGLOC BP) (REG_ARGLOC SP)]
         spDecrInst = [SUB_X86 (REG_ARGLOC SP) (CONST_ARGLOC (allocStateStackCtr alloc))]
         (argAsnInst, _) = 
             foldl
@@ -1121,17 +1126,17 @@ fnCalleePreprocessing coloring fnIr =
                         asnInst = 
                             case asnVarLoc of
                                 REG_ARGLOC asnVarReg ->
-                                    [ MOV_X86 asnVarLoc (STACK_ARGLOC interArgSPOffset)
+                                    [ MOV_X86 asnVarLoc (BASE_ARGLOC interArgSPOffset)
                                     ]
                                 STACK_ARGLOC asnVarStackLoc ->
-                                    [ MOV_X86 (REG_ARGLOC DX) (STACK_ARGLOC interArgSPOffset)
+                                    [ MOV_X86 (REG_ARGLOC DX) (BASE_ARGLOC interArgSPOffset)
                                     , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                     ]
                     in (interInst ++ asnInst, interArgSPOffset + registerSize)
                 )
-                ([], registerSize * (length calleeSavePushInst) + (allocStateStackCtr alloc))
+                ([], (1 + (length calleeSavePushInst)) * registerSize)
                 (functionIrArgs fnIr)
-        preprocessingInst = fnLabel ++ calleeSavePushInst ++ spDecrInst ++ argAsnInst
+        preprocessingInst = fnLabel ++ calleeSavePushInst ++ saveSPInst ++ spDecrInst ++ argAsnInst
     in (alloc, preprocessingInst)
 
 fnCalleePostprocessing :: AllocState -> [X86Instruction]
@@ -1139,14 +1144,17 @@ fnCalleePostprocessing alloc =
     let 
         -- post-processing:
         -- - increment SP to clear alloc'd vars
+        -- - restore old SP from BP
         -- - pop callee-saved registers from stack
         spIncrInst = [ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC (allocStateStackCtr alloc))]
+        restoreSPInst = [MOV_X86 (REG_ARGLOC SP) (REG_ARGLOC BP)]
         calleeSavePopInst = 
             map (\reg -> POP_X86 (REG_ARGLOC reg)) .
-            filter (\reg -> not (elem reg (allocStateAvailableReg alloc))) $
+            filter (\reg -> not (elem reg (allocStateAvailableReg alloc))) .
+            reverse $
             calleeSavedRegisters
         retInst = [RET_X86]
-        postprocessingInst = spIncrInst ++ calleeSavePopInst ++ retInst
+        postprocessingInst = spIncrInst ++ restoreSPInst ++ calleeSavePopInst ++ retInst
     in postprocessingInst
 
 fnCallerPreprocessing :: AllocState -> [X86Instruction]

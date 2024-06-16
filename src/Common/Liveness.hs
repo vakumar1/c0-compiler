@@ -130,7 +130,7 @@ livenessPassSaturationHelper sccIndex fnIr bbs liveMap =
                             case Map.lookup (bbIndex bb) interLiveMap of
                                 Just l -> l
                                 Nothing -> Set.empty
-                        newLiveInVars = bbLivenessPass liveOutVars bb
+                        newLiveInVars = bbLivenessPass liveOutVars fnIr bb
                         newLiveMap = Map.insert (bbIndex bb) newLiveInVars interLiveMap
                         newLiveMapUpdated = interLiveMapUpdated || ((Set.size initLiveInVars) /= (Set.size newLiveInVars))
                     in (newLiveMapUpdated, newLiveMap)
@@ -141,18 +141,22 @@ livenessPassSaturationHelper sccIndex fnIr bbs liveMap =
             then livenessPassSaturationHelper sccIndex fnIr bbs finalLiveMap
             else finalLiveMap
 
-bbLivenessPass :: Set.Set VariableIr -> BasicBlockIr -> Set.Set VariableIr
-bbLivenessPass liveVars bb
+bbLivenessPass :: Set.Set VariableIr -> FunctionIr -> BasicBlockIr -> Set.Set VariableIr
+bbLivenessPass liveVars fnIr bb
     | debugLogs && (Trace.trace 
         ("\n\nbbLivenessPass -- " ++
             "\nbbIr=" ++ (Pretty.ppShow bb) ++
             "\nliveVars=" ++ (Pretty.ppShow liveVars)
         )
         False) = undefined
-bbLivenessPass liveVars bb = 
+bbLivenessPass liveVars fnIr bb =
     let updatedCommVars = foldl updateLiveVarsComm liveVars (bbIrCommands bb)
         updatedPhiVars = updateLiveVarsPhi updatedCommVars (bbIrPhiFn bb)
-    in updatedPhiVars
+        argVars = 
+            if (bbIndex bb) == 0
+                then Set.fromList (functionIrArgs fnIr)
+                else Set.empty
+    in Set.union updatedPhiVars argVars
 
 -- PHI FN LIVENESS ANALYSIS
 

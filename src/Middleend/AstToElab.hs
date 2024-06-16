@@ -42,9 +42,9 @@ elaborateFnSignature fnSign =
         (map elaborateParam (functionSignatureArgs fnSign))
         (elaborateType . functionSignatureRetType $ fnSign)
 
-elaborateParam :: Param -> ParamElab
+elaborateParam :: Param -> VariableElab
 elaborateParam param = 
-    ParamElab
+    VariableElab
         (paramIdentifier param)
         (elaborateType . paramType $ param)
 

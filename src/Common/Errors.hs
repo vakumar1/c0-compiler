@@ -94,8 +94,10 @@ data InvalidReturnError = InvalidReturnError
     deriving (Show)
 
 data ConflictingFnDeclError = ConflictingFnDeclError
-    { conflictingFnDecl1Args :: [TypeCategory]
+    { conflictFnDecl1 :: Token
+    , conflictingFnDecl1Args :: [TypeCategory]
     , conflictingFnDecl1Ret :: TypeCategory
+    , conflictFnDecl2 :: Token
     , conflictingFnDecl2Args :: [TypeCategory]
     , conflictingFnDecl2Ret :: TypeCategory
     }
