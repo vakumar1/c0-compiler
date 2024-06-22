@@ -185,7 +185,7 @@ irFunction fnScope fnElab =
 --   IrProcessingState: the new processing state
 irStatement :: StatementElab -> FunctionElab -> (Bool, PredecessorCommands, IrProcessingState) -> (Bool, Bool, PredecessorCommands, IrProcessingState)
 irStatement stmtElab fnElab (startBb, preds, state) 
-    | debugLogs && (Trace.trace 
+    | debugElabLogs && (Trace.trace 
         ("\n\nirStatement -- " ++ 
             "\nstmtElab=" ++    (Pretty.ppShow stmtElab) ++ 
             "\nstartBB=" ++     (Pretty.ppShow startBb) ++ 
@@ -210,6 +210,7 @@ irStatement stmtElab fnElab (startBb, preds, state) =
             RET_ELAB retElab -> irRet retElab fnElab stmtState
             DECL_ELAB declElab -> irDecl declElab stmtState
             ASN_ELAB asnElab -> irAsn asnElab stmtState
+            ABORT_ELAB abortElab -> irAbort abortElab stmtState
             EXP_ELAB expElab -> irExpStmt expElab stmtState
             SEQ_ELAB seqElab -> irSeq seqElab fnElab stmtState
             IF_ELAB ifElab -> irIf ifElab fnElab stmtState
@@ -487,6 +488,11 @@ irRet (RetElab Nothing) (FunctionElab (FunctionSignatureElab _ _ (TypeElab retTy
                     irProcessingStateAddComms [RET_IR] $
                     state
             in (True, False, predecessorCommandEmpty, retState)
+
+irAbort :: AbortElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
+irAbort (AbortElab tok) state = 
+    let abortState = irProcessingStateAddComms [ABORT_IR] state
+    in (False, False, predecessorCommandsSingleton abortState, abortState)
 
 -- EXP ELAB->IR
 
@@ -866,7 +872,7 @@ predecessorCommandsAddSplit predComms predIndex splitPos =
 
 applyPredecessorCommands :: PredecessorCommands -> IrProcessingState -> IrProcessingState
 applyPredecessorCommands predComms state
-    | debugLogs && (Trace.trace 
+    | debugElabLogs && (Trace.trace 
         ("\n\napplyPredecessorCommands -- " ++ 
             "\npredComms=" ++    (Pretty.ppShow predComms) ++
             "\nstate=" ++    (Pretty.ppShow state)

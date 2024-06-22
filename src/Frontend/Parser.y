@@ -190,6 +190,7 @@ Simp : Asn              { ASN_SIMP $1 }
     | Decl              { DECL_SIMP $1 }
     | Post              { POST_SIMP $1 }
     | Exp               { EXP_SIMP $1 }
+    | Assert            { ASSERT_SIMP $1 }
 
 Control : If            { IF_CTRL $1 }
     | While             { WHILE_CTRL $1 }
@@ -205,6 +206,8 @@ Decl : Type ident        { Decl $2 $1 Nothing Nothing }
 Type : type             { Type $1 }
 
 Post : Lval Postop      { Post $2 $1 }
+
+Assert : assert Exp     { Assert $1 $2 }
 
 If :
     if '(' Exp ')' Stmt 

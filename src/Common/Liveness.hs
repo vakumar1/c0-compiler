@@ -34,7 +34,7 @@ type Coloring = Map.Map VariableIr Int
 
 livenessPass :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> LiveMap
 livenessPass fnIr (root, leaves, dag, sccMap)
-    | debugLogs && (Trace.trace 
+    | debugLivenessLogs && (Trace.trace 
         ("\n\nlivenessPass -- " ++
             "\nCFG=" ++ (Pretty.ppShow . functionIrCFG $ fnIr) ++
             "\nBBs=" ++ (Pretty.ppShow . functionIrBlocks $ fnIr)
@@ -48,7 +48,7 @@ livenessPass fnIr (root, leaves, dag, sccMap) =
 -- the set of variables that are live-in to the BB for each BB in SCC
 livenessPassSCCHelper :: Int -> FunctionIr -> DirectedGraph Int -> Map.Map Int (SCC Int) -> (Set.Set Int, LiveMap) -> (Set.Set Int, LiveMap)
 livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap)
-    | debugLogs && (Trace.trace 
+    | debugLivenessLogs && (Trace.trace 
         ("\n\nlivenessPassSCCHelper -- " ++
             "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++
             "\ncurrSCCLiveMap=" ++ (Pretty.ppShow liveMap) ++
@@ -95,7 +95,7 @@ livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap) =
 -- until live in vars reach saturation
 livenessPassSaturationHelper :: Int -> FunctionIr -> [BasicBlockIr] -> LiveMap -> LiveMap
 livenessPassSaturationHelper sccIndex fnIr bbs liveMap
-    | debugLogs && (Trace.trace 
+    | debugLivenessLogs && (Trace.trace 
         ("\n\nlivenessPassSaturationHelper -- " ++
             "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++ 
             "\nbbs=" ++ (Pretty.ppShow . (map bbIndex) $ bbs) ++
@@ -143,7 +143,7 @@ livenessPassSaturationHelper sccIndex fnIr bbs liveMap =
 
 bbLivenessPass :: Set.Set VariableIr -> FunctionIr -> BasicBlockIr -> Set.Set VariableIr
 bbLivenessPass liveVars fnIr bb
-    | debugLogs && (Trace.trace 
+    | debugLivenessLogs && (Trace.trace 
         ("\n\nbbLivenessPass -- " ++
             "\nbbIr=" ++ (Pretty.ppShow bb) ++
             "\nliveVars=" ++ (Pretty.ppShow liveVars)
@@ -223,6 +223,8 @@ getUsedVarsCommand comm =
             getUsedVarsPure retPure
         RET_IR ->
             Set.empty
+        ABORT_IR ->
+            Set.empty
 
 getAssignedVarsCommand :: CommandIr -> Maybe VariableIr
 getAssignedVarsCommand comm = 
@@ -240,6 +242,8 @@ getAssignedVarsCommand comm =
         RET_PURE_IR retPure ->
             Nothing
         RET_IR ->
+            Nothing
+        ABORT_IR ->
             Nothing
 
 getUsedVarsPure :: PureIr -> Set.Set VariableIr

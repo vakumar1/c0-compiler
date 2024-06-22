@@ -58,6 +58,7 @@ data CommandIr
     | SPLIT_BB_IR PureIr Int Int
     | RET_PURE_IR PureIr
     | RET_IR
+    | ABORT_IR
     deriving (Show)
 
 type PhiFnIr = Map.Map VariableIr (Map.Map Int VariableIr)

@@ -1,6 +1,8 @@
 
 section .data
     debug_msg db "Result: ", 0    ; Null-terminated string for "Result: "
+    pid dq 0
+    tid dq 0
 
 section .text
     global _start
@@ -11,6 +13,21 @@ _start:
 
     ; Convert the integer to a string
     jmp     int_to_str              ; Convert rax = integer to string and set rbx = length
+
+abort:
+    ; Get the PID
+    mov eax, 39
+    syscall             ; call kernel to get PID
+    mov [pid], rax      ; store the PID
+    mov rdi, [pid]
+    mov [tid], rdi      ; store the TID
+
+    ; Send the SIGABRT signal using tgkill
+    mov eax, 234
+    mov edi, [pid]
+    mov esi, [tid]
+    mov edx, 6
+    syscall             ; call kernel to raise signal
 
 finish:
     ; Print "Result: " string

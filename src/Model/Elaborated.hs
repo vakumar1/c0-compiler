@@ -9,6 +9,7 @@ module Model.Elaborated (
     IfElab (..),
     WhileElab (..),
     RetElab (..),
+    AbortElab (..),
     SeqElab,
     ExpElab (..),
     TernopElab (..),
@@ -66,6 +67,7 @@ data StatementElab
     | IF_ELAB IfElab
     | WHILE_ELAB WhileElab
     | RET_ELAB RetElab
+    | ABORT_ELAB AbortElab
     | EXP_ELAB ExpElab
     | SEQ_ELAB SeqElab
     deriving Show
@@ -97,6 +99,11 @@ data WhileElab = WhileElab
 
 data RetElab = RetElab
     { retElabExpression :: Maybe ExpElab
+    }
+    deriving Show
+
+data AbortElab = AbortElab
+    { abortElabTok :: Token
     }
     deriving Show
 

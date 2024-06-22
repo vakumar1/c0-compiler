@@ -196,7 +196,7 @@ tarjanAddSCC scc graph state =
 
 tarjanInsertSCCToDAG :: (Ord a, Show a) => Int -> SCC a -> DirectedGraph a -> Map.Map a Int -> DirectedGraph Int -> (Bool, DirectedGraph Int)
 tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag
-    | debugLogs && (Trace.trace 
+    | debugGraphLogs && (Trace.trace 
         ("\n\ntarjanInsertSCCToDAG -- " ++
             "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++
             "\nscc=" ++ (Pretty.ppShow scc) ++

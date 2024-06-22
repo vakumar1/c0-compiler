@@ -70,6 +70,7 @@ elaborateSimp s =
         DECL_SIMP d -> DECL_ELAB (elaborateDecl d)
         POST_SIMP p -> ASN_ELAB (elaboratePost p)
         EXP_SIMP e -> EXP_ELAB (elaborateExp e)
+        ASSERT_SIMP a -> IF_ELAB (elaborateAssert a)
 
 elaborateControl :: Control -> StatementElab
 elaborateControl c = 
@@ -112,6 +113,22 @@ elaboratePost (Post op (Lval id)) =
             (IDENTIFIER_EXP id) 
             (DECNUM_EXP (wrapConstExp "1" op))
         )))
+
+elaborateAssert :: Assert -> IfElab
+elaborateAssert (Assert assertTok e) = 
+    let assertCondExp = 
+            UNOP_ELAB
+                (UnopElab
+                    LOGNOT_EXP_ELAB
+                    (Token
+                        EXCL
+                        (tokenData assertTok))
+                    (elaborateExp e))
+    in
+        IfElab
+            assertCondExp
+            (ABORT_ELAB (AbortElab assertTok))
+            Nothing
 
 elaborateIf :: If -> IfElab
 elaborateIf ifAst = 

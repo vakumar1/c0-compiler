@@ -40,9 +40,9 @@ addEdgeToIFG (var1, var2) ifg = (addEdge var1 var2 (addEdge var2 var1 ifg))
 -- construct interference graph between versioned variables
 constructIFG :: FunctionIr -> LiveMap -> IFG
 constructIFG fnIr versionedLiveMap
-    | debugLogs && (Trace.trace 
+    | debugProcessingLogs && (Trace.trace 
         ("\n\nconstructIFG -- " ++
-            "\nliveMap=" ++ (show versionedLiveMap)
+            "\nliveMap=" ++ (Pretty.ppShow versionedLiveMap)
         )
         False) = undefined
 constructIFG fnIr versionedLiveMap = 
@@ -70,11 +70,11 @@ constructIFG fnIr versionedLiveMap =
             in constructIFGBasicBlock bb liveOutVars interIFG
         )
         emptyGraph
-        (looseBbOrdering fnIr)
+        [0..((length . functionIrBlocks $ fnIr) - 1)]
 
 constructIFGBasicBlock :: BasicBlockIr -> Set.Set VariableIr -> IFG -> IFG
 constructIFGBasicBlock bb liveVars ifg 
-    | debugLogs && (Trace.trace 
+    | debugProcessingLogs && (Trace.trace 
         ("\n\nconstructIFGBasicBlock -- " ++
             "\nbbIr=" ++ (Pretty.ppShow bb) ++
             "\nliveVars=" ++ (Pretty.ppShow liveVars)

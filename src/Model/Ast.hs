@@ -13,6 +13,7 @@ module Model.Ast (
     Asn (..),
     Decl (..),
     Post (..),
+    Assert (..),
     If (..),
     While (..),
     For (..),
@@ -73,6 +74,7 @@ data Simp
     | DECL_SIMP Decl
     | POST_SIMP Post
     | EXP_SIMP Exp
+    | ASSERT_SIMP Assert
     deriving (Show)
 
 data Control
@@ -101,6 +103,12 @@ data Decl = Decl
 data Post = Post
     { postSimpOp :: Token
     , postSimpLvalue :: Lval
+    }
+    deriving (Show)
+
+data Assert = Assert
+    { assertTok :: Token
+    , assertExp :: Exp
     }
     deriving (Show)
 

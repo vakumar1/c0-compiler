@@ -8,7 +8,8 @@ module Model.X86 (
     availableRegisters,
     registerSize,
     trueX86,
-    falseX86
+    falseX86,
+    abort
 )
 where
 
@@ -200,3 +201,7 @@ trueX86 = 1
 
 falseX86 :: Int
 falseX86 = 0
+
+-- runtime functions
+abort :: Label
+abort = "abort"

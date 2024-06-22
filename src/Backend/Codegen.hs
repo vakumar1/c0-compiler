@@ -18,7 +18,7 @@ import qualified Debug.Trace as Trace
 
 zippedProgIrToX86 :: [(FunctionIr, Coloring)] -> [X86Instruction]
 zippedProgIrToX86 zippedProgIr
-    | debugLogs && (Trace.trace
+    | debugCodegenLogs && (Trace.trace
         ("\n\nzippedProgIrToX86 -- " ++
             "\nzippedProgIr=" ++ (Pretty.ppShow zippedProgIr)
         ) False) = undefined
@@ -30,7 +30,7 @@ zippedProgIrToX86 zippedProgIr =
 
 irToX86 :: Coloring -> FunctionIr -> [X86Instruction]
 irToX86 coloring fnIr
-    | debugLogs && (Trace.trace
+    | debugCodegenLogs && (Trace.trace
         ("\n\nirToX86 -- " ++
             "\nname=" ++ (Pretty.ppShow (functionIrIdentifier fnIr)) ++ 
             "\ncoloring=" ++ (Pretty.ppShow coloring)
@@ -156,6 +156,8 @@ mainCommIrToX86 coloring comm alloc =
             asnPureIrToX86 coloring asnVar asnPure alloc
         ASN_IMPURE_IR asnVar asnImpure -> 
             asnImpureIrToX86 coloring asnVar asnImpure alloc
+        ABORT_IR ->
+            abortIrToX86 alloc
         _ ->
             error . compilerError $ "Attempted to translate ir->X86 non-main command as a main command: comm=" ++ (show comm)
 
@@ -670,6 +672,11 @@ asnImpureIrToX86 coloring asnVar asnImpure alloc =
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)                     -- move remainder to result
                                         ]
                 in binopInst
+
+abortIrToX86 :: AllocState -> [X86Instruction]
+abortIrToX86 alloc = 
+    [ CALL_X86 abort
+    ]
 
 -- TAIL COMM IR->x86
 
@@ -1198,7 +1205,7 @@ data BasicBlockX86 = BasicBlockX86
 --    RET: err (no valid injection)
 injectPhiFnPredCommand :: CommandIr -> [X86Instruction] -> Int -> BasicBlockX86 -> BasicBlockX86
 injectPhiFnPredCommand termComm phiFnComms succBBIndex bbX86
-    | debugLogs && (Trace.trace
+    | debugCodegenLogs && (Trace.trace
         ("\n\ninjectPhiFnPredCommand -- " ++
             "\ntermComm=" ++ (Pretty.ppShow termComm) ++
             "\nsuccIndex=" ++ (show succBBIndex) ++

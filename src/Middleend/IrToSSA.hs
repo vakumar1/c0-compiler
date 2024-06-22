@@ -24,7 +24,7 @@ import qualified Text.Show.Pretty as Pretty
 
 irToMaximalSSA :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> FunctionIr
 irToMaximalSSA fnIr (root, leaves, dag, sccMap)
-    | debugLogs && (Trace.trace 
+    | debugProcessingLogs && (Trace.trace 
         ("\n\nirToMaximalSSA -- " ++
             "\nfnIr=" ++ (Pretty.ppShow fnIr)
         )
@@ -81,15 +81,15 @@ initPhiFn fnIr liveMap =
                                 (bbIrCommands bb)
                     in initPhiBb
                 )
-                (looseBbOrdering fnIr)
+                [0..((length . functionIrBlocks $ fnIr) - 1)]
     in addBbsToFunction initPhiBBs fnIr
 
 -- version pass converts variable versions within BBs in loose BFS order
 versionPass :: FunctionIr -> LiveMap -> FunctionIr
 versionPass fnIr bbLiveMap
-    | debugLogs && (Trace.trace 
+    | debugProcessingLogs && (Trace.trace 
         ("\n\nversionPass -- " ++
-            "\nbbLiveMap=" ++ (show bbLiveMap)
+            "\nbbLiveMap=" ++ (Pretty.ppShow bbLiveMap)
         )
         False) = undefined
 versionPass fnIr bbLiveMap = 
@@ -105,15 +105,15 @@ versionPass fnIr bbLiveMap =
                         Nothing -> error (compilerError ("Attempted to access bb index supplied from BFS ordering that does not exist: bbIndex=" ++ (show index)))
                 )
                 (fnIr, Map.empty)
-                (looseBbOrdering fnIr)
+                [0..((length . functionIrBlocks $ fnIr) - 1)]
     in newFnIr
 
 bbIrToMaximalSSA :: BasicBlockIr -> VariableIrVersion -> (BasicBlockIr, VariableIrVersion)
 bbIrToMaximalSSA bb versions
-    | debugLogs && (Trace.trace 
+    | debugProcessingLogs && (Trace.trace 
         ("\n\nbbIrToMaximalSSA -- " ++
-            "\nbbIr=" ++ (show bb) ++
-            "\nversions=" ++ (show versions)
+            "\nbbIr=" ++ (Pretty.ppShow bb) ++
+            "\nversions=" ++ (Pretty.ppShow versions)
         )
         False) = undefined
 bbIrToMaximalSSA bb versions = 
@@ -161,6 +161,8 @@ commandIrToMaximalSSA comm versions =
                 newComm = RET_PURE_IR newPure
              in (newComm, versions)
         RET_IR ->
+            (comm, versions)
+        ABORT_IR ->
             (comm, versions)
 
 pureIrToMaximalSSA :: PureIr -> VariableIrVersion -> PureIr
