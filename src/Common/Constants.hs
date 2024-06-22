@@ -10,7 +10,7 @@ debugElabLogs :: Bool
 debugElabLogs = False
 
 debugProcessingLogs :: Bool
-debugProcessingLogs = True
+debugProcessingLogs = False
 
 debugGraphLogs :: Bool
 debugGraphLogs = False

@@ -747,17 +747,17 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                     case cat of
                         LT_IR -> 
                             case (pureVarLoc1, pureVarLoc2) of
-                                -- c1 < c2 -> move c1 to DX
+                                -- c1 < c2 -> directly compare and jump
                                 (CONST_ARGLOC pureVarConstLoc1, CONST_ARGLOC pureVarConstLoc2) ->
-                                    [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
-                                    , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [ JL_X86 (bbToLabel fnName splitTrue)
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [ JMP_X86 (bbToLabel fnName splitFalse)
-                                    ]
+                                    if pureVarConstLoc1 < pureVarConstLoc2
+                                        then 
+                                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitTrue)
+                                            ]
+                                        else
+                                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitFalse)
+                                            ]
                                 -- S[i] < S[j] -> move S[i] to DX
                                 (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
                                     [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -781,17 +781,17 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                                     ]
                         LTE_IR ->
                             case (pureVarLoc1, pureVarLoc2) of
-                                -- c1 <= c2 -> move c1 to DX
+                                -- c1 <= c2 -> directly compare and jump
                                 (CONST_ARGLOC pureVarConstLoc1, CONST_ARGLOC pureVarConstLoc2) ->
-                                    [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
-                                    , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [ JLE_X86 (bbToLabel fnName splitTrue)
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [ JMP_X86 (bbToLabel fnName splitFalse)
-                                    ]
+                                    if pureVarConstLoc1 <= pureVarConstLoc2
+                                        then 
+                                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitTrue)
+                                            ]
+                                        else
+                                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitFalse)
+                                            ]
                                 -- S[i] <= S[j] -> move S[i] to DX
                                 (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
                                     [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -815,17 +815,17 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                                     ]
                         GT_IR ->
                             case (pureVarLoc1, pureVarLoc2) of
-                                -- c1 > c2 -> move c1 to DX
+                                -- c1 > c2 -> directly compare and jump
                                 (CONST_ARGLOC pureVarConstLoc1, CONST_ARGLOC pureVarConstLoc2) ->
-                                    [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
-                                    , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [ JG_X86 (bbToLabel fnName splitTrue)
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [ JMP_X86 (bbToLabel fnName splitFalse)
-                                    ]
+                                    if pureVarConstLoc1 > pureVarConstLoc2
+                                        then 
+                                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitTrue)
+                                            ]
+                                        else
+                                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitFalse)
+                                            ]
                                 -- S[i] > S[j] -> move S[i] to DX
                                 (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
                                     [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -849,17 +849,17 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                                     ]
                         GTE_IR ->
                             case (pureVarLoc1, pureVarLoc2) of
-                                -- c1 >= c2 -> move c1 to DX
+                                -- c1 >= c2 -> directly compare and jump
                                 (CONST_ARGLOC pureVarConstLoc1, CONST_ARGLOC pureVarConstLoc2) ->
-                                    [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
-                                    , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [ JGE_X86 (bbToLabel fnName splitTrue)
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [ JMP_X86 (bbToLabel fnName splitFalse)
-                                    ]
+                                    if pureVarConstLoc1 >= pureVarConstLoc2
+                                        then 
+                                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitTrue)
+                                            ]
+                                        else
+                                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitFalse)
+                                            ]
                                 -- S[i] >= S[j] -> move S[i] to DX
                                 (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
                                     [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -883,17 +883,17 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                                     ]
                         EQ_IR ->
                             case (pureVarLoc1, pureVarLoc2) of
-                                -- c1 == c2 -> move c1 to DX
+                                -- c1 == c2 -> directly compare and jump
                                 (CONST_ARGLOC pureVarConstLoc1, CONST_ARGLOC pureVarConstLoc2) ->
-                                    [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
-                                    , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [ JE_X86 (bbToLabel fnName splitTrue)
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [ JMP_X86 (bbToLabel fnName splitFalse)
-                                    ]
+                                    if pureVarConstLoc1 == pureVarConstLoc2
+                                        then 
+                                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitTrue)
+                                            ]
+                                        else
+                                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitFalse)
+                                            ]
                                 -- S[i] == S[j] -> move S[i] to DX
                                 (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
                                     [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -917,17 +917,17 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                                     ]
                         NEQ_IR ->
                             case (pureVarLoc1, pureVarLoc2) of
-                                -- c1 != c2 -> move c1 to DX
+                                -- c1 != c2 -> directly compare and jump
                                 (CONST_ARGLOC pureVarConstLoc1, CONST_ARGLOC pureVarConstLoc2) ->
-                                    [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
-                                    , CMP_X86 (REG_ARGLOC DX) pureVarLoc2
-                                    ] ++ 
-                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                                    [ JNE_X86 (bbToLabel fnName splitTrue)
-                                    ] ++
-                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                                    [ JMP_X86 (bbToLabel fnName splitFalse)
-                                    ]
+                                    if pureVarConstLoc1 /= pureVarConstLoc2
+                                        then 
+                                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitTrue)
+                                            ]
+                                        else
+                                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitFalse)
+                                            ]
                                 -- S[i] != S[j] -> move S[i] to DX
                                 (STACK_ARGLOC pureVarStackLoc1, STACK_ARGLOC pureVarStackLoc2) ->
                                     [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -959,15 +959,27 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                 splitInst = 
                     case cat of
                         LOGNOT_IR ->
-                            [ CMP_X86 pureVarLoc (CONST_ARGLOC falseX86)
-                            ] ++
-                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                            [ JZ_X86 (bbToLabel fnName splitTrue)
-                            ] ++
-                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                            [ JMP_X86 (bbToLabel fnName splitFalse)
-                            ]
-            in splitInst
+                            case pureVarLoc of
+                                CONST_ARGLOC pureVarConstLoc ->
+                                    if pureVarConstLoc == falseX86
+                                        then
+                                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitTrue)
+                                            ]
+                                        else
+                                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                            [ JMP_X86 (bbToLabel fnName splitFalse)
+                                            ]
+                                _ ->
+                                    [ CMP_X86 pureVarLoc (CONST_ARGLOC falseX86)
+                                    ] ++
+                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                    [ JZ_X86 (bbToLabel fnName splitTrue)
+                                    ] ++
+                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                    [ JMP_X86 (bbToLabel fnName splitFalse)
+                                    ]
+                    in splitInst
 
 -- RET: prepends no phi-fn insts. to ret inst.
 retToX86 :: Map.Map VariableIr Int -> PureIr -> BasicBlockX86 -> AllocState -> [X86Instruction]

@@ -33,7 +33,7 @@ handleVerificationErrors errors =
 compiler :: String -> String
 compiler code =
     let (tokens, lexerErrors) = lexer code
-        ast = (Trace.trace (show tokens)) parser (reverse tokens)
+        ast = parser (reverse tokens)
         elaborated = elaborateProg ast
         (ir, verErrors) = irProg "program" elaborated
         colorings = 
