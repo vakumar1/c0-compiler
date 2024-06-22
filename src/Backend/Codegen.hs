@@ -575,7 +575,7 @@ asnImpureIrToX86 :: Coloring -> VariableIr -> ImpureIr -> AllocState -> [X86Inst
 asnImpureIrToX86 coloring asnVar asnImpure alloc =
     let asnVarLoc = getVarLoc asnVar coloring alloc
     in case asnImpure of
-            IMPURE_FNCALL_IR (ImpureFnCallIr fnIdentifier argBases) ->
+            IMPURE_FNCALL_IR (ImpureFnCallIr fnIdentifier argBases retTy) ->
                 let argVarLocs = 
                         map
                             (\argBase ->
@@ -605,13 +605,18 @@ asnImpureIrToX86 coloring asnVar asnImpure alloc =
                             (reverse argVarLocs)
                     callInst = 
                         [ CALL_X86 fnIdentifier
-                        , MOV_X86 asnVarLoc (REG_ARGLOC AX)
                         ]
+                    copyRetInst = 
+                        if retTy == VOID_TYPE
+                            then []
+                            else 
+                                [ MOV_X86 asnVarLoc (REG_ARGLOC AX)
+                                ]
                     argClearInst = 
                         [ ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC (registerSize * (length argVarLocs)))
                         ]
                     callerSavePopInst = fnCallerPostprocessing alloc
-                in callerSavePushInst ++ argPushInst ++ callInst ++ argClearInst ++ callerSavePopInst
+                in callerSavePushInst ++ argPushInst ++ callInst ++ copyRetInst ++ argClearInst ++ callerSavePopInst
 
             IMPURE_BINOP_IR (ImpureBinopIr cat ty base1 base2) ->
                 let pureVarLoc1 =
@@ -677,6 +682,9 @@ tailCommIrToX86 coloring fnName comm bbX86 alloc =
             splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc
         RET_PURE_IR retPure ->
             retToX86 coloring retPure bbX86 alloc
+        RET_IR ->
+            retNoneToX86 alloc
+
 
 -- GOTO: prepends phi-fn-1  instrs. to JUMP instr.
 gotoToX86 :: String -> Int -> BasicBlockX86 -> AllocState -> [X86Instruction]
@@ -1090,6 +1098,10 @@ retToX86 coloring retPure bbX86 alloc =
                             (fnCalleePostprocessing alloc)
             in retInst
 
+retNoneToX86 :: AllocState -> [X86Instruction]
+retNoneToX86 alloc = 
+    fnCalleePostprocessing alloc
+
 -- HELPERS
 
 fnCalleePreprocessing :: Coloring -> FunctionIr -> (AllocState, [X86Instruction])
@@ -1226,6 +1238,10 @@ injectPhiFnPredCommand termComm phiFnComms succBBIndex bbX86 =
         RET_PURE_IR _ ->
             error . compilerError $ "Attempted to inject phi-fn pred command to a RET predecessor: " ++ 
                                         "\nexpected succ=" ++ (show succBBIndex)
+        RET_IR ->
+            error . compilerError $ "Attempted to inject phi-fn pred command to a RET predecessor: " ++ 
+                                        "\nexpected succ=" ++ (show succBBIndex)
+
 
 data AllocState = AllocState
     { allocStateRegMap :: Map.Map Int ArgLocation

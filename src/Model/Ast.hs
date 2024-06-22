@@ -79,7 +79,7 @@ data Control
     = IF_CTRL If
     | WHILE_CTRL While
     | FOR_CTRL For
-    | RET_CTRL Exp
+    | RET_CTRL (Maybe Exp)
     deriving (Show)
 
 -- low-level statement operations

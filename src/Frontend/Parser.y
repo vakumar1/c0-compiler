@@ -194,7 +194,8 @@ Simp : Asn              { ASN_SIMP $1 }
 Control : If            { IF_CTRL $1 }
     | While             { WHILE_CTRL $1 }
     | For               { FOR_CTRL $1 }
-    | return Exp ';'    { RET_CTRL $2 }
+    | return ';'        { RET_CTRL Nothing }
+    | return Exp ';'    { RET_CTRL (Just $2) }
 
 Asn : Lval Asnop Exp    %prec ASNOP { Asn $2 $1 $3 }
 

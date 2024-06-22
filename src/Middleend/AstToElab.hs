@@ -31,9 +31,17 @@ elaborateGDecl gdecl =
 
 elaborateFn :: Function -> FunctionElab
 elaborateFn fn =
-    FunctionElab
-        (elaborateFnSignature . functionSignature $ fn)
-        (elaborateStmts . functionBlock $ fn)
+    let fnSignElab = elaborateFnSignature . functionSignature $ fn
+        fnRetTy = typeElabType . functionSignatureElabRetType $ fnSignElab
+        stmtsElab = elaborateStmts . functionBlock $ fn
+        terminatedStmtsElab = 
+            if fnRetTy == VOID_TYPE
+                then stmtsElab ++ [RET_ELAB (RetElab Nothing)]
+                else stmtsElab
+    in  
+        FunctionElab
+            fnSignElab
+            terminatedStmtsElab
 
 elaborateFnSignature :: FunctionSignature -> FunctionSignatureElab
 elaborateFnSignature fnSign = 
@@ -66,7 +74,10 @@ elaborateSimp s =
 elaborateControl :: Control -> StatementElab
 elaborateControl c = 
     case c of
-        RET_CTRL e -> RET_ELAB (RetElab (elaborateExp e))
+        RET_CTRL m_e -> 
+            case m_e of
+                Just e -> RET_ELAB (RetElab (Just (elaborateExp e)))
+                Nothing -> RET_ELAB (RetElab Nothing)
         IF_CTRL i -> IF_ELAB (elaborateIf i)
         WHILE_CTRL w -> WHILE_ELAB (elaborateWhile w)
         FOR_CTRL f -> SEQ_ELAB (elaborateFor f)

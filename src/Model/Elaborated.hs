@@ -96,7 +96,7 @@ data WhileElab = WhileElab
     deriving Show
 
 data RetElab = RetElab
-    { retElabExpression :: ExpElab
+    { retElabExpression :: Maybe ExpElab
     }
     deriving Show
 

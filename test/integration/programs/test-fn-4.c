@@ -2,7 +2,9 @@
 
 int handle_odd(int curr_sum, int index);
 
-int handle_even(int curr_sum, int index) {
+typedef int INTEGER;
+
+int handle_even(INTEGER curr_sum, INTEGER index) {
     curr_sum += (index + 1);
     if (index == 0) {
         return curr_sum;
@@ -11,7 +13,9 @@ int handle_even(int curr_sum, int index) {
     
 }
 
-int handle_odd(int curr_sum, int index) {
+typedef int INTEGER2;
+
+int handle_odd(INTEGER2 curr_sum, INTEGER2 index) {
     curr_sum += index;
     return handle_even(curr_sum, index - 1);
 }

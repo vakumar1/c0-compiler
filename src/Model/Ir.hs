@@ -57,6 +57,7 @@ data CommandIr
     | GOTO_BB_IR Int
     | SPLIT_BB_IR PureIr Int Int
     | RET_PURE_IR PureIr
+    | RET_IR
     deriving (Show)
 
 type PhiFnIr = Map.Map VariableIr (Map.Map Int VariableIr)
@@ -125,6 +126,7 @@ data ImpureIr
 data ImpureFnCallIr = ImpureFnCallIr
     { impureFnCallIdentifier :: String
     , impureFnVariableIrArgs :: [PureBaseIr]
+    , impureFnRetType :: TypeCategory
     }
     deriving (Show)
 

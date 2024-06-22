@@ -455,7 +455,7 @@ irExpStmt e state =
     in (False, False, predecessorCommandsSingleton expState, expState)
 
 irRet :: RetElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
-irRet (RetElab e) (FunctionElab (FunctionSignatureElab _ _ (TypeElab retTy _)) _) state =
+irRet (RetElab (Just e)) (FunctionElab (FunctionSignatureElab _ _ (TypeElab retTy _)) _) state =
     let (m_expPT, expState) = irExp e state
     in case m_expPT of
             -- fail if exp is malformed
@@ -474,6 +474,19 @@ irRet (RetElab e) (FunctionElab (FunctionSignatureElab _ _ (TypeElab retTy _)) _
                                 irProcessingStateAddComms [RET_PURE_IR expPu] $
                                 expState
                         in (True, False, predecessorCommandEmpty, retState)
+irRet (RetElab Nothing) (FunctionElab (FunctionSignatureElab _ _ (TypeElab retTy _)) _) state =
+    if retTy /= VOID_TYPE
+        -- fail on ret/exp type mismatch
+        then
+            let retState = irProcessingStateAppendErrs [RET_TYPE_MISMATCH (RetTypeMismatch retTy VOID_TYPE)] state
+            in (True, False, predecessorCommandEmpty, retState)
+        -- success - add ret statement to basic block and commit
+        else
+            let retState = 
+                    irProcessingStateCommitBB .
+                    irProcessingStateAddComms [RET_IR] $
+                    state
+            in (True, False, predecessorCommandEmpty, retState)
 
 -- EXP ELAB->IR
 
@@ -731,7 +744,8 @@ irFunctionCall fnCallElab state =
                                     (IMPURE_FNCALL_IR
                                         (ImpureFnCallIr 
                                             (extractIdentifierName . functionCallElabName $ fnCallElab)
-                                            argsPuBase))
+                                            argsPuBase
+                                            fnRetTy))
                             fnCallState = 
                                 (irProcessingStateAppendErrs typeMismatchErrs) .
                                 (irProcessingStateUpdateScopeState argsProcessScopeState) .

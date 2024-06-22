@@ -160,6 +160,8 @@ commandIrToMaximalSSA comm versions =
             let newPure = pureIrToMaximalSSA retPure versions
                 newComm = RET_PURE_IR newPure
              in (newComm, versions)
+        RET_IR ->
+            (comm, versions)
 
 pureIrToMaximalSSA :: PureIr -> VariableIrVersion -> PureIr
 pureIrToMaximalSSA pure versions =
@@ -176,8 +178,8 @@ impureIrToMaximalSSA impure versions =
     case impure of
         IMPURE_BINOP_IR (ImpureBinopIr cat ty base1 base2) ->
             IMPURE_BINOP_IR (ImpureBinopIr cat ty (pureBaseIrToMaximalSSA base1 versions) (pureBaseIrToMaximalSSA base2 versions))
-        IMPURE_FNCALL_IR (ImpureFnCallIr name base) ->
-            IMPURE_FNCALL_IR (ImpureFnCallIr name (map (\b -> pureBaseIrToMaximalSSA b versions) base))
+        IMPURE_FNCALL_IR (ImpureFnCallIr name base ty) ->
+            IMPURE_FNCALL_IR (ImpureFnCallIr name (map (\b -> pureBaseIrToMaximalSSA b versions) base) ty)
 
 pureBaseIrToMaximalSSA :: PureBaseIr -> VariableIrVersion -> PureBaseIr
 pureBaseIrToMaximalSSA base versions =

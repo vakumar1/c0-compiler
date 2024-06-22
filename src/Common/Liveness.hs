@@ -221,6 +221,8 @@ getUsedVarsCommand comm =
             getUsedVarsPure splitPure
         RET_PURE_IR retPure ->
             getUsedVarsPure retPure
+        RET_IR ->
+            Set.empty
 
 getAssignedVarsCommand :: CommandIr -> Maybe VariableIr
 getAssignedVarsCommand comm = 
@@ -237,6 +239,8 @@ getAssignedVarsCommand comm =
             Nothing
         RET_PURE_IR retPure ->
             Nothing
+        RET_IR ->
+            Nothing
 
 getUsedVarsPure :: PureIr -> Set.Set VariableIr
 getUsedVarsPure pure =
@@ -249,7 +253,7 @@ getUsedVarsImpure :: ImpureIr -> Set.Set VariableIr
 getUsedVarsImpure impure =
     case impure of
         IMPURE_BINOP_IR (ImpureBinopIr _ _ base1 base2) -> Set.union (getUsedVarsPureBase base1) (getUsedVarsPureBase base2)
-        IMPURE_FNCALL_IR (ImpureFnCallIr _ base) -> mconcat (map getUsedVarsPureBase base)
+        IMPURE_FNCALL_IR (ImpureFnCallIr _ base _) -> mconcat (map getUsedVarsPureBase base)
 
 getUsedVarsPureBase :: PureBaseIr -> Set.Set VariableIr
 getUsedVarsPureBase base =
