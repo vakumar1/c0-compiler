@@ -6,6 +6,7 @@ module Common.Errors (
     UseBeforeAssignmentError (..),
     OpTypeMismatch (..),
     AsnTypeMismatch (..),
+    AsnTypeDereference (..),
     IfCondTypeMismatch (..),
     RetTypeMismatch (..),
     InvalidReturnError (..),
@@ -77,6 +78,12 @@ data AsnTypeMismatch = AsnTypeMismatch
     }
     deriving (Show)
 
+data AsnTypeDereference = AsnTypeDereference
+    { asnTypeDereferenceVar :: Token
+    , asnTypeDereferenceVarType :: TypeCategory
+    }
+    deriving (Show)
+
 data IfCondTypeMismatch = IfCondTypeMismatch
     { ifCondTypeMismatchExpType :: TypeCategory
     }
@@ -122,6 +129,7 @@ data VerificationError
     | USE_BEFORE_ASN UseBeforeAssignmentError
     | OP_TYPE_MISMATCH OpTypeMismatch
     | ASN_TYPE_MISMATCH AsnTypeMismatch
+    | ASN_TYPE_DEREF AsnTypeDereference
     | IF_COND_TYPE_MISMATCH IfCondTypeMismatch
     | RET_TYPE_MISMATCH RetTypeMismatch
     | INVALID_RET InvalidReturnError

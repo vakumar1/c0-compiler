@@ -203,7 +203,8 @@ Asn : Lval Asnop Exp    %prec ASNOP { Asn $2 $1 $3 }
 Decl : Type ident        { Decl $2 $1 Nothing Nothing }
     | Type ident '=' Exp { Decl $2 $1 (Just $3) (Just $4) }
 
-Type : type             { Type $1 }
+Type : type             { BASE_TYPE_AST $1 }
+    | Type '*'          { POINTER_TYPE_AST $1 }
 
 Post : Lval Postop      { Post $2 $1 }
 
@@ -225,7 +226,8 @@ Simpopt :               { Nothing }
     | Simp              { Just $1 }
 
 Lval : '(' Lval ')'     %prec PAREN { $2 }
-    | ident             { Lval $1 }
+    | ident             { IDENT_LVAL $1 }
+    | '*' Lval          { DEREF_LVAL $2 }
 
 Asnop : '='             { $1 }
     | '+='              { $1 }
@@ -248,6 +250,7 @@ Exp :
     | dec               { DECNUM_EXP $1 }
     | true              { BOOL_EXP $1 }
     | false             { BOOL_EXP $1 }
+    | null              { NULL_EXP $1 }
     | ident             { IDENTIFIER_EXP $1 }
     | Unop              { $1 }
     | Binop             { $1 }

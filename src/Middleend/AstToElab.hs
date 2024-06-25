@@ -92,10 +92,34 @@ elaborateStmts :: Statements -> SeqElab
 elaborateStmts ss = map elaborateStmt ss
 
 elaborateAsn :: Asn -> AsnElab
-elaborateAsn (Asn as (Lval id) e) =
+elaborateAsn (Asn as lval e) =
     case (tokenCat as) of
-        EQUAL -> AsnElab id (elaborateExp e)
-        _ -> AsnElab id (elaborateExp (BINOP_EXP (Binop (decomposeAsnOp as) (IDENTIFIER_EXP id) e)))
+        EQUAL -> 
+            AsnElab 
+                (elaborateLval lval)
+                (elaborateExp e)
+        _ -> 
+            let opTok = decomposeAsnOp as
+                binop = 
+                    case (translateBinop . tokenCat $ opTok) of
+                        Left bop -> 
+                            (BINOP_ELAB
+                                (BinopElab
+                                    bop
+                                    opTok
+                                    REF_LVAL_EXP_ELAB
+                                    (elaborateExp e)))
+                        Right lbop ->
+                            (LOG_BINOP_ELAB
+                                (LogBinopElab
+                                    lbop
+                                    opTok
+                                    REF_LVAL_EXP_ELAB
+                                    (elaborateExp e)))
+            in 
+                AsnElab 
+                    (elaborateLval lval)
+                    binop
 
 elaborateDecl :: Decl -> DeclElab
 elaborateDecl decl =
@@ -103,16 +127,31 @@ elaborateDecl decl =
         Decl id ty Nothing Nothing ->
             DeclElab (VariableElab id (elaborateType ty)) Nothing
         Decl id ty (Just as) (Just e) ->
-            DeclElab (VariableElab id (elaborateType ty)) (Just (elaborateAsn (Asn as (Lval id) e)))
+            DeclElab (VariableElab id (elaborateType ty)) (Just (elaborateAsn (Asn as (IDENT_LVAL id) e)))
 
 elaboratePost :: Post -> AsnElab
-elaboratePost (Post op (Lval id)) = 
-    AsnElab id 
-        (elaborateExp (BINOP_EXP (Binop 
-            (decomposeAsnOp op) 
-            (IDENTIFIER_EXP id) 
-            (DECNUM_EXP (wrapConstExp "1" op))
-        )))
+elaboratePost (Post po lval) = 
+    let opTok = decomposeAsnOp po
+        binop = 
+            case (translateBinop . tokenCat $ opTok) of
+                Left bop -> 
+                    (BINOP_ELAB
+                        (BinopElab
+                            bop
+                            opTok
+                            REF_LVAL_EXP_ELAB
+                            (CONST_ELAB (INT_CONST 1))))
+                Right lbop ->
+                    (LOG_BINOP_ELAB
+                        (LogBinopElab
+                            lbop
+                            opTok
+                            REF_LVAL_EXP_ELAB
+                            (CONST_ELAB (INT_CONST 1))))
+    in 
+        AsnElab 
+            (elaborateLval lval)
+            binop
 
 elaborateAssert :: Assert -> IfElab
 elaborateAssert (Assert assertTok e) = 
@@ -160,12 +199,18 @@ elaborateFor for =
         whileStmtElab = WhileElab termExpElab innerStmtElab
     in initStmtElabs ++ [WHILE_ELAB whileStmtElab]
 
+elaborateLval :: Lval -> LvalElab
+elaborateLval lval = 
+    let (id, ops) = generateLvalOps lval
+    in LvalElab id ops
+
 elaborateExp :: Exp -> ExpElab
 elaborateExp e =
     case e of
         HEXNUM_EXP h -> CONST_ELAB (elaborateConst h)
         DECNUM_EXP d -> CONST_ELAB (elaborateConst d)
         BOOL_EXP b -> CONST_ELAB (elaborateConst b)
+        NULL_EXP n -> CONST_ELAB (elaborateConst n)
         IDENTIFIER_EXP id -> IDENTIFIER_ELAB id
         TERN_EXP t -> TERN_ELAB (elaborateTernop t)
         BINOP_EXP b -> 
@@ -191,9 +236,17 @@ elaborateUnop (Unop op e) =
 
 elaborateType :: Type -> TypeElab
 elaborateType ty = 
-    case (tokenCat . typeToken $ ty) of
-        TYPE typeCat -> TypeElab typeCat (typeToken ty)
-        _ -> error . compilerError $ "Attempted to elaborate non-type token as type: " ++ (show . typeToken $ ty)
+    case ty of
+        BASE_TYPE_AST tok ->
+            case (tokenCat tok) of
+                TYPE typeCat -> TypeElab typeCat tok
+                _ -> error . compilerError $ "Attempted to elaborate non-type token as type: " ++ (show tok)
+        POINTER_TYPE_AST t ->
+            let subElaboratedType = elaborateType t
+            in 
+                TypeElab
+                    (POINTER_TYPE (typeElabType subElaboratedType))
+                    (typeElabToken subElaboratedType)
     
 elaborateConst :: Token -> Const
 elaborateConst tok =
@@ -206,6 +259,7 @@ elaborateConst tok =
                 [(i, _)] -> INT_CONST i
         TRUE -> BOOL_CONST True
         FALSE -> BOOL_CONST False
+        NULL -> NULL_CONST
 
 elaborateFunctionCall :: FunctionCall -> FunctionCallElab
 elaborateFunctionCall fnCall = 
@@ -261,3 +315,11 @@ decomposeAsnOp (Token tokenCat tokenData) =
 
 wrapConstExp :: String -> Token -> Token
 wrapConstExp decInt op = Token (DECNUM decInt) (tokenData op)
+
+generateLvalOps :: Lval -> (Token, [LvalElabOpCat])
+generateLvalOps lval = 
+    case lval of
+        IDENT_LVAL i -> (i, [])
+        DEREF_LVAL d -> 
+            let (i, subOps) = generateLvalOps d
+            in (i, subOps ++ [DEREF_LVALOP_ELAB])

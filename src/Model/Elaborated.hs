@@ -11,6 +11,8 @@ module Model.Elaborated (
     RetElab (..),
     AbortElab (..),
     SeqElab,
+    LvalElab (..),
+    LvalElabOpCat (..),
     ExpElab (..),
     TernopElab (..),
     BinopElab (..),
@@ -79,7 +81,7 @@ data DeclElab = DeclElab
     deriving Show
 
 data AsnElab = AsnElab
-    { asnElabIdentifier :: Token
+    { asnElabLval :: LvalElab
     , asnElabExpression :: ExpElab
     }
     deriving Show
@@ -109,6 +111,16 @@ data AbortElab = AbortElab
 
 type SeqElab = [StatementElab]
 
+data LvalElab = LvalElab
+    { lvalElabIdentifier :: Token
+    , lvalElabOps :: [LvalElabOpCat]
+    }
+    deriving Show
+
+data LvalElabOpCat
+    = DEREF_LVALOP_ELAB
+    deriving Show
+
 data ExpElab
     = CONST_ELAB Const
     | IDENTIFIER_ELAB Token
@@ -117,6 +129,7 @@ data ExpElab
     | UNOP_ELAB UnopElab
     | TERN_ELAB TernopElab
     | FN_CALL_ELAB FunctionCallElab
+    | REF_LVAL_EXP_ELAB
     deriving Show
 
 data BinopElab = BinopElab

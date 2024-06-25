@@ -3,13 +3,15 @@ module Model.X86 (
     X86Instruction (..),
     ArgLocation (..),
     Register (..),
+    displayArgLoc,
     callerSavedRegisters,
     calleeSavedRegisters,
     availableRegisters,
     registerSize,
     trueX86,
     falseX86,
-    abort
+    nullX86,
+    abort,
 )
 where
 
@@ -118,6 +120,7 @@ type Label = String
 
 data ArgLocation
     = REG_ARGLOC Register
+    | REFREG_ARGLOC Register
     | STACK_ARGLOC Int
     | BASE_ARGLOC Int
     | CONST_ARGLOC Int
@@ -125,6 +128,7 @@ instance Eq ArgLocation where
     argLoc1 == argLoc2 = 
         case (argLoc1, argLoc2) of
             (REG_ARGLOC r1, REG_ARGLOC r2) -> r1 == r2
+            (REFREG_ARGLOC r1, REFREG_ARGLOC r2) -> r1 == r2
             (STACK_ARGLOC sp1, STACK_ARGLOC sp2) -> sp1 == sp2
             (BASE_ARGLOC bp1, BASE_ARGLOC bp2) -> bp1 == bp2
             (CONST_ARGLOC c1, CONST_ARGLOC c2) -> c1 == c2
@@ -134,6 +138,7 @@ displayArgLoc :: ArgLocation -> String
 displayArgLoc argLoc =
     case argLoc of
         REG_ARGLOC reg -> show reg
+        REFREG_ARGLOC reg -> Printf.printf "[%s]" (show reg)
         STACK_ARGLOC stackPtr ->
             if (stackPtr >= 0)
                 then Printf.printf "QWORD [%s + %s]" (show SP) (show stackPtr)
@@ -190,7 +195,7 @@ calleeSavedRegisters = [BX, BP, DI, SI, R12, R13, R14, R15]
 
 -- returns registers initially available for arguments
 availableRegisters :: [Register]
-availableRegisters = [BX, CX, SI, DI, R8, R9, R10, R11, R12, R13, R14, R15]
+availableRegisters = [BX, SI, DI, R8, R9, R10, R11, R12, R13, R14, R15]
 
 registerSize :: Int
 registerSize = 8
@@ -201,6 +206,9 @@ trueX86 = 1
 
 falseX86 :: Int
 falseX86 = 0
+
+nullX86 :: Int
+nullX86 = 0
 
 -- runtime functions
 abort :: Label

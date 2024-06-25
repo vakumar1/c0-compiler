@@ -153,17 +153,35 @@ mainCommIrToX86 coloring comm alloc =
         INIT_IR var -> 
             []
         ASN_PURE_IR asnVar asnPure -> 
-            asnPureIrToX86 coloring asnVar asnPure alloc
+            asnPureIrToX86 coloring False asnVar asnPure alloc
         ASN_IMPURE_IR asnVar asnImpure -> 
-            asnImpureIrToX86 coloring asnVar asnImpure alloc
+            asnImpureIrToX86 coloring False asnVar asnImpure alloc
+        DEREF_ASN_PURE_IR asnVar asnPure ->
+            asnPureIrToX86 coloring True asnVar asnPure alloc
+        DEREF_ASN_IMPURE_IR asnVar asnImpure -> 
+            asnImpureIrToX86 coloring True asnVar asnImpure alloc
         ABORT_IR ->
             abortIrToX86 alloc
         _ ->
             error . compilerError $ "Attempted to translate ir->X86 non-main command as a main command: comm=" ++ (show comm)
 
-asnPureIrToX86 :: Coloring -> VariableIr -> PureIr -> AllocState -> [X86Instruction]
-asnPureIrToX86 coloring asnVar asnPure alloc =
-    let asnVarLoc = getVarLoc asnVar coloring alloc
+asnPureIrToX86 :: Coloring -> Bool -> VariableIr -> PureIr -> AllocState -> [X86Instruction]
+asnPureIrToX86 coloring deref asnVar asnPure alloc =
+    let baseVarLoc = getVarLoc asnVar coloring alloc
+        (asnInst, asnVarLoc) = 
+            case baseVarLoc of
+                REG_ARGLOC r ->
+                    if deref
+                        then ([], REFREG_ARGLOC r)
+                        else ([], baseVarLoc)
+                STACK_ARGLOC s -> 
+                    if deref
+                        then 
+                            ([ MOV_X86 (REG_ARGLOC CX) baseVarLoc
+                            ],
+                            (REFREG_ARGLOC CX)
+                            )
+                        else ([], baseVarLoc)
     in case asnPure of
             PURE_BASE_IR base ->
                 case base of
@@ -551,7 +569,7 @@ asnPureIrToX86 coloring asnVar asnPure alloc =
                                         , SHR_X86 (REG_ARGLOC DX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         ]
-                in binopInst
+                in asnInst ++ binopInst
             PURE_UNOP_IR (PureUnopIr cat ty base) ->
                 let pureVarLoc =
                         case base of
@@ -571,11 +589,54 @@ asnPureIrToX86 coloring asnVar asnPure alloc =
                                 [ MOV_X86 asnVarLoc pureVarLoc
                                 , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
                                 ]
-                in unopInst
+                            DEREF_IR ->
+                                case (asnVarLoc, pureVarLoc) of
+                                    (REG_ARGLOC a, REG_ARGLOC p) ->
+                                        [ MOV_X86 asnVarLoc (REFREG_ARGLOC p)
+                                        ]
+                                    (REG_ARGLOC a, STACK_ARGLOC p) ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 asnVarLoc (REFREG_ARGLOC DX)
+                                        ]
+                                    (REFREG_ARGLOC a, REG_ARGLOC p) ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
+                                    (REFREG_ARGLOC a, STACK_ARGLOC p) ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 (REG_ARGLOC CX) (REFREG_ARGLOC DX)
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC CX)
+                                        ]
+                                    (STACK_ARGLOC a, REG_ARGLOC p) ->
+                                        [ MOV_X86 (REG_ARGLOC DX) (REFREG_ARGLOC p)
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
+                                    (STACK_ARGLOC a, STACK_ARGLOC p) ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 (REG_ARGLOC CX) (REFREG_ARGLOC DX)
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC CX)
+                                        ]
+                                    _ ->
+                                        error . compilerError $ ("Attempted to apply deref onto non-reg/stack variable=" ++ (show base) ++ " location=" ++ (displayArgLoc pureVarLoc))
+                in asnInst ++ unopInst
 
-asnImpureIrToX86 :: Coloring -> VariableIr -> ImpureIr -> AllocState -> [X86Instruction]
-asnImpureIrToX86 coloring asnVar asnImpure alloc =
-    let asnVarLoc = getVarLoc asnVar coloring alloc
+asnImpureIrToX86 :: Coloring -> Bool -> VariableIr -> ImpureIr -> AllocState -> [X86Instruction]
+asnImpureIrToX86 coloring deref asnVar asnImpure alloc =
+    let baseVarLoc = getVarLoc asnVar coloring alloc
+        (asnInst, asnVarLoc) = 
+            case baseVarLoc of
+                REG_ARGLOC r ->
+                    if deref
+                        then ([], REFREG_ARGLOC r)
+                        else ([], baseVarLoc)
+                STACK_ARGLOC s -> 
+                    if deref
+                        then 
+                            ([ MOV_X86 (REG_ARGLOC CX) baseVarLoc
+                            ],
+                            (REFREG_ARGLOC CX)
+                            )
+                        else ([], baseVarLoc)
     in case asnImpure of
             IMPURE_FNCALL_IR (ImpureFnCallIr fnIdentifier argBases retTy) ->
                 let argVarLocs = 
@@ -618,7 +679,7 @@ asnImpureIrToX86 coloring asnVar asnImpure alloc =
                         [ ADD_X86 (REG_ARGLOC SP) (CONST_ARGLOC (registerSize * (length argVarLocs)))
                         ]
                     callerSavePopInst = fnCallerPostprocessing alloc
-                in callerSavePushInst ++ argPushInst ++ callInst ++ copyRetInst ++ argClearInst ++ callerSavePopInst
+                in asnInst ++ callerSavePushInst ++ argPushInst ++ callInst ++ copyRetInst ++ argClearInst ++ callerSavePopInst
 
             IMPURE_BINOP_IR (ImpureBinopIr cat ty base1 base2) ->
                 let pureVarLoc1 =
@@ -671,7 +732,7 @@ asnImpureIrToX86 coloring asnVar asnImpure alloc =
                                         , IDIV_X86 pureVarLoc2                                  -- divide AX / divisor (in reg/on stack)
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)                     -- move remainder to result
                                         ]
-                in binopInst
+                in asnInst ++ binopInst
 
 abortIrToX86 :: AllocState -> [X86Instruction]
 abortIrToX86 alloc = 
@@ -979,6 +1040,29 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
                                     [ JMP_X86 (bbToLabel fnName splitFalse)
                                     ]
+                        DEREF_IR ->
+                            case pureVarLoc of
+                                REG_ARGLOC p ->
+                                    [ CMP_X86 (REFREG_ARGLOC p) (CONST_ARGLOC trueX86)
+                                    ] ++
+                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                    [ JZ_X86 (bbToLabel fnName splitTrue)
+                                    ] ++
+                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                    [ JMP_X86 (bbToLabel fnName splitFalse)
+                                    ]
+                                STACK_ARGLOC p ->
+                                    [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                    , CMP_X86 (REFREG_ARGLOC DX) (CONST_ARGLOC trueX86)
+                                    ] ++
+                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                    [ JZ_X86 (bbToLabel fnName splitTrue)
+                                    ] ++
+                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                    [ JMP_X86 (bbToLabel fnName splitFalse)
+                                    ]
+                                _ ->
+                                    error . compilerError $ ("Attempted to apply deref onto non-reg/stack variable=" ++ (show base) ++ " location=" ++ (displayArgLoc pureVarLoc))
                     in splitInst
 
 -- RET: prepends no phi-fn insts. to ret inst.
@@ -1115,6 +1199,19 @@ retToX86 coloring retPure bbX86 alloc =
                             , XOR_X86 (REG_ARGLOC AX) (CONST_ARGLOC trueX86)
                             ] ++
                             (fnCalleePostprocessing alloc)
+                        DEREF_IR ->
+                            case pureVarLoc of
+                                REG_ARGLOC p ->
+                                    [ MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC p)
+                                    ] ++
+                                    (fnCalleePostprocessing alloc)
+                                STACK_ARGLOC p ->
+                                    [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                    , MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC DX)
+                                    ] ++
+                                    (fnCalleePostprocessing alloc)
+                                _ ->
+                                    error . compilerError $ ("Attempted to apply deref onto non-reg/stack variable=" ++ (show base) ++ " location=" ++ (displayArgLoc pureVarLoc))
             in retInst
 
 retNoneToX86 :: AllocState -> [X86Instruction]
@@ -1276,6 +1373,7 @@ getConstLoc const =
             if bool
                 then CONST_ARGLOC trueX86
                 else CONST_ARGLOC falseX86
+        NULL_CONST -> CONST_ARGLOC nullX86
 
 getVarLoc :: VariableIr -> Map.Map VariableIr Int -> AllocState -> ArgLocation
 getVarLoc var coloring alloc = 

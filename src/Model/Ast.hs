@@ -134,15 +134,16 @@ data For = For
     deriving (Show)
 
 -- statement objects
-data Lval = Lval
-    { lvalIdent :: Token
-    }
+data Lval 
+    = IDENT_LVAL Token
+    | DEREF_LVAL Lval
     deriving (Show)
 
 data Exp
     = HEXNUM_EXP Token
     | DECNUM_EXP Token
     | BOOL_EXP Token
+    | NULL_EXP Token
     | IDENTIFIER_EXP Token
     | BINOP_EXP Binop
     | UNOP_EXP Unop
@@ -177,7 +178,13 @@ data FunctionCall = FunctionCall
     }
     deriving (Show)
 
-data Type = Type
-    { typeToken :: Token
-    }
+data Type 
+    = BASE_TYPE_AST Token
+    | POINTER_TYPE_AST Type
     deriving (Show)
+
+getBaseTypeToken :: Type -> Token
+getBaseTypeToken ty = 
+    case ty of
+        BASE_TYPE_AST tok -> tok
+        POINTER_TYPE_AST t -> getBaseTypeToken t
