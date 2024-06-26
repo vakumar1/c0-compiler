@@ -413,53 +413,117 @@ irDecl (DeclElab varElab (Just asn)) state =
     in (False, False, predecessorCommandsSingleton declState, asnState)    
 
 irAsn :: AsnElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
-irAsn (AsnElab (LvalElab lvalTok lvalOps) e) state =
-    let (m_expPT, expState) = irExp e state
-        m_varElab = identifierLookup lvalTok (scopes . irProcScopeState $ expState)
-     in case m_varElab of
-            -- fail if varElab is not declared
+irAsn (AsnElab lval e) state =
+    let (lvalDeref, m_lvalVT, lvalState) = expandLval lval state
+    in 
+        case m_lvalVT of
+            -- fail if failed to unwrap lval
             Nothing ->
-                let asnState = irProcessingStateAppendErrs [USE_BEFORE_DECL (UseBeforeDeclarationError lvalTok)] expState
-                in (False, False, predecessorCommandsSingleton asnState, asnState)
-            -- check that varElab is declared
-            Just (varElab, _, varScopeId) ->
-                let varName = extractIdentifierName (variableElabIdentifier varElab)
-                    setScopeState = irProcessingScopeStateSetAssignedInScope (irProcScopeState expState) varName varElab varScopeId
-                 in case m_expPT of
-                        -- fail if exp is malformed
+                (False, False, predecessorCommandsSingleton lvalState, lvalState)
+            -- process exp after unwrapping lval
+            Just (lvalVar, lvalTy, (varName, varElab, varScopeId)) ->
+                let (m_expPT, expState) = irExp e lvalState
+                in 
+                    case m_expPT of
+                        -- fail if failed to process exp
                         Nothing ->
-                            let asnState = irProcessingStateUpdateScopeState setScopeState expState
-                            in (False, False, predecessorCommandsSingleton asnState, asnState)
+                            (False, False, predecessorCommandsSingleton expState, expState)
+                        -- check that unwrapped lval and exp have same type (without aborting) + add final asn statement
                         Just (expPu, expTy) ->
-                            -- attempt to unwrap lval
-                            let varIr = varElabToIr varElab varScopeId
-                                varTy = typeElabType (variableElabType varElab)
-                                (lvalComms, m_lvalTy, lvalScopeState) = expandLvalOps varIr varTy lvalOps expPu setScopeState
-                            in case m_lvalTy of
-                                Nothing ->
-                                    -- fail if attempted to unwrap incompatible lval type
-                                    let asnState = 
-                                            (irProcessingStateAppendErrs [ASN_TYPE_DEREF (AsnTypeDereference lvalTok varTy)]) .
-                                            (irProcessingStateUpdateScopeState lvalScopeState) $
-                                            expState
-                                    in (False, False, predecessorCommandsSingleton asnState, asnState)
-                                Just lvalTy ->
-                                    -- checked that unwrapped lval and exp have same type
-                                    if lvalTy /= expTy
-                                        -- fail on type mismatch
+                            let typeCheckErrs = 
+                                    if lvalDeref
                                         then
-                                            let asnState = 
-                                                    (irProcessingStateAppendErrs [ASN_TYPE_MISMATCH (AsnTypeMismatch lvalTok lvalTy expTy)]) .
-                                                    (irProcessingStateUpdateScopeState lvalScopeState) $
-                                                    expState
-                                            in (False, False, predecessorCommandsSingleton asnState, asnState)
-                                        -- success - add asn statement to basic block
+                                            case lvalTy of
+                                                POINTER_TYPE derefTy ->
+                                                    if derefTy == expTy
+                                                        then []
+                                                        else [ASN_TYPE_MISMATCH (AsnTypeMismatch (lvalElabIdentifier lval) derefTy expTy)]
+                                                _ -> [ASN_TYPE_DEREF (AsnTypeDereference (lvalElabIdentifier lval) lvalTy)]
                                         else
-                                            let asnState = 
-                                                    (irProcessingStateAddComms lvalComms) .
-                                                    (irProcessingStateUpdateScopeState lvalScopeState) $
-                                                    expState
-                                            in (False, False, predecessorCommandsSingleton asnState, asnState)
+                                            if lvalTy == expTy
+                                                then []
+                                                else [ASN_TYPE_MISMATCH (AsnTypeMismatch (lvalElabIdentifier lval) lvalTy expTy)]
+                                asnComm = 
+                                    if lvalDeref
+                                        then DEREF_ASN_PURE_IR lvalVar expPu
+                                        else ASN_PURE_IR lvalVar expPu
+                                setScopeState = 
+                                    if lvalDeref
+                                        then (irProcScopeState expState)
+                                        else (irProcessingScopeStateSetAssignedInScope (irProcScopeState expState) varName varElab varScopeId)
+                                asnState = 
+                                    (irProcessingStateAppendErrs typeCheckErrs) .
+                                    (irProcessingStateAddComms [asnComm]) .
+                                    (irProcessingStateUpdateScopeState setScopeState) $
+                                    expState
+                            in (False, False, predecessorCommandsSingleton asnState, asnState)
+
+-- expands an lval until the final variable to be assigned
+-- returns 
+--   bool - whether the return var should be dereferenced
+--   var/type + name/varElab/scopeId - final var/type after expansion (if successful) + scope metadata for final scope update
+--   processing state - includes errors + comms
+expandLval :: LvalElab -> IrProcessingState -> (Bool, Maybe (VariableIr, TypeCategory, (String, VariableElab, Int)), IrProcessingState)
+expandLval (LvalElab lvalTok lvalOps) state = 
+    case (identifierLookup lvalTok (scopes . irProcScopeState $ state)) of
+        -- fail if varElab is not declared
+        Nothing ->
+            let lvalState = irProcessingStateAppendErrs [USE_BEFORE_DECL (UseBeforeDeclarationError lvalTok)] state
+            in (False, Nothing, lvalState)
+        -- process declared varElab
+        Just (varElab, varAssigned, varScopeId) ->
+            let varName = extractIdentifierName . variableElabIdentifier $ varElab
+                varIr = varElabToIr varElab varScopeId
+                varTy = typeElabType . variableElabType $ varElab
+                varData = (varName, varElab, varScopeId)
+            in 
+                case lvalOps of
+                    -- no lval ops --> directly return var
+                    [] -> 
+                        (False, Just (varIr, varTy, varData), state)
+                    
+                    -- >= 1 deref lval op
+                    _ ->
+                        -- verify var has been assigned before deref
+                        let 
+                            asnCheckState = 
+                                if varAssigned
+                                    then state
+                                    else irProcessingStateAppendErrs [USE_BEFORE_ASN (UseBeforeAssignmentError lvalTok)] state
+                        in
+                            foldl
+                                (\(_, m_lvalVT, interState) lvalOp ->
+                                    case m_lvalVT of
+                                        -- skip if already aborted
+                                        Nothing -> 
+                                            (True, m_lvalVT, interState)
+                                        -- attempt to deref interVar
+                                        Just (interVarIr, interVarTy, _) ->
+                                            case interVarTy of
+                                                -- verify var has pointer type
+                                                POINTER_TYPE derefTy ->
+                                                    let (tempName, tempScopeState) = irProcessingScopeStateAddTemp (irProcScopeState interState)
+                                                        derefTemp = VariableIr tempName 0 derefTy True
+                                                        derefComm = 
+                                                            ASN_PURE_IR
+                                                                derefTemp
+                                                                (PURE_UNOP_IR
+                                                                    (PureUnopIr
+                                                                        DEREF_IR
+                                                                        derefTy
+                                                                        (VAR_IR interVarIr)))
+                                                        derefState = 
+                                                            (irProcessingStateAddComms [derefComm]) .
+                                                            (irProcessingStateUpdateScopeState tempScopeState) $
+                                                            interState
+                                                    in (True, Just (derefTemp, derefTy, varData), derefState)
+                                                -- abort if cannot deref
+                                                _ ->
+                                                    let lvalState = irProcessingStateAppendErrs [ASN_TYPE_DEREF (AsnTypeDereference lvalTok interVarTy)] interState
+                                                    in (True, Nothing, lvalState)
+                                )
+                                (True, Just (varIr, varTy, varData), asnCheckState)
+                                (init lvalOps)
 
 irExpStmt :: ExpElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
 irExpStmt e state =
@@ -526,12 +590,14 @@ irIdentifier tok state =
     let (m_expPT, errs) = 
             case identifierLookup tok (scopes . irProcScopeState $ state) of
                 Just (varElab, varAssigned, varScopeId) ->
-                    if varAssigned
-                        then
-                            let varIr = varElabToIr varElab varScopeId
-                                varTypeCat = (typeElabType (variableElabType varElab))
-                            in (Just (PURE_BASE_IR (VAR_IR varIr), varTypeCat), [])
-                        else (Nothing, [USE_BEFORE_ASN (UseBeforeAssignmentError tok)])
+                    let varIr = varElabToIr varElab varScopeId
+                        varTypeCat = (typeElabType (variableElabType varElab))
+                    in
+                        if varAssigned
+                            then
+                                (Just (PURE_BASE_IR (VAR_IR varIr), varTypeCat), [])
+                            else
+                                (Just (PURE_BASE_IR (VAR_IR varIr), varTypeCat), [USE_BEFORE_ASN (UseBeforeAssignmentError tok)])
                 Nothing ->
                     (Nothing, [USE_BEFORE_DECL (UseBeforeDeclarationError tok)])
     in (m_expPT, irProcessingStateAppendErrs errs state)
@@ -1201,37 +1267,3 @@ expandPureIr pu state =
                 unopTemp = VariableIr tempName 0 (pureUnopInfType unop) True
                 unopComm = ASN_PURE_IR unopTemp pu
              in ([unopComm], VAR_IR unopTemp, newState)
-
-expandLvalOps :: VariableIr -> TypeCategory -> [LvalElabOpCat] -> PureIr -> IrProcessingScopeState -> ([CommandIr], Maybe TypeCategory, IrProcessingScopeState)
-expandLvalOps varIr varTy lvalOps expPu state = 
-    case lvalOps of
-        [] -> 
-            -- no lval ops --> directly assign var
-            ([ASN_PURE_IR varIr expPu], Just varTy, state)
-        DEREF_LVALOP_ELAB : [] ->
-            -- exactly 1 deref lval op --> assign deref'd var
-            case varTy of
-                POINTER_TYPE derefTy ->
-                    ([DEREF_ASN_PURE_IR varIr expPu], Just derefTy, state)
-                _ -> 
-                    ([], Nothing, state)
-        DEREF_LVALOP_ELAB : _ -> 
-            -- > 1 deref lval op --> deref var into temporary var and recursively apply outer lval ops
-            case varTy of
-                -- attempt to deref var
-                POINTER_TYPE derefTy -> 
-                    let (tempName, newState) = irProcessingScopeStateAddTemp state
-                        derefTemp = VariableIr tempName 0 derefTy True
-                        derefComm = 
-                            ASN_PURE_IR
-                                derefTemp
-                                (PURE_UNOP_IR
-                                    (PureUnopIr
-                                        DEREF_IR
-                                        derefTy
-                                        (VAR_IR varIr)))
-                        (outerComms, outerTy, finalState) = expandLvalOps derefTemp derefTy (tail lvalOps) expPu newState
-                    in (outerComms ++ [derefComm], outerTy, finalState)
-                -- immediatley fail if var cannot be deref'd
-                _ -> 
-                    ([], Nothing, state)
