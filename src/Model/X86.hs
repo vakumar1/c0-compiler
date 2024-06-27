@@ -138,7 +138,7 @@ displayArgLoc :: ArgLocation -> String
 displayArgLoc argLoc =
     case argLoc of
         REG_ARGLOC reg -> show reg
-        REFREG_ARGLOC reg -> Printf.printf "[%s]" (show reg)
+        REFREG_ARGLOC reg -> Printf.printf "QWORD [%s]" (show reg)
         STACK_ARGLOC stackPtr ->
             if (stackPtr >= 0)
                 then Printf.printf "QWORD [%s + %s]" (show SP) (show stackPtr)

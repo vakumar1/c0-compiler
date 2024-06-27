@@ -184,6 +184,7 @@ data UnopCatElab
     = NEG_EXP_ELAB
     | NOT_EXP_ELAB
     | LOGNOT_EXP_ELAB
+    | DEREF_EXP_ELAB
     deriving Show
 
 data TernopElab = TernopElab

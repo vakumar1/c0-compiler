@@ -232,6 +232,12 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             [ MOV_X86 asnVarLoc pureVarLoc1
                                             , ADD_X86 asnVarLoc pureVarLoc2
                                             ]
+                                    -- M[reg] = y + z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , ADD_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y + z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -254,6 +260,12 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             [ MOV_X86 asnVarLoc pureVarLoc1
                                             , SUB_X86 asnVarLoc pureVarLoc2
                                             ]
+                                    -- M[reg] = y - z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y - z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -274,6 +286,12 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             [ MOV_X86 asnVarLoc pureVarLoc1
                                             , IMUL_X86 asnVarLoc pureVarLoc2
                                             ]
+                                    -- M[reg] = y * z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , IMUL_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y * z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -294,6 +312,12 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             [ MOV_X86 asnVarLoc pureVarLoc1
                                             , AND_X86 asnVarLoc pureVarLoc2
                                             ]
+                                    -- M[reg] = y & z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , AND_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y & z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -314,6 +338,12 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             [ MOV_X86 asnVarLoc pureVarLoc1
                                             , XOR_X86 asnVarLoc pureVarLoc2
                                             ]
+                                    -- M[reg] = y ^ z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , XOR_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y ^ z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -334,6 +364,12 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             [ MOV_X86 asnVarLoc pureVarLoc1
                                             , OR_X86 asnVarLoc pureVarLoc2
                                             ]
+                                    -- M[reg] = y * z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , OR_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y * z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -354,6 +390,12 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             [ MOV_X86 asnVarLoc pureVarLoc1
                                             , SAL_X86 asnVarLoc pureVarLoc2
                                             ]
+                                    -- M[reg] = y << z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , SAL_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y << z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -374,6 +416,12 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             [ MOV_X86 asnVarLoc pureVarLoc1
                                             , SAR_X86 asnVarLoc pureVarLoc2
                                             ]
+                                    -- M[reg] = y >> z -> perform binop in DX and move to M[reg]
+                                    STACK_ARGLOC asnVarStackLoc ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , SAR_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y >> z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -400,6 +448,13 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , SUB_X86 asnVarLoc pureVarLoc2
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
+                                    -- M[reg] = y < z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , SHR_X86 (REG_ARGLOC DX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y < z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -426,6 +481,13 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , SUB_X86 asnVarLoc pureVarLoc1
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
+                                    -- M[reg] = y < z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , SUB_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , SHR_X86 (REG_ARGLOC DX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y < z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc2
@@ -455,6 +517,14 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , NOT_X86 asnVarLoc
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
+                                    -- M[reg] = y <= z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , SUB_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , NOT_X86 (REG_ARGLOC DX)
+                                        , SHR_X86 (REG_ARGLOC DX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y <= z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc2
@@ -485,6 +555,14 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , NOT_X86 asnVarLoc
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
+                                    -- M[reg] = y >= z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , NOT_X86 (REG_ARGLOC DX)
+                                        , SHR_X86 (REG_ARGLOC DX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y >= z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -522,6 +600,17 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , NOT_X86 asnVarLoc
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
+                                    -- M[reg] = y == z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , MOV_X86 (REG_ARGLOC AX) pureVarLoc2
+                                        , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , SUB_X86 (REG_ARGLOC AX) pureVarLoc1
+                                        , OR_X86 (REG_ARGLOC DX) (REG_ARGLOC AX)
+                                        , NOT_X86 (REG_ARGLOC DX)
+                                        , SHR_X86 (REG_ARGLOC DX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y == z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -559,6 +648,16 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , OR_X86 asnVarLoc (REG_ARGLOC DX)
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
+                                    -- M[reg] = y != z -> perform binop in DX and move to M[reg]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
+                                        , MOV_X86 (REG_ARGLOC AX) pureVarLoc2
+                                        , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
+                                        , SUB_X86 (REG_ARGLOC AX) pureVarLoc1
+                                        , OR_X86 (REG_ARGLOC DX) (REG_ARGLOC AX)
+                                        , SHR_X86 (REG_ARGLOC DX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
                                     -- S[i] = y != z -> perform binop in DX and move to S[i]
                                     STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
@@ -578,17 +677,53 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                     unopInst = 
                         case cat of
                             NEG_IR ->
-                                [ MOV_X86 asnVarLoc pureVarLoc
-                                , NEG_X86 asnVarLoc
-                                ]
+                                case asnVarLoc of
+                                    REG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 asnVarLoc pureVarLoc
+                                        , NEG_X86 asnVarLoc
+                                        ]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        , NEG_X86 asnVarLoc
+                                        ]
+                                    STACK_ARGLOC asnVarStackLock ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        , NEG_X86 asnVarLoc
+                                        ]
                             NOT_IR ->
-                                [ MOV_X86 asnVarLoc pureVarLoc
-                                , NOT_X86 asnVarLoc
-                                ]
+                                case asnVarLoc of
+                                    REG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 asnVarLoc pureVarLoc
+                                        , NOT_X86 asnVarLoc
+                                        ]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        , NOT_X86 asnVarLoc
+                                        ]
+                                    STACK_ARGLOC asnVarStackLock ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        , NOT_X86 asnVarLoc
+                                        ]
                             LOGNOT_IR ->
-                                [ MOV_X86 asnVarLoc pureVarLoc
-                                , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
-                                ]
+                                case asnVarLoc of
+                                    REG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 asnVarLoc pureVarLoc
+                                        , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
+                                        ]
+                                    REFREG_ARGLOC asnVarReg ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
+                                        ]
+                                    STACK_ARGLOC asnVarStackLock ->
+                                        [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
+                                        ]
                             DEREF_IR ->
                                 case (asnVarLoc, pureVarLoc) of
                                     (REG_ARGLOC a, REG_ARGLOC p) ->

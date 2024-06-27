@@ -44,6 +44,8 @@ data IrProcessingScopeState = IrProcessingScopeState
     , globalFnScope :: GlobalFnScope                -- current fn signatures in global scope
     , regCtr :: Int                                 -- current register id counter
     , mapCtr :: Int                                 -- current scope id counter
+    , asnVarCtx :: Maybe (Bool, Token, VariableIr, TypeCategory)
+                                                    -- asn statement deref/var/type context for substitution in exp processing
     }
     deriving Show
 
@@ -134,7 +136,7 @@ irFunction fnScope fnElab =
                             Nothing ->
                                 (interArgVars ++ [varIr], irProcessingScopeStateInsertToTopScope interScopeState varName varElab True, interDeclErrs)
                 )
-                ([], irProcessingScopeStateAddScope (IrProcessingScopeState [] newFnScope 0 0), [])
+                ([], irProcessingScopeStateAddScope (IrProcessingScopeState [] newFnScope 0 0 Nothing), [])
                 (functionSignatureElabArgs . functionElabSignature $ fnElab)
         initFnIr = FunctionIr fnName fnIrArgVars Map.empty emptyGraph
         initState = IrProcessingState initBbIr initFnIr [] 1 initScopeState
@@ -420,9 +422,15 @@ irAsn (AsnElab lval e) state =
             -- fail if failed to unwrap lval
             Nothing ->
                 (False, False, predecessorCommandsSingleton lvalState, lvalState)
-            -- process exp after unwrapping lval
+            -- process exp after unwrapping lval (with lval substitution in scope state)
             Just (lvalVar, lvalTy, (varName, varElab, varScopeId)) ->
-                let (m_expPT, expState) = irExp e lvalState
+                let 
+                    refLvalState = 
+                        irProcessingStateUpdateScopeState 
+                            (irProcessingScopeStateSetAsnCtx (irProcScopeState lvalState) lvalDeref (lvalElabIdentifier lval) lvalVar lvalTy) 
+                            lvalState
+                    (m_expPT, refExpState) = irExp e refLvalState
+                    expState = irProcessingStateUpdateScopeState (irProcessingScopeStateUnsetAsnCtx (irProcScopeState refExpState)) refExpState
                 in 
                     case m_expPT of
                         -- fail if failed to process exp
@@ -581,6 +589,33 @@ irExp e state =
         TERN_ELAB t -> irTernop t state
         UNOP_ELAB u -> irUnop u state
         FN_CALL_ELAB f -> irFunctionCall f state
+        REF_LVAL_EXP_ELAB -> irRefLval state
+
+irRefLval :: IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
+irRefLval state = 
+    case (asnVarCtx . irProcScopeState $ state) of
+        Just (deref, lvalTok, lvalVar, lvalTy) -> 
+            if deref
+                -- attempt to deref the lval
+                then
+                    case lvalTy of
+                        -- deref the lval
+                        POINTER_TYPE derefTy ->
+                            let derefPu = 
+                                    PURE_UNOP_IR
+                                        (PureUnopIr
+                                            DEREF_IR
+                                            derefTy
+                                            (VAR_IR lvalVar))
+                            in (Just (derefPu, derefTy), state)
+                        -- fail if the lval does not have a pointer type
+                        _ ->
+                            let refState = irProcessingStateAppendErrs [ASN_TYPE_DEREF (AsnTypeDereference lvalTok lvalTy)] state
+                            in (Nothing, refState)
+                -- directly use the lval
+                else
+                    (Just (PURE_BASE_IR (VAR_IR lvalVar), lvalTy), state)
+        Nothing -> error . compilerError $ "Attempted to substitute lval reference in non-asn exp context"
 
 irConst :: Const -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irConst const state = (Just (PURE_BASE_IR (CONST_IR const), constToType const), state)
@@ -1020,6 +1055,7 @@ irProcessingScopeStateAddTemp state =
                 (globalFnScope state)
                 ((regCtr state) + 1) 
                 (mapCtr state)
+                (asnVarCtx state)
     in (tempName, newIrProcScopeState)
 
 irProcessingScopeStateAddScope :: IrProcessingScopeState -> IrProcessingScopeState
@@ -1030,6 +1066,7 @@ irProcessingScopeStateAddScope state =
             (globalFnScope state)
             (regCtr state) 
             ((mapCtr state) + 1)
+            (asnVarCtx state)
 
 irProcessingScopeStateInsertToTopScope :: IrProcessingScopeState -> String -> VariableElab -> Bool -> IrProcessingScopeState
 irProcessingScopeStateInsertToTopScope state name varElab initAssigned =
@@ -1043,6 +1080,7 @@ irProcessingScopeStateInsertToTopScope state name varElab initAssigned =
             (globalFnScope state)
             (regCtr state) 
             (mapCtr state)
+            (asnVarCtx state)
 
 irProcessingScopeStateSetAssignedInScope :: IrProcessingScopeState -> String -> VariableElab -> Int -> IrProcessingScopeState
 irProcessingScopeStateSetAssignedInScope state varName varElab varScopeId =
@@ -1061,6 +1099,7 @@ irProcessingScopeStateSetAssignedInScope state varName varElab varScopeId =
             (globalFnScope state)
             (regCtr state) 
             (mapCtr state)
+            (asnVarCtx state)
 
 irProcessingScopeStatePopScopeMap :: IrProcessingScopeState -> IrProcessingScopeState
 irProcessingScopeStatePopScopeMap state = 
@@ -1069,6 +1108,25 @@ irProcessingScopeStatePopScopeMap state =
         (globalFnScope state)
         (regCtr state) 
         (mapCtr state)
+        (asnVarCtx state)
+
+irProcessingScopeStateSetAsnCtx :: IrProcessingScopeState -> Bool -> Token -> VariableIr -> TypeCategory -> IrProcessingScopeState
+irProcessingScopeStateSetAsnCtx state deref asnTok asnVar asnTy = 
+    IrProcessingScopeState 
+        (scopes state)
+        (globalFnScope state)
+        (regCtr state) 
+        (mapCtr state)
+        (Just (deref, asnTok, asnVar, asnTy))
+
+irProcessingScopeStateUnsetAsnCtx :: IrProcessingScopeState -> IrProcessingScopeState
+irProcessingScopeStateUnsetAsnCtx state = 
+    IrProcessingScopeState 
+        (scopes state)
+        (globalFnScope state)
+        (regCtr state) 
+        (mapCtr state)
+        Nothing
 
 identifierLookup :: Token -> [Scope] -> Maybe (VariableElab, Bool, Int)
 identifierLookup tok scopes =
@@ -1239,6 +1297,10 @@ unopTypeInf cat t1 =
             case t1 of
                 BOOL_TYPE -> Just BOOL_TYPE
                 _ -> Nothing
+        DEREF_EXP_ELAB ->
+            case t1 of
+                POINTER_TYPE derefTy -> Just derefTy
+                _ -> Nothing
 
 unopOpTranslate :: UnopCatElab -> TypeCategory -> PureIr -> IrProcessingScopeState -> ([CommandIr], PureIr, IrProcessingScopeState)
 unopOpTranslate cat ty p1 state =
@@ -1250,6 +1312,8 @@ unopOpTranslate cat ty p1 state =
                 (expandComms, PURE_UNOP_IR (PureUnopIr NOT_IR ty expandPureBase), expandState)
             LOGNOT_EXP_ELAB ->
                 (expandComms, PURE_UNOP_IR (PureUnopIr LOGNOT_IR ty expandPureBase), expandState)
+            DEREF_EXP_ELAB ->
+                (expandComms, PURE_UNOP_IR (PureUnopIr DEREF_IR ty expandPureBase), expandState)
 
 -- applies an extra level of processing to convert potentially recursive PureIr into
 -- [CommandIr] + Const/VariableIr

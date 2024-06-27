@@ -294,6 +294,7 @@ translateUnop cat =
         DASH -> NEG_EXP_ELAB
         TILDE -> NOT_EXP_ELAB
         EXCL -> LOGNOT_EXP_ELAB
+        STAR -> DEREF_EXP_ELAB
         _ -> error (compilerError "Attempt to translate non-unop exp token.")
 
 decomposeAsnOp :: Token -> Token
