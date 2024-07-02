@@ -261,6 +261,8 @@ Unop :
     '-' Exp             %prec UNOP { UNOP_EXP (Unop $1 $2) }
     | '~' Exp           %prec UNOP { UNOP_EXP (Unop $1 $2) }
     | '!' Exp           %prec UNOP { UNOP_EXP (Unop $1 $2) }
+    | '*' Exp           %prec UNOP { UNOP_EXP (Unop $1 $2) }
+    | '&' Exp           %prec UNOP { UNOP_EXP (Unop $1 $2) }
 
 Binop :
     Exp '*' Exp         %prec BINOP1 { BINOP_EXP (Binop $2 $1 $3) }

@@ -5,6 +5,7 @@ module Common.Errors (
     DoubleDeclarationError (..),
     UseBeforeAssignmentError (..),
     OpTypeMismatch (..),
+    RefTypeMismatch (..),
     AsnTypeMismatch (..),
     AsnTypeDereference (..),
     IfCondTypeMismatch (..),
@@ -71,6 +72,11 @@ data OpTypeMismatch = OpTypeMismatch
     }
     deriving (Show)
 
+data RefTypeMismatch = RefTypeMismatch
+    { refTypeMismatchRefTok :: Token
+    }
+    deriving (Show)
+
 data AsnTypeMismatch = AsnTypeMismatch
     { asnTypeMismatchVar :: Token
     , asnTypeMismatchAsnType :: TypeCategory
@@ -128,6 +134,7 @@ data VerificationError
     | DOUBLE_DECL DoubleDeclarationError
     | USE_BEFORE_ASN UseBeforeAssignmentError
     | OP_TYPE_MISMATCH OpTypeMismatch
+    | REF_TYPE_MISMATCH RefTypeMismatch
     | ASN_TYPE_MISMATCH AsnTypeMismatch
     | ASN_TYPE_DEREF AsnTypeDereference
     | IF_COND_TYPE_MISMATCH IfCondTypeMismatch

@@ -785,27 +785,38 @@ irBinop (BinopElab cat op e1 e2) state =
                 (Nothing, expState2)
 
 irUnop :: UnopElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
-irUnop (UnopElab cat op e) state =
+irUnop (UnopElab cat op e) state = 
     let (m_expPT, expState) = irExp e state
-     in case m_expPT of
+        refCheckState = 
+            if cat == REF_EXP_ELAB && (irRefInvalidExp e)
+                then irProcessingStateAppendErrs [REF_TYPE_MISMATCH (RefTypeMismatch op)] expState
+                else expState
+    in case m_expPT of
             -- type check when the exp is valid
             Just (expPu, expTy) ->
                 let m_infType = unopTypeInf cat expTy
-                 in case m_infType of
+                in case m_infType of
                         -- return pure exp with inferred type
                         Just infType ->
-                            let (unopComms, unopPu, unopScopeState) = unopOpTranslate cat infType expPu (irProcScopeState expState)
+                            let (unopComms, unopPu, unopScopeState) = unopOpTranslate cat infType expPu (irProcScopeState refCheckState)
                                 unopState = 
                                     (irProcessingStateAddComms unopComms) .
                                     (irProcessingStateUpdateScopeState unopScopeState) $
-                                    expState
-                             in (Just (unopPu, infType), unopState)
+                                    refCheckState
+                            in (Just (unopPu, infType), unopState)
                         -- fail when type for unop cannot be inferred
                         Nothing ->
                             (Nothing, irProcessingStateAppendErrs [OP_TYPE_MISMATCH (OpTypeMismatch op [expTy])] state)
             -- immediately fail if exp is invalid
             _ ->
                 (Nothing, state)
+
+irRefInvalidExp :: ExpElab -> Bool
+irRefInvalidExp e = 
+    case e of
+        IDENTIFIER_ELAB _ -> False
+        REF_LVAL_EXP_ELAB -> False
+        _ -> True
 
 irFunctionCall :: FunctionCallElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irFunctionCall fnCallElab state = 
@@ -1297,6 +1308,8 @@ unopTypeInf cat t1 =
             case t1 of
                 BOOL_TYPE -> Just BOOL_TYPE
                 _ -> Nothing
+        REF_EXP_ELAB -> 
+            Just (POINTER_TYPE t1)
         DEREF_EXP_ELAB ->
             case t1 of
                 POINTER_TYPE derefTy -> Just derefTy
@@ -1312,6 +1325,8 @@ unopOpTranslate cat ty p1 state =
                 (expandComms, PURE_UNOP_IR (PureUnopIr NOT_IR ty expandPureBase), expandState)
             LOGNOT_EXP_ELAB ->
                 (expandComms, PURE_UNOP_IR (PureUnopIr LOGNOT_IR ty expandPureBase), expandState)
+            REF_EXP_ELAB ->
+                (expandComms, PURE_UNOP_IR (PureUnopIr REF_IR ty expandPureBase), expandState)
             DEREF_EXP_ELAB ->
                 (expandComms, PURE_UNOP_IR (PureUnopIr DEREF_IR ty expandPureBase), expandState)
 

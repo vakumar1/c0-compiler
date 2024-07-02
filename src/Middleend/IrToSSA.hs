@@ -152,14 +152,14 @@ commandIrToMaximalSSA comm versions =
              in (newComm, newVersions)
         DEREF_ASN_PURE_IR asnVar asnPure ->
             let newPure = pureIrToMaximalSSA asnPure versions
-                (newVar, newVersions) = updateVarVersion asnVar versions 
-                newComm = ASN_PURE_IR newVar newPure
-             in (newComm, newVersions)
+                newVar = varIrToMaximalSSA asnVar versions 
+                newComm = DEREF_ASN_PURE_IR newVar newPure
+             in (newComm, versions)
         DEREF_ASN_IMPURE_IR asnVar asnImpure ->
             let newImpure = impureIrToMaximalSSA asnImpure versions
-                (newVar, newVersions) = updateVarVersion asnVar versions
-                newComm = ASN_IMPURE_IR newVar newImpure
-             in (newComm, newVersions)
+                newVar = varIrToMaximalSSA asnVar versions 
+                newComm = DEREF_ASN_IMPURE_IR newVar newImpure
+             in (newComm, versions)
         GOTO_BB_IR _ ->
             (comm, versions)
         SPLIT_BB_IR condPure splitLeft splitRight ->
@@ -202,6 +202,12 @@ pureBaseIrToMaximalSSA base versions =
                 Just currVar -> VAR_IR currVar
                 -- variable use in a pure IR must succeed the assignment of the variable
                 Nothing -> error (compilerError ("Uncaught use of variable before assignment: " ++ (show baseVar)))
+
+varIrToMaximalSSA :: VariableIr -> VariableIrVersion -> VariableIr
+varIrToMaximalSSA var versions = 
+    case Map.lookup (variableIrName var) versions of
+        Just currVar -> currVar
+        Nothing -> error . compilerError $ ("Uncaught use of variable before assignment: " ++ (show var))
 
 -- PHI FUNCTION INJECTION: inject variable passage from bb to all successors
 

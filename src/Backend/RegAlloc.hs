@@ -17,12 +17,23 @@ import qualified Data.Set as Set
 import qualified Debug.Trace as Trace
 import qualified Text.Show.Pretty as Pretty
 
-regAllocColoring :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> Map.Map VariableIr Int
+regAllocColoring :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> Coloring
 regAllocColoring fnIr (root, leaves, dag, sccMap) =
     let versionedLiveMap = livenessPass fnIr (root, leaves, dag, sccMap)
         ifg = constructIFG fnIr versionedLiveMap
         order = simplicialElimOrder ifg
-     in greedyGraphColoring ifg order
+        referencedVars = referencedPass fnIr
+        coloring = greedyGraphColoring ifg referencedVars order
+        stackColors = 
+            foldr
+                (\var interStackColors ->
+                    case Map.lookup var coloring of
+                        Just color -> Set.insert color interStackColors
+                        Nothing -> error . compilerError $ ("Attempted to access unmapped color while mapping referenced var=" ++ (show var))
+                )
+                Set.empty
+                (Set.toList referencedVars)
+     in Coloring coloring stackColors
 
 -- IFG CONSTRUCTION
 
@@ -173,27 +184,64 @@ simplicialElimOrderHelper ifg weights =
 
 -- GREEDY GRAPH COLORING
 
-greedyGraphColoring :: IFG -> [VariableIr] -> Map.Map VariableIr Int
-greedyGraphColoring ifg order = greedyGraphColoringHelper ifg order Map.empty
+greedyGraphColoring :: IFG -> Set.Set VariableIr -> [VariableIr] -> Map.Map VariableIr Int
+greedyGraphColoring ifg referencedVars order = greedyGraphColoringHelper ifg referencedVars order Map.empty 0
 
-greedyGraphColoringHelper :: IFG -> [VariableIr] -> Map.Map VariableIr Int -> Map.Map VariableIr Int
-greedyGraphColoringHelper ifg order initColoring =
+greedyGraphColoringHelper :: IFG -> Set.Set VariableIr -> [VariableIr] -> Map.Map VariableIr Int -> Int -> Map.Map VariableIr Int
+greedyGraphColoringHelper ifg referencedVars order initColoring nextHighestColor =
     case order of
         [] -> initColoring
         var : _ ->
-            let neighbors =
-                    case Map.lookup var (graphSuccessors ifg) of
-                        Just s -> s
-                        Nothing -> Set.empty
-                remainingColors =
-                    foldr
-                        ( \neighbor unusedColors ->
-                            case Map.lookup neighbor initColoring of
-                                Just c -> (List.delete c unusedColors)
-                                Nothing -> unusedColors
-                        )
-                        [0 ..]
-                        neighbors
-                newColoring = Map.insert var (head remainingColors) initColoring
-             in greedyGraphColoringHelper ifg (tail order) newColoring
+            if Set.member var referencedVars
+                then 
+                    let newColoring = Map.insert var nextHighestColor initColoring
+                    in greedyGraphColoringHelper ifg referencedVars (tail order) newColoring (nextHighestColor + 1)
+                else
+                    let neighbors =
+                            case Map.lookup var (graphSuccessors ifg) of
+                                Just s -> s
+                                Nothing -> Set.empty
+                        remainingColors =
+                            foldr
+                                ( \neighbor unusedColors ->
+                                    case Map.lookup neighbor initColoring of
+                                        Just c -> (List.delete c unusedColors)
+                                        Nothing -> unusedColors
+                                )
+                                [0 ..]
+                                neighbors
+                        selectedColor = head remainingColors
+                        newColoring = Map.insert var selectedColor initColoring
+                    in greedyGraphColoringHelper ifg referencedVars (tail order) newColoring (max nextHighestColor (selectedColor + 1))
 
+-- REFERENCED VARS PASS
+referencedPass :: FunctionIr -> Set.Set VariableIr
+referencedPass fnIr =
+    foldr
+        (\index interVars ->
+            case Map.lookup index (functionIrBlocks fnIr) of
+                Just bbIr -> Set.union interVars (referencePassBBIr bbIr)
+                Nothing -> error . compilerError $ "Attempted to access basic block during reference pass: index=" ++ (show index)
+        )
+        Set.empty
+        [0..((length . functionIrBlocks $ fnIr) - 1)]
+
+referencePassBBIr :: BasicBlockIr -> Set.Set VariableIr
+referencePassBBIr bbIr =
+    foldr
+        (\commIr interVars ->
+            case referencePassCommIr commIr of
+                Just var -> Set.insert var interVars
+                Nothing -> interVars
+        )
+        Set.empty
+        (bbIrCommands bbIr)
+
+referencePassCommIr :: CommandIr -> Maybe VariableIr
+referencePassCommIr commIr = 
+    case commIr of
+        ASN_PURE_IR _ (PURE_UNOP_IR (PureUnopIr REF_IR _ puB)) ->
+            case puB of
+                VAR_IR var -> Just var
+                _ -> error . compilerError $ ("Created reference unop on non-variable pure base=" ++ (show puB))
+        _ -> Nothing

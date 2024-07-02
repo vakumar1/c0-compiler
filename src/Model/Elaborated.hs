@@ -185,7 +185,8 @@ data UnopCatElab
     | NOT_EXP_ELAB
     | LOGNOT_EXP_ELAB
     | DEREF_EXP_ELAB
-    deriving Show
+    | REF_EXP_ELAB
+    deriving (Eq, Show)
 
 data TernopElab = TernopElab
     { ternopElabOp :: Token

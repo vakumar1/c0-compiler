@@ -719,11 +719,19 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
                                         ]
-                                    STACK_ARGLOC asnVarStackLock ->
+                                    STACK_ARGLOC asnVarStackLoc ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
                                         ]
+                            REF_IR ->
+                                case pureVarLoc of
+                                    STACK_ARGLOC pureVarStackLoc ->
+                                        [ MOV_X86 asnVarLoc (REG_ARGLOC SP)
+                                        , ADD_X86 asnVarLoc (CONST_ARGLOC pureVarStackLoc)
+                                        ]
+                                    _ ->
+                                        error . compilerError $ ("Attempted to get ref on non-stack variable=" ++ (displayArgLoc pureVarLoc))
                             DEREF_IR ->
                                 case (asnVarLoc, pureVarLoc) of
                                     (REG_ARGLOC a, REG_ARGLOC p) ->
@@ -900,7 +908,7 @@ gotoToX86 fnName index bbX86 alloc =
 --   JMP (true)
 --   [false cond x86 insts.]
 --   JMP (false)
-splitToX86 :: Map.Map VariableIr Int -> String -> PureIr -> Int -> Int -> BasicBlockX86 -> AllocState -> [X86Instruction]
+splitToX86 :: Coloring -> String -> PureIr -> Int -> Int -> BasicBlockX86 -> AllocState -> [X86Instruction]
 splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =         
     case condPure of
         PURE_BASE_IR base ->
@@ -1201,7 +1209,7 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                     in splitInst
 
 -- RET: prepends no phi-fn insts. to ret inst.
-retToX86 :: Map.Map VariableIr Int -> PureIr -> BasicBlockX86 -> AllocState -> [X86Instruction]
+retToX86 :: Coloring -> PureIr -> BasicBlockX86 -> AllocState -> [X86Instruction]
 retToX86 coloring retPure bbX86 alloc =
     case retPure of
         PURE_BASE_IR base ->
@@ -1334,6 +1342,14 @@ retToX86 coloring retPure bbX86 alloc =
                             , XOR_X86 (REG_ARGLOC AX) (CONST_ARGLOC trueX86)
                             ] ++
                             (fnCalleePostprocessing alloc)
+                        REF_IR ->
+                            case pureVarLoc of
+                                STACK_ARGLOC pureVarStackLoc ->
+                                    [ MOV_X86 (REG_ARGLOC AX) (REG_ARGLOC SP)
+                                    , ADD_X86 (REG_ARGLOC AX) (CONST_ARGLOC pureVarStackLoc)
+                                    ]
+                                _ ->
+                                    error . compilerError $ ("Attempted to get ref on non-stack variable=" ++ (displayArgLoc pureVarLoc))
                         DEREF_IR ->
                             case pureVarLoc of
                                 REG_ARGLOC p ->
@@ -1365,10 +1381,12 @@ fnCalleePreprocessing coloring fnIr =
                 (\(var, color) interAlloc ->
                     case Map.lookup color (allocStateRegMap interAlloc) of
                         Just argLoc -> interAlloc
-                        Nothing -> allocColor color interAlloc
+                        Nothing -> 
+                            let isStackColor = Set.member color (coloringStackVars coloring)
+                            in allocColor color isStackColor interAlloc
                 )
                 (AllocState Map.empty 0 availableRegisters)
-                (Map.toList coloring)
+                (Map.toList . coloringMap $ coloring)
 
         -- pre-processing: 
         -- - push callee-saved registers (including BP) onto stack
@@ -1510,9 +1528,9 @@ getConstLoc const =
                 else CONST_ARGLOC falseX86
         NULL_CONST -> CONST_ARGLOC nullX86
 
-getVarLoc :: VariableIr -> Map.Map VariableIr Int -> AllocState -> ArgLocation
+getVarLoc :: VariableIr -> Coloring -> AllocState -> ArgLocation
 getVarLoc var coloring alloc = 
-    case Map.lookup var coloring of
+    case Map.lookup var (coloringMap coloring) of
         Just color ->
             case Map.lookup color (allocStateRegMap alloc) of
                 Just argLoc -> argLoc
@@ -1520,10 +1538,10 @@ getVarLoc var coloring alloc =
         Nothing -> error . compilerError $ "Attempted to lookup color for var that does not exist: var=" ++ (show var)
 
 -- explicitly allocate a register/stack loc for new color on assignment
-allocColor :: Int -> AllocState -> AllocState
-allocColor color initAlloc =
-    case (allocStateAvailableReg initAlloc) of
-        [] ->
+allocColor :: Int -> Bool -> AllocState -> AllocState 
+allocColor color isStackColor initAlloc =
+    if isStackColor || (null . allocStateAvailableReg $ initAlloc)
+        then
             let argLoc = STACK_ARGLOC (allocStateStackCtr initAlloc)
                 newAlloc =
                     AllocState
@@ -1531,8 +1549,9 @@ allocColor color initAlloc =
                         ((allocStateStackCtr initAlloc) + registerSize)
                         (allocStateAvailableReg initAlloc)
              in newAlloc
-        reg : _ ->
-            let argLoc = REG_ARGLOC reg
+        else
+            let reg = head . allocStateAvailableReg $ initAlloc
+                argLoc = REG_ARGLOC reg
                 newAlloc =
                     AllocState
                         (Map.insert color argLoc (allocStateRegMap initAlloc))

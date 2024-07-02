@@ -116,6 +116,7 @@ data PureUnopCatIr
     | NOT_IR
     | LOGNOT_IR
     | DEREF_IR
+    | REF_IR
     deriving (Show)
 
 dummyPureIr :: PureIr
