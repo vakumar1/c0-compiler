@@ -153,35 +153,36 @@ mainCommIrToX86 coloring comm alloc =
         INIT_IR var -> 
             []
         ASN_PURE_IR asnVar asnPure -> 
-            asnPureIrToX86 coloring False asnVar asnPure alloc
+            asnPureIrToX86 coloring asnVar asnPure Nothing alloc
         ASN_IMPURE_IR asnVar asnImpure -> 
-            asnImpureIrToX86 coloring False asnVar asnImpure alloc
-        DEREF_ASN_PURE_IR asnVar asnPure ->
-            asnPureIrToX86 coloring True asnVar asnPure alloc
-        DEREF_ASN_IMPURE_IR asnVar asnImpure -> 
-            asnImpureIrToX86 coloring True asnVar asnImpure alloc
+            asnImpureIrToX86 coloring asnVar asnImpure Nothing alloc
+        DEREF_ASN_PURE_IR asnVar asnPure offset size ->
+            asnPureIrToX86 coloring asnVar asnPure (Just (offset, size)) alloc
         ABORT_IR ->
             abortIrToX86 alloc
         _ ->
             error . compilerError $ "Attempted to translate ir->X86 non-main command as a main command: comm=" ++ (show comm)
 
-asnPureIrToX86 :: Coloring -> Bool -> VariableIr -> PureIr -> AllocState -> [X86Instruction]
-asnPureIrToX86 coloring deref asnVar asnPure alloc =
+asnPureIrToX86 :: Coloring -> VariableIr -> PureIr -> Maybe (Int, Int) -> AllocState -> [X86Instruction]
+asnPureIrToX86 coloring asnVar asnPure m_OS alloc =
     let baseVarLoc = getVarLoc asnVar coloring alloc
         (asnInst, asnVarLoc) = 
             case baseVarLoc of
                 REG_ARGLOC r ->
-                    if deref
-                        then ([], REFREG_ARGLOC r)
-                        else ([], baseVarLoc)
+                    case m_OS of
+                        Just (offset, size) ->
+                            ([], REFREG_ARGLOC r (offset * size))
+                        Nothing ->
+                            ([], baseVarLoc)
                 STACK_ARGLOC s -> 
-                    if deref
-                        then 
+                    case m_OS of
+                        Just (offset, size) ->
                             ([ MOV_X86 (REG_ARGLOC CX) baseVarLoc
                             ],
-                            (REFREG_ARGLOC CX)
+                            (REFREG_ARGLOC CX (offset * size))
                             )
-                        else ([], baseVarLoc)
+                        Nothing ->
+                            ([], baseVarLoc)
     in case asnPure of
             PURE_BASE_IR base ->
                 case base of
@@ -233,7 +234,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , ADD_X86 asnVarLoc pureVarLoc2
                                             ]
                                     -- M[reg] = y + z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , ADD_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
@@ -261,7 +262,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , SUB_X86 asnVarLoc pureVarLoc2
                                             ]
                                     -- M[reg] = y - z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
@@ -287,7 +288,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , IMUL_X86 asnVarLoc pureVarLoc2
                                             ]
                                     -- M[reg] = y * z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , IMUL_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
@@ -313,7 +314,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , AND_X86 asnVarLoc pureVarLoc2
                                             ]
                                     -- M[reg] = y & z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , AND_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
@@ -339,7 +340,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , XOR_X86 asnVarLoc pureVarLoc2
                                             ]
                                     -- M[reg] = y ^ z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , XOR_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
@@ -365,7 +366,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , OR_X86 asnVarLoc pureVarLoc2
                                             ]
                                     -- M[reg] = y * z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , OR_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
@@ -391,7 +392,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , SAL_X86 asnVarLoc pureVarLoc2
                                             ]
                                     -- M[reg] = y << z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , SAL_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
@@ -449,7 +450,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
                                     -- M[reg] = y < z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , SHR_X86 (REG_ARGLOC DX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
@@ -482,7 +483,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
                                     -- M[reg] = y < z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , SUB_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , SHR_X86 (REG_ARGLOC DX) (getConstLoc (INT_CONST (registerSize * 8 - 1)))
@@ -518,7 +519,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
                                     -- M[reg] = y <= z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , SUB_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , NOT_X86 (REG_ARGLOC DX)
@@ -556,7 +557,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
                                     -- M[reg] = y >= z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
                                         , NOT_X86 (REG_ARGLOC DX)
@@ -601,7 +602,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
                                     -- M[reg] = y == z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , MOV_X86 (REG_ARGLOC AX) pureVarLoc2
                                         , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
@@ -649,7 +650,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                             , SHR_X86 asnVarLoc (getConstLoc (INT_CONST (registerSize * 8 - 1)))
                                             ]
                                     -- M[reg] = y != z -> perform binop in DX and move to M[reg]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc1
                                         , MOV_X86 (REG_ARGLOC AX) pureVarLoc2
                                         , SUB_X86 (REG_ARGLOC DX) pureVarLoc2
@@ -682,7 +683,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                         [ MOV_X86 asnVarLoc pureVarLoc
                                         , NEG_X86 asnVarLoc
                                         ]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         , NEG_X86 asnVarLoc
@@ -698,7 +699,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                         [ MOV_X86 asnVarLoc pureVarLoc
                                         , NOT_X86 asnVarLoc
                                         ]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         , NOT_X86 asnVarLoc
@@ -714,7 +715,7 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                                         [ MOV_X86 asnVarLoc pureVarLoc
                                         , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
                                         ]
-                                    REFREG_ARGLOC asnVarReg ->
+                                    REFREG_ARGLOC _ _ ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         , XOR_X86 asnVarLoc (CONST_ARGLOC trueX86)
@@ -735,51 +736,54 @@ asnPureIrToX86 coloring deref asnVar asnPure alloc =
                             DEREF_IR ->
                                 case (asnVarLoc, pureVarLoc) of
                                     (REG_ARGLOC a, REG_ARGLOC p) ->
-                                        [ MOV_X86 asnVarLoc (REFREG_ARGLOC p)
+                                        [ MOV_X86 asnVarLoc (REFREG_ARGLOC p 0)
                                         ]
                                     (REG_ARGLOC a, STACK_ARGLOC p) ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
-                                        , MOV_X86 asnVarLoc (REFREG_ARGLOC DX)
+                                        , MOV_X86 asnVarLoc (REFREG_ARGLOC DX 0)
                                         ]
-                                    (REFREG_ARGLOC a, REG_ARGLOC p) ->
+                                    (REFREG_ARGLOC _ _, REG_ARGLOC p) ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         ]
-                                    (REFREG_ARGLOC a, STACK_ARGLOC p) ->
+                                    (REFREG_ARGLOC _ _, STACK_ARGLOC p) ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
-                                        , MOV_X86 (REG_ARGLOC CX) (REFREG_ARGLOC DX)
+                                        , MOV_X86 (REG_ARGLOC CX) (REFREG_ARGLOC DX 0)
                                         , MOV_X86 asnVarLoc (REG_ARGLOC CX)
                                         ]
                                     (STACK_ARGLOC a, REG_ARGLOC p) ->
-                                        [ MOV_X86 (REG_ARGLOC DX) (REFREG_ARGLOC p)
+                                        [ MOV_X86 (REG_ARGLOC DX) (REFREG_ARGLOC p 0)
                                         , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                         ]
                                     (STACK_ARGLOC a, STACK_ARGLOC p) ->
                                         [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
-                                        , MOV_X86 (REG_ARGLOC CX) (REFREG_ARGLOC DX)
+                                        , MOV_X86 (REG_ARGLOC CX) (REFREG_ARGLOC DX 0)
                                         , MOV_X86 asnVarLoc (REG_ARGLOC CX)
                                         ]
                                     _ ->
                                         error . compilerError $ ("Attempted to apply deref onto non-reg/stack variable=" ++ (show base) ++ " location=" ++ (displayArgLoc pureVarLoc))
                 in asnInst ++ unopInst
 
-asnImpureIrToX86 :: Coloring -> Bool -> VariableIr -> ImpureIr -> AllocState -> [X86Instruction]
-asnImpureIrToX86 coloring deref asnVar asnImpure alloc =
+asnImpureIrToX86 :: Coloring -> VariableIr -> ImpureIr -> Maybe (Int, Int) -> AllocState -> [X86Instruction]
+asnImpureIrToX86 coloring asnVar asnImpure m_OS alloc =
     let baseVarLoc = getVarLoc asnVar coloring alloc
         (asnInst, asnVarLoc) = 
             case baseVarLoc of
                 REG_ARGLOC r ->
-                    if deref
-                        then ([], REFREG_ARGLOC r)
-                        else ([], baseVarLoc)
+                    case m_OS of
+                        Just (offset, size) ->
+                            ([], REFREG_ARGLOC r (offset * size))
+                        Nothing ->
+                            ([], baseVarLoc)
                 STACK_ARGLOC s -> 
-                    if deref
-                        then 
+                    case m_OS of
+                        Just (offset, size) ->
                             ([ MOV_X86 (REG_ARGLOC CX) baseVarLoc
                             ],
-                            (REFREG_ARGLOC CX)
+                            (REFREG_ARGLOC CX (offset * size))
                             )
-                        else ([], baseVarLoc)
+                        Nothing ->
+                            ([], baseVarLoc)
     in case asnImpure of
             IMPURE_FNCALL_IR (ImpureFnCallIr fnIdentifier argBases retTy) ->
                 let argVarLocs = 
@@ -1186,7 +1190,7 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                         DEREF_IR ->
                             case pureVarLoc of
                                 REG_ARGLOC p ->
-                                    [ CMP_X86 (REFREG_ARGLOC p) (CONST_ARGLOC trueX86)
+                                    [ CMP_X86 (REFREG_ARGLOC p 0) (CONST_ARGLOC trueX86)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
                                     [ JZ_X86 (bbToLabel fnName splitTrue)
@@ -1196,7 +1200,7 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                                     ]
                                 STACK_ARGLOC p ->
                                     [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
-                                    , CMP_X86 (REFREG_ARGLOC DX) (CONST_ARGLOC trueX86)
+                                    , CMP_X86 (REFREG_ARGLOC DX 0) (CONST_ARGLOC trueX86)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
                                     [ JZ_X86 (bbToLabel fnName splitTrue)
@@ -1353,12 +1357,12 @@ retToX86 coloring retPure bbX86 alloc =
                         DEREF_IR ->
                             case pureVarLoc of
                                 REG_ARGLOC p ->
-                                    [ MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC p)
+                                    [ MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC p 0)
                                     ] ++
                                     (fnCalleePostprocessing alloc)
                                 STACK_ARGLOC p ->
                                     [ MOV_X86 (REG_ARGLOC DX) pureVarLoc
-                                    , MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC DX)
+                                    , MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC DX 0)
                                     ] ++
                                     (fnCalleePostprocessing alloc)
                                 _ ->

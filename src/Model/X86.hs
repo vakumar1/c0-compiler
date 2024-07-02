@@ -120,7 +120,7 @@ type Label = String
 
 data ArgLocation
     = REG_ARGLOC Register
-    | REFREG_ARGLOC Register
+    | REFREG_ARGLOC Register Int
     | STACK_ARGLOC Int
     | BASE_ARGLOC Int
     | CONST_ARGLOC Int
@@ -128,7 +128,7 @@ instance Eq ArgLocation where
     argLoc1 == argLoc2 = 
         case (argLoc1, argLoc2) of
             (REG_ARGLOC r1, REG_ARGLOC r2) -> r1 == r2
-            (REFREG_ARGLOC r1, REFREG_ARGLOC r2) -> r1 == r2
+            (REFREG_ARGLOC r1 rawOffset1, REFREG_ARGLOC r2 rawOffset2) -> r1 == r2 && rawOffset1 == rawOffset2
             (STACK_ARGLOC sp1, STACK_ARGLOC sp2) -> sp1 == sp2
             (BASE_ARGLOC bp1, BASE_ARGLOC bp2) -> bp1 == bp2
             (CONST_ARGLOC c1, CONST_ARGLOC c2) -> c1 == c2
@@ -138,7 +138,10 @@ displayArgLoc :: ArgLocation -> String
 displayArgLoc argLoc =
     case argLoc of
         REG_ARGLOC reg -> show reg
-        REFREG_ARGLOC reg -> Printf.printf "QWORD [%s]" (show reg)
+        REFREG_ARGLOC reg rawOffset -> 
+            if rawOffset >= 0
+                then Printf.printf "QWORD [%s + %s]" (show reg) (show rawOffset)
+                else Printf.printf "QWORD [%s - %s]" (show reg) (show rawOffset)
         STACK_ARGLOC stackPtr ->
             if (stackPtr >= 0)
                 then Printf.printf "QWORD [%s + %s]" (show SP) (show stackPtr)

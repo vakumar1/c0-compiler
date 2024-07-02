@@ -150,15 +150,10 @@ commandIrToMaximalSSA comm versions =
                 (newVar, newVersions) = updateVarVersion asnVar versions
                 newComm = ASN_IMPURE_IR newVar newImpure
              in (newComm, newVersions)
-        DEREF_ASN_PURE_IR asnVar asnPure ->
+        DEREF_ASN_PURE_IR asnVar asnPure offset size ->
             let newPure = pureIrToMaximalSSA asnPure versions
                 newVar = varIrToMaximalSSA asnVar versions 
-                newComm = DEREF_ASN_PURE_IR newVar newPure
-             in (newComm, versions)
-        DEREF_ASN_IMPURE_IR asnVar asnImpure ->
-            let newImpure = impureIrToMaximalSSA asnImpure versions
-                newVar = varIrToMaximalSSA asnVar versions 
-                newComm = DEREF_ASN_IMPURE_IR newVar newImpure
+                newComm = DEREF_ASN_PURE_IR newVar newPure offset size
              in (newComm, versions)
         GOTO_BB_IR _ ->
             (comm, versions)

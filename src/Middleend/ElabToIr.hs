@@ -453,7 +453,7 @@ irAsn (AsnElab lval e) state =
                                                 else [ASN_TYPE_MISMATCH (AsnTypeMismatch (lvalElabIdentifier lval) lvalTy expTy)]
                                 asnComm = 
                                     if lvalDeref
-                                        then DEREF_ASN_PURE_IR lvalVar expPu
+                                        then DEREF_ASN_PURE_IR lvalVar expPu 0 0
                                         else ASN_PURE_IR lvalVar expPu
                                 setScopeState = 
                                     if lvalDeref

@@ -219,10 +219,8 @@ getUsedVarsCommand comm =
             getUsedVarsPure asnPure
         ASN_IMPURE_IR asnVar asnImpure ->
             getUsedVarsImpure asnImpure
-        DEREF_ASN_PURE_IR asnVar asnPure ->
+        DEREF_ASN_PURE_IR asnVar asnPure _ _ ->
             Set.insert asnVar (getUsedVarsPure asnPure)
-        DEREF_ASN_IMPURE_IR asnVar asnImpure ->
-            Set.insert asnVar (getUsedVarsImpure asnImpure)
         GOTO_BB_IR _ ->
             Set.empty
         SPLIT_BB_IR splitPure _ _ ->
@@ -243,9 +241,7 @@ getAssignedVarsCommand comm =
             Just asnVar
         ASN_IMPURE_IR asnVar asnImpure ->
             Just asnVar
-        DEREF_ASN_PURE_IR _ _ ->
-            Nothing
-        DEREF_ASN_IMPURE_IR _ _ ->
+        DEREF_ASN_PURE_IR _ _ _ _ ->
             Nothing
         GOTO_BB_IR _ ->
             Nothing

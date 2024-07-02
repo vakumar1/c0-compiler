@@ -54,8 +54,11 @@ data CommandIr
     = INIT_IR VariableIr
     | ASN_PURE_IR VariableIr PureIr
     | ASN_IMPURE_IR VariableIr ImpureIr
-    | DEREF_ASN_PURE_IR VariableIr PureIr
-    | DEREF_ASN_IMPURE_IR VariableIr ImpureIr
+    | DEREF_ASN_PURE_IR 
+        VariableIr
+        PureIr
+        Int
+        Int
     | GOTO_BB_IR Int
     | SPLIT_BB_IR PureIr Int Int
     | RET_PURE_IR PureIr
