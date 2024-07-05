@@ -120,17 +120,14 @@ type Label = String
 
 data ArgLocation
     = REG_ARGLOC Register
-    | REFREG_ARGLOC Register Int
-    | STACK_ARGLOC Int
-    | BASE_ARGLOC Int
+    | REFREG_ARGLOC Register (Maybe (Either Register Int, Int)) Int
     | CONST_ARGLOC Int
 instance Eq ArgLocation where
     argLoc1 == argLoc2 = 
         case (argLoc1, argLoc2) of
             (REG_ARGLOC r1, REG_ARGLOC r2) -> r1 == r2
-            (REFREG_ARGLOC r1 rawOffset1, REFREG_ARGLOC r2 rawOffset2) -> r1 == r2 && rawOffset1 == rawOffset2
-            (STACK_ARGLOC sp1, STACK_ARGLOC sp2) -> sp1 == sp2
-            (BASE_ARGLOC bp1, BASE_ARGLOC bp2) -> bp1 == bp2
+            (REFREG_ARGLOC baseReg1 m_superOffset1 baseOffset1, REFREG_ARGLOC baseReg2 m_superOffset2 baseOffset2) ->
+                baseReg1 == baseReg2 && m_superOffset1 == m_superOffset2 && baseOffset1 == baseOffset2
             (CONST_ARGLOC c1, CONST_ARGLOC c2) -> c1 == c2
             _ -> False
 
@@ -138,18 +135,18 @@ displayArgLoc :: ArgLocation -> String
 displayArgLoc argLoc =
     case argLoc of
         REG_ARGLOC reg -> show reg
-        REFREG_ARGLOC reg rawOffset -> 
-            if rawOffset >= 0
-                then Printf.printf "QWORD [%s + %s]" (show reg) (show rawOffset)
-                else Printf.printf "QWORD [%s - %s]" (show reg) (show rawOffset)
-        STACK_ARGLOC stackPtr ->
-            if (stackPtr >= 0)
-                then Printf.printf "QWORD [%s + %s]" (show SP) (show stackPtr)
-                else Printf.printf "QWORD [%s - %s]" (show SP) (show (-stackPtr))
-        BASE_ARGLOC basePtr ->
-            if (basePtr >= 0)
-                then Printf.printf "QWORD [%s + %s]" (show BP) (show basePtr)
-                else Printf.printf "QWORD [%s - %s]" (show BP) (show (-basePtr))
+        REFREG_ARGLOC reg m_superOffset baseOffset -> 
+            let baseOffsetSign = if baseOffset >= 0 then "+" else "-"
+            in 
+                case m_superOffset of
+                    Nothing ->
+                        Printf.printf "QWORD [%s %s %s]" (show reg) baseOffsetSign (show baseOffset)
+                    Just (Left superOffsetReg, superOffsetScale) ->
+                        Printf.printf "QWORD [%s + %s * %s %s %s]" (show reg) (show superOffsetReg) (show superOffsetScale) baseOffsetSign (show baseOffset)
+                    Just (Right superOffsetConst, superOffsetScale) ->
+                        let totalOffset = superOffsetConst * superOffsetScale + baseOffset
+                            totalOffsetSign = if totalOffset >= 0 then "+" else "-"
+                        in Printf.printf "QWORD [%s %s %s]" (show reg) totalOffsetSign (show totalOffset)
         CONST_ARGLOC const -> show const
 
 data Register
@@ -198,7 +195,7 @@ calleeSavedRegisters = [BX, BP, DI, SI, R12, R13, R14, R15]
 
 -- returns registers initially available for arguments
 availableRegisters :: [Register]
-availableRegisters = [BX, SI, DI, R8, R9, R10, R11, R12, R13, R14, R15]
+availableRegisters = [SI, DI, R8, R9, R10, R11, R12, R13, R14, R15]
 
 registerSize :: Int
 registerSize = 8
