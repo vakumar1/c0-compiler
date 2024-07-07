@@ -137,6 +137,7 @@ data For = For
 data Lval 
     = IDENT_LVAL Token
     | DEREF_LVAL Lval
+    | ARR_INDEX_LVAL Lval Exp
     deriving (Show)
 
 data Exp
@@ -181,6 +182,7 @@ data FunctionCall = FunctionCall
 data Type 
     = BASE_TYPE_AST Token
     | POINTER_TYPE_AST Type
+    | ARRAY_TYPE_AST Type Token
     deriving (Show)
 
 getBaseTypeToken :: Type -> Token

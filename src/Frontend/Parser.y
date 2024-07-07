@@ -140,6 +140,8 @@ import Model.Ast
 %nonassoc '*' '/' '%'
 %nonassoc BINOP1
 
+%nonassoc BINOP0
+
 -- unary operators
 %nonassoc UNOP
 %right '!' '~' '++' '--'
@@ -205,6 +207,8 @@ Decl : Type ident        { Decl $2 $1 Nothing Nothing }
 
 Type : type             { BASE_TYPE_AST $1 }
     | Type '*'          { POINTER_TYPE_AST $1 }
+    | Type '[' hex ']'  { ARRAY_TYPE_AST $1 $3 }
+    | Type '[' dec ']'  { ARRAY_TYPE_AST $1 $3 }
 
 Post : Lval Postop      { Post $2 $1 }
 
@@ -228,6 +232,7 @@ Simpopt :               { Nothing }
 Lval : '(' Lval ')'     %prec PAREN { $2 }
     | ident             { IDENT_LVAL $1 }
     | '*' Lval          { DEREF_LVAL $2 }
+    | Lval '[' Exp ']'  { ARR_INDEX_LVAL $1 $3 }
 
 Asnop : '='             { $1 }
     | '+='              { $1 }

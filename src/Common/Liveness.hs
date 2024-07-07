@@ -30,7 +30,7 @@ type LiveMap = Map.Map Int (Set.Set VariableIr)
 -- map from variable to a color (i.e. an Int) + mandatory stack colors
 data Coloring = Coloring
     { coloringMap :: Map.Map VariableIr Int
-    , coloringStackVars :: Set.Set Int
+    , coloringStackVars :: Set.Set VariableIr
     }
     deriving Show
 
@@ -215,11 +215,15 @@ getUsedVarsCommand comm =
     case comm of
         INIT_IR var -> 
             Set.empty
-        ASN_PURE_IR asnVar asnPure ->
-            getUsedVarsPure asnPure
+        ASN_PURE_IR asnVar asnPure m_superOffset ->
+            case m_superOffset of
+                Nothing ->
+                    getUsedVarsPure asnPure
+                Just (superOffsetPuB, superOffsetScale) ->
+                    Set.union (getUsedVarsPure asnPure) (getUsedVarsPureBase superOffsetPuB)
         ASN_IMPURE_IR asnVar asnImpure ->
             getUsedVarsImpure asnImpure
-        DEREF_ASN_PURE_IR asnVar asnPure _ _ ->
+        DEREF_ASN_PURE_IR asnVar asnPure ->
             Set.insert asnVar (getUsedVarsPure asnPure)
         GOTO_BB_IR _ ->
             Set.empty
@@ -237,11 +241,11 @@ getAssignedVarsCommand comm =
     case comm of
         INIT_IR var ->
             Nothing
-        ASN_PURE_IR asnVar asnPure ->
+        ASN_PURE_IR asnVar asnPure _ ->
             Just asnVar
         ASN_IMPURE_IR asnVar asnImpure ->
             Just asnVar
-        DEREF_ASN_PURE_IR _ _ _ _ ->
+        DEREF_ASN_PURE_IR _ _ ->
             Nothing
         GOTO_BB_IR _ ->
             Nothing

@@ -8,6 +8,8 @@ module Common.Errors (
     RefTypeMismatch (..),
     AsnTypeMismatch (..),
     AsnTypeDereference (..),
+    AsnTypeIndex (..),
+    ArrIndexNonIntType (..),
     IfCondTypeMismatch (..),
     RetTypeMismatch (..),
     InvalidReturnError (..),
@@ -90,6 +92,18 @@ data AsnTypeDereference = AsnTypeDereference
     }
     deriving (Show)
 
+data AsnTypeIndex = AsnTypeIndex
+    { asnTypeIndexVar :: Token
+    , asnTypeIndexVarType :: TypeCategory
+    }
+    deriving (Show)
+
+data ArrIndexNonIntType = ArrIndexNonIntType
+    { arrIndexNonIntTypeVar :: Token
+    , arrIndexNonIntType :: TypeCategory
+    }
+    deriving (Show)
+
 data IfCondTypeMismatch = IfCondTypeMismatch
     { ifCondTypeMismatchExpType :: TypeCategory
     }
@@ -137,6 +151,8 @@ data VerificationError
     | REF_TYPE_MISMATCH RefTypeMismatch
     | ASN_TYPE_MISMATCH AsnTypeMismatch
     | ASN_TYPE_DEREF AsnTypeDereference
+    | ASN_TYPE_INDEX AsnTypeIndex
+    | ARR_INDEX_NON_INT_TYPE ArrIndexNonIntType
     | IF_COND_TYPE_MISMATCH IfCondTypeMismatch
     | RET_TYPE_MISMATCH RetTypeMismatch
     | INVALID_RET InvalidReturnError

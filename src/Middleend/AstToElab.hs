@@ -247,6 +247,21 @@ elaborateType ty =
                 TypeElab
                     (POINTER_TYPE (typeElabType subElaboratedType))
                     (typeElabToken subElaboratedType)
+        ARRAY_TYPE_AST t tok ->
+            case elaborateConst tok of
+                INT_CONST i ->
+                    if i > 0
+                        then
+                            let subElaboratedType = elaborateType t
+                            in
+                                TypeElab
+                                    (ARRAY_TYPE (typeElabType subElaboratedType) i)
+                                    (typeElabToken subElaboratedType)
+                        else
+                            error . compilerError $ "Array size must be positive integer: size=" ++ (show tok)
+                _ ->
+                    error . compilerError $ "Array size must be positive integer: size=" ++ (show tok)
+
     
 elaborateConst :: Token -> Const
 elaborateConst tok =
@@ -325,3 +340,7 @@ generateLvalOps lval =
         DEREF_LVAL d -> 
             let (i, subOps) = generateLvalOps d
             in (i, subOps ++ [DEREF_LVALOP_ELAB])
+        ARR_INDEX_LVAL a e ->
+            let indexExp = elaborateExp e
+                (i, subOps) = generateLvalOps a
+            in (i, subOps ++ [ARR_INDEX_LVALOP_ELAB indexExp])

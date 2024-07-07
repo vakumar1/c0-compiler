@@ -3,6 +3,7 @@ module Model.Types (
     TypeCategory (..),
     Const (..),
     constToType,
+    sizeofType,
 ) where
 
 import qualified Data.Map as Map
@@ -16,6 +17,7 @@ data TypeCategory
     | STRING_TYPE
     | VOID_TYPE
     | POINTER_TYPE TypeCategory
+    | ARRAY_TYPE TypeCategory Int
     | WILDCARD_TYPE
     deriving (Show)
 instance Eq TypeCategory where
@@ -29,6 +31,7 @@ instance Eq TypeCategory where
             (STRING_TYPE, STRING_TYPE) -> True
             (VOID_TYPE, VOID_TYPE) -> True
             (POINTER_TYPE s1, POINTER_TYPE s2) -> s1 == s2
+            (ARRAY_TYPE t1 s1, ARRAY_TYPE t2 s2) -> t1 == t2 && s1 == s2
             _ -> False
 
 data Const
@@ -43,3 +46,11 @@ constToType const =
         INT_CONST _ -> INT_TYPE
         BOOL_CONST _ -> BOOL_TYPE
         NULL_CONST -> POINTER_TYPE WILDCARD_TYPE
+
+sizeofType :: TypeCategory -> Int
+sizeofType ty = 
+    case ty of
+        INT_TYPE -> 8
+        BOOL_TYPE -> 8
+        POINTER_TYPE _ -> 8
+        ARRAY_TYPE innerTy size -> (sizeofType innerTy) * size

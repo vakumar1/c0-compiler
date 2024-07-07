@@ -119,6 +119,7 @@ data LvalElab = LvalElab
 
 data LvalElabOpCat
     = DEREF_LVALOP_ELAB
+    | ARR_INDEX_LVALOP_ELAB ExpElab
     deriving Show
 
 data ExpElab

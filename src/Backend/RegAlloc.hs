@@ -5,6 +5,7 @@ module Backend.RegAlloc (
 where
 
 import Model.Ir
+import Model.Types
 import Common.Liveness
 import Common.Graphs
 import Common.Errors
@@ -23,17 +24,10 @@ regAllocColoring fnIr (root, leaves, dag, sccMap) =
         ifg = constructIFG fnIr versionedLiveMap
         order = simplicialElimOrder ifg
         referencedVars = referencedPass fnIr
-        coloring = greedyGraphColoring ifg referencedVars order
-        stackColors = 
-            foldr
-                (\var interStackColors ->
-                    case Map.lookup var coloring of
-                        Just color -> Set.insert color interStackColors
-                        Nothing -> error . compilerError $ ("Attempted to access unmapped color while mapping referenced var=" ++ (show var))
-                )
-                Set.empty
-                (Set.toList referencedVars)
-     in Coloring coloring stackColors
+        nonAtomicVars = forceStackVars (graphNodes ifg)
+        allStackVars = Set.union referencedVars nonAtomicVars
+        coloring = greedyGraphColoring ifg allStackVars order
+     in Coloring coloring allStackVars
 
 -- IFG CONSTRUCTION
 
@@ -185,17 +179,17 @@ simplicialElimOrderHelper ifg weights =
 -- GREEDY GRAPH COLORING
 
 greedyGraphColoring :: IFG -> Set.Set VariableIr -> [VariableIr] -> Map.Map VariableIr Int
-greedyGraphColoring ifg referencedVars order = greedyGraphColoringHelper ifg referencedVars order Map.empty 0
+greedyGraphColoring ifg stackVars order = greedyGraphColoringHelper ifg stackVars order Map.empty 0
 
 greedyGraphColoringHelper :: IFG -> Set.Set VariableIr -> [VariableIr] -> Map.Map VariableIr Int -> Int -> Map.Map VariableIr Int
-greedyGraphColoringHelper ifg referencedVars order initColoring nextHighestColor =
+greedyGraphColoringHelper ifg stackVars order initColoring nextHighestColor =
     case order of
         [] -> initColoring
         var : _ ->
-            if Set.member var referencedVars
+            if Set.member var stackVars
                 then 
                     let newColoring = Map.insert var nextHighestColor initColoring
-                    in greedyGraphColoringHelper ifg referencedVars (tail order) newColoring (nextHighestColor + 1)
+                    in greedyGraphColoringHelper ifg stackVars (tail order) newColoring (nextHighestColor + 1)
                 else
                     let neighbors =
                             case Map.lookup var (graphSuccessors ifg) of
@@ -212,7 +206,7 @@ greedyGraphColoringHelper ifg referencedVars order initColoring nextHighestColor
                                 neighbors
                         selectedColor = head remainingColors
                         newColoring = Map.insert var selectedColor initColoring
-                    in greedyGraphColoringHelper ifg referencedVars (tail order) newColoring (max nextHighestColor (selectedColor + 1))
+                    in greedyGraphColoringHelper ifg stackVars (tail order) newColoring (max nextHighestColor (selectedColor + 1))
 
 -- REFERENCED VARS PASS
 referencedPass :: FunctionIr -> Set.Set VariableIr
@@ -240,8 +234,20 @@ referencePassBBIr bbIr =
 referencePassCommIr :: CommandIr -> Maybe VariableIr
 referencePassCommIr commIr = 
     case commIr of
-        ASN_PURE_IR _ (PURE_UNOP_IR (PureUnopIr REF_IR _ puB)) ->
+        ASN_PURE_IR _ (PURE_UNOP_IR (PureUnopIr REF_IR _ puB)) _ ->
             case puB of
                 VAR_IR var -> Just var
                 _ -> error . compilerError $ ("Created reference unop on non-variable pure base=" ++ (show puB))
         _ -> Nothing
+
+-- FORCED (NON-ATOMIC) STACK VARS
+forceStackVars :: Set.Set VariableIr -> Set.Set VariableIr
+forceStackVars vars = 
+    foldr
+        (\var interStackVars ->
+            case (variableIrType var) of
+                ARRAY_TYPE _ _ -> Set.insert var interStackVars
+                _ -> interStackVars
+        )
+        Set.empty
+        (Set.toList vars)

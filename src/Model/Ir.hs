@@ -52,13 +52,9 @@ data BasicBlockIr = BasicBlockIr
 
 data CommandIr
     = INIT_IR VariableIr
-    | ASN_PURE_IR VariableIr PureIr
+    | ASN_PURE_IR VariableIr PureIr (Maybe (PureBaseIr, Int))
     | ASN_IMPURE_IR VariableIr ImpureIr
-    | DEREF_ASN_PURE_IR 
-        VariableIr
-        PureIr
-        Int
-        Int
+    | DEREF_ASN_PURE_IR VariableIr PureIr
     | GOTO_BB_IR Int
     | SPLIT_BB_IR PureIr Int Int
     | RET_PURE_IR PureIr
