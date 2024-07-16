@@ -150,6 +150,8 @@ data Exp
     | UNOP_EXP Unop
     | TERN_EXP Ternop
     | FN_CALL_EXP FunctionCall
+    | DEREF_EXP Exp
+    | ARR_INDEX_EXP Exp Exp
     deriving (Show)
 
 data Unop = Unop

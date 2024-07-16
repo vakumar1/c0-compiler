@@ -251,6 +251,8 @@ Postop : '++'           { $1 }
 
 Exp : 
     '(' Exp ')'         %prec PAREN { $2 }
+    | '*' Exp           { DEREF_EXP $2 }
+    | Exp '[' Exp ']'   { ARR_INDEX_EXP $1 $3 }
     | hex               { HEXNUM_EXP $1 }
     | dec               { DECNUM_EXP $1 }
     | true              { BOOL_EXP $1 }
@@ -266,7 +268,6 @@ Unop :
     '-' Exp             %prec UNOP { UNOP_EXP (Unop $1 $2) }
     | '~' Exp           %prec UNOP { UNOP_EXP (Unop $1 $2) }
     | '!' Exp           %prec UNOP { UNOP_EXP (Unop $1 $2) }
-    | '*' Exp           %prec UNOP { UNOP_EXP (Unop $1 $2) }
     | '&' Exp           %prec UNOP { UNOP_EXP (Unop $1 $2) }
 
 Binop :

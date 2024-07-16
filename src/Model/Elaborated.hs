@@ -12,7 +12,7 @@ module Model.Elaborated (
     AbortElab (..),
     SeqElab,
     LvalElab (..),
-    LvalElabOpCat (..),
+    MemopElabCat (..),
     ExpElab (..),
     TernopElab (..),
     BinopElab (..),
@@ -22,6 +22,7 @@ module Model.Elaborated (
     UnopElab (..),
     UnopCatElab (..),
     FunctionCallElab (..),
+    MemopElab (..),
     VariableElab (..),
     TypeElab (..),
     extractIdentifierName,
@@ -113,13 +114,8 @@ type SeqElab = [StatementElab]
 
 data LvalElab = LvalElab
     { lvalElabIdentifier :: Token
-    , lvalElabOps :: [LvalElabOpCat]
+    , lvalElabOps :: [MemopElabCat]
     }
-    deriving Show
-
-data LvalElabOpCat
-    = DEREF_LVALOP_ELAB
-    | ARR_INDEX_LVALOP_ELAB ExpElab
     deriving Show
 
 data ExpElab
@@ -130,6 +126,7 @@ data ExpElab
     | UNOP_ELAB UnopElab
     | TERN_ELAB TernopElab
     | FN_CALL_ELAB FunctionCallElab
+    | MEMOP_ELAB MemopElab
     | REF_LVAL_EXP_ELAB
     deriving Show
 
@@ -203,6 +200,12 @@ data FunctionCallElab = FunctionCallElab
     }
     deriving Show
 
+data MemopElab = MemopElab
+    { memopElabExp :: ExpElab
+    , memopElabOps :: [MemopElabCat]
+    }
+    deriving Show
+
 data VariableElab = VariableElab
     { variableElabIdentifier :: Token
     , variableElabType :: TypeElab
@@ -216,6 +219,11 @@ data TypeElab = TypeElab
     deriving (Show)
 instance Eq TypeElab where
     t1 == t2 = (typeElabType t1) == (typeElabType t2)
+
+data MemopElabCat
+    = DEREF_MEMOP_ELAB
+    | ARR_INDEX_MEMOP_ELAB ExpElab
+    deriving Show
 
 -- HELPERS
 
