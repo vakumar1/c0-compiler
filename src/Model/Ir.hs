@@ -10,6 +10,7 @@ module Model.Ir (
     PureBinopCatIr (..),
     PureUnopIr (..),
     PureUnopCatIr (..),
+    MemopIr (..),
     dummyPureIr,
     ImpureIr (..),
     ImpureFnCallIr (..),
@@ -52,9 +53,8 @@ data BasicBlockIr = BasicBlockIr
 
 data CommandIr
     = INIT_IR VariableIr
-    | ASN_PURE_IR VariableIr PureIr (Maybe (PureBaseIr, Int))
+    | ASN_PURE_IR MemopIr VariableIr PureIr
     | ASN_IMPURE_IR VariableIr ImpureIr
-    | DEREF_ASN_PURE_IR VariableIr PureIr
     | GOTO_BB_IR Int
     | SPLIT_BB_IR PureIr Int Int
     | RET_PURE_IR PureIr
@@ -69,6 +69,8 @@ data PureIr
     = PURE_BASE_IR PureBaseIr
     | PURE_BINOP_IR PureBinopIr
     | PURE_UNOP_IR PureUnopIr
+    | PURE_DEREF_IR VariableIr
+    | PURE_OFFSET_IR VariableIr PureBaseIr
     deriving (Show)
 
 data PureBaseIr
@@ -114,8 +116,13 @@ data PureUnopCatIr
     = NEG_IR
     | NOT_IR
     | LOGNOT_IR
-    | DEREF_IR
     | REF_IR
+    deriving (Show)
+
+data MemopIr
+    = MEMOP_NONE_IR
+    | MEMOP_DEREF_IR
+    | MEMOP_OFFSET_IR PureBaseIr
     deriving (Show)
 
 dummyPureIr :: PureIr
