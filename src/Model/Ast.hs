@@ -17,7 +17,6 @@ module Model.Ast (
     If (..),
     While (..),
     For (..),
-    Lval (..),
     Exp (..),
     Const (..),
     Unop (..),
@@ -25,6 +24,7 @@ module Model.Ast (
     Ternop (..),
     FunctionCall (..),
     Type (..),
+    GenIdent (..),
 ) where
 
 import Model.Tokens
@@ -87,7 +87,7 @@ data Control
 -- low-level statement operations
 data Asn = Asn
     { asnAsnop :: Token
-    , asnLvalue :: Lval
+    , asnLvalue :: GenIdent
     , asnExp :: Exp
     }
     deriving (Show)
@@ -102,7 +102,7 @@ data Decl = Decl
 
 data Post = Post
     { postSimpOp :: Token
-    , postSimpLvalue :: Lval
+    , postSimpLvalue :: GenIdent
     }
     deriving (Show)
 
@@ -134,24 +134,17 @@ data For = For
     deriving (Show)
 
 -- statement objects
-data Lval 
-    = IDENT_LVAL Token
-    | DEREF_LVAL Lval
-    | ARR_INDEX_LVAL Lval Exp
-    deriving (Show)
 
 data Exp
     = HEXNUM_EXP Token
     | DECNUM_EXP Token
     | BOOL_EXP Token
     | NULL_EXP Token
-    | IDENTIFIER_EXP Token
     | BINOP_EXP Binop
     | UNOP_EXP Unop
     | TERN_EXP Ternop
     | FN_CALL_EXP FunctionCall
-    | DEREF_EXP Exp
-    | ARR_INDEX_EXP Exp Exp
+    | GEN_IDENT_EXP GenIdent
     deriving (Show)
 
 data Unop = Unop
@@ -185,6 +178,13 @@ data Type
     = BASE_TYPE_AST Token
     | POINTER_TYPE_AST Type
     | ARRAY_TYPE_AST Type Token
+    deriving (Show)
+
+-- TODO: move ref from Exp to GenIdent
+data GenIdent
+    = BASE_GEN_IDENT Token
+    | DEREF_GEN_IDENT GenIdent
+    | ARR_INDEX_GEN_IDENT GenIdent Exp
     deriving (Show)
 
 getBaseTypeToken :: Type -> Token

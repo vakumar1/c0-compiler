@@ -127,7 +127,7 @@ elaborateDecl decl =
         Decl id ty Nothing Nothing ->
             DeclElab (VariableElab id (elaborateType ty)) Nothing
         Decl id ty (Just as) (Just e) ->
-            DeclElab (VariableElab id (elaborateType ty)) (Just (elaborateAsn (Asn as (IDENT_LVAL id) e)))
+            DeclElab (VariableElab id (elaborateType ty)) (Just (elaborateAsn (Asn as (BASE_GEN_IDENT id) e)))
 
 elaboratePost :: Post -> AsnElab
 elaboratePost (Post po lval) = 
@@ -199,33 +199,31 @@ elaborateFor for =
         whileStmtElab = WhileElab termExpElab innerStmtElab
     in initStmtElabs ++ [WHILE_ELAB whileStmtElab]
 
-elaborateLval :: Lval -> LvalElab
+elaborateLval :: GenIdent -> LvalElab
 elaborateLval lval = 
     let (id, ops) = generateLvalMemops lval
     in LvalElab id ops
 
 elaborateExp :: Exp -> ExpElab
 elaborateExp e =
-    let (baseExp, memOps) = generateExpMemops e
-        baseExpElab = 
-            case baseExp of
-                HEXNUM_EXP h -> CONST_ELAB (elaborateConst h)
-                DECNUM_EXP d -> CONST_ELAB (elaborateConst d)
-                BOOL_EXP b -> CONST_ELAB (elaborateConst b)
-                NULL_EXP n -> CONST_ELAB (elaborateConst n)
-                IDENTIFIER_EXP id -> IDENTIFIER_ELAB id
-                TERN_EXP t -> TERN_ELAB (elaborateTernop t)
-                BINOP_EXP b -> 
-                    case (elaborateBinop b) of
-                        Left be -> BINOP_ELAB be
-                        Right lbe -> LOG_BINOP_ELAB lbe
-                UNOP_EXP u -> UNOP_ELAB (elaborateUnop u)
-                FN_CALL_EXP f -> FN_CALL_ELAB (elaborateFunctionCall f)
-    in 
-        case memOps of
-            [] -> baseExpElab
-            _ -> MEMOP_ELAB (MemopElab baseExpElab memOps)
-
+    case e of
+        HEXNUM_EXP h -> CONST_ELAB (elaborateConst h)
+        DECNUM_EXP d -> CONST_ELAB (elaborateConst d)
+        BOOL_EXP b -> CONST_ELAB (elaborateConst b)
+        NULL_EXP n -> CONST_ELAB (elaborateConst n)
+        TERN_EXP t -> TERN_ELAB (elaborateTernop t)
+        BINOP_EXP b -> 
+            case (elaborateBinop b) of
+                Left be -> BINOP_ELAB be
+                Right lbe -> LOG_BINOP_ELAB lbe
+        UNOP_EXP u -> UNOP_ELAB (elaborateUnop u)
+        FN_CALL_EXP f -> FN_CALL_ELAB (elaborateFunctionCall f)
+        GEN_IDENT_EXP g ->
+            let (baseTok, memops) = generateExpMemops g
+            in 
+                case memops of
+                    [] -> IDENTIFIER_ELAB baseTok
+                    _ -> MEMOP_ELAB (MemopElab (IDENTIFIER_ELAB baseTok) memops)
 
 elaborateTernop :: Ternop -> TernopElab
 elaborateTernop (Ternop op eCond e1 e2) = 
@@ -340,26 +338,27 @@ decomposeAsnOp (Token tokenCat tokenData) =
 wrapConstExp :: String -> Token -> Token
 wrapConstExp decInt op = Token (DECNUM decInt) (tokenData op)
 
-generateLvalMemops :: Lval -> (Token, [MemopElabCat])
+generateLvalMemops :: GenIdent -> (Token, [MemopElabCat])
 generateLvalMemops lval = 
     case lval of
-        IDENT_LVAL i -> (i, [])
-        DEREF_LVAL innerLval -> 
+        BASE_GEN_IDENT i -> (i, [])
+        DEREF_GEN_IDENT innerLval -> 
             let (i, subOps) = generateLvalMemops innerLval
             in (i, subOps ++ [DEREF_MEMOP_ELAB])
-        ARR_INDEX_LVAL innerLval indexExp ->
+        ARR_INDEX_GEN_IDENT innerLval indexExp ->
             let indexExpElab = elaborateExp indexExp
                 (i, subOps) = generateLvalMemops innerLval
             in (i, subOps ++ [ARR_INDEX_MEMOP_ELAB indexExpElab])
 
-generateExpMemops :: Exp -> (Exp, [MemopElabCat])
-generateExpMemops exp = 
-    case exp of
-        DEREF_EXP innerExp -> 
-            let (e, subOps) = generateExpMemops innerExp
+generateExpMemops :: GenIdent -> (Token, [MemopElabCat])
+generateExpMemops genIdent = 
+    case genIdent of
+        BASE_GEN_IDENT identTok ->
+            (identTok, [])
+        DEREF_GEN_IDENT innerGenIdent -> 
+            let (e, subOps) = generateExpMemops innerGenIdent
             in (e, subOps ++ [DEREF_MEMOP_ELAB])
-        ARR_INDEX_EXP innerExp indexExp ->
+        ARR_INDEX_GEN_IDENT innerGenIdent indexExp ->
             let indexExpElab = elaborateExp indexExp
-                (e, subOps) = generateExpMemops innerExp
+                (e, subOps) = generateExpMemops innerGenIdent
             in (e, subOps ++ [ARR_INDEX_MEMOP_ELAB indexExpElab])
-        _ -> (exp, [])

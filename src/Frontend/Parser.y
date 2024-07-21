@@ -150,6 +150,9 @@ import Model.Ast
 %right PAREN
 %left ')'
 %right '('
+
+%nonassoc EXP_PAREN
+%nonassoc GENIDENT_PAREN
 %%
 
 Program :               { [] }
@@ -200,7 +203,8 @@ Control : If            { IF_CTRL $1 }
     | return ';'        { RET_CTRL Nothing }
     | return Exp ';'    { RET_CTRL (Just $2) }
 
-Asn : Lval Asnop Exp    %prec ASNOP { Asn $2 $1 $3 }
+Asn : GenIdent Asnop Exp    
+                        %prec ASNOP { Asn $2 $1 $3 }
 
 Decl : Type ident        { Decl $2 $1 Nothing Nothing }
     | Type ident '=' Exp { Decl $2 $1 (Just $3) (Just $4) }
@@ -210,7 +214,7 @@ Type : type             { BASE_TYPE_AST $1 }
     | Type '[' hex ']'  { ARRAY_TYPE_AST $1 $3 }
     | Type '[' dec ']'  { ARRAY_TYPE_AST $1 $3 }
 
-Post : Lval Postop      { Post $2 $1 }
+Post : GenIdent Postop  { Post $2 $1 }
 
 Assert : assert Exp     { Assert $1 $2 }
 
@@ -229,11 +233,6 @@ For : for '(' Simpopt ';' Exp ';' Simpopt ')' Stmt
 Simpopt :               { Nothing }
     | Simp              { Just $1 }
 
-Lval : '(' Lval ')'     %prec PAREN { $2 }
-    | ident             { IDENT_LVAL $1 }
-    | '*' Lval          { DEREF_LVAL $2 }
-    | Lval '[' Exp ']'  { ARR_INDEX_LVAL $1 $3 }
-
 Asnop : '='             { $1 }
     | '+='              { $1 }
     | '-='              { $1 }
@@ -250,15 +249,13 @@ Postop : '++'           { $1 }
     | '--'              { $1 }
 
 Exp : 
-    '(' Exp ')'         %prec PAREN { $2 }
-    | '*' Exp           { DEREF_EXP $2 }
-    | Exp '[' Exp ']'   { ARR_INDEX_EXP $1 $3 }
+    '(' Exp ')'         %prec EXP_PAREN { $2 }
     | hex               { HEXNUM_EXP $1 }
     | dec               { DECNUM_EXP $1 }
     | true              { BOOL_EXP $1 }
     | false             { BOOL_EXP $1 }
     | null              { NULL_EXP $1 }
-    | ident             { IDENTIFIER_EXP $1 }
+    | GenIdent          { GEN_IDENT_EXP $1 }
     | Unop              { $1 }
     | Binop             { $1 }
     | Ternary           { $1 }
@@ -303,6 +300,14 @@ Args : '(' ')'          { [] }
 
 ArgFollow :             { [] }
     | ',' Exp ArgFollow { ($2):($3) }
+
+-- TODO: refactor to allow arbitrary base exp
+GenIdent : 
+    '(' GenIdent ')'    %prec GENIDENT_PAREN { $2 }
+    | ident             { BASE_GEN_IDENT $1 }
+    | '*' GenIdent      { DEREF_GEN_IDENT $2 }
+    | GenIdent '[' Exp ']'  
+                        { ARR_INDEX_GEN_IDENT $1 $3 }
 
 {
 parseError :: [Token] -> a
