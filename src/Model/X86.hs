@@ -120,7 +120,7 @@ type Label = String
 
 data ArgLocation
     = REG_ARGLOC Register
-    | REFREG_ARGLOC Register (Maybe (Either Register Int, Int)) Int
+    | REFREG_ARGLOC Register (Maybe (Either Register Int)) Int
     | CONST_ARGLOC Int
 instance Eq ArgLocation where
     argLoc1 == argLoc2 = 
@@ -140,13 +140,13 @@ displayArgLoc argLoc =
             in 
                 case m_superOffset of
                     Nothing ->
-                        Printf.printf "QWORD [%s %s %s]" (show reg) baseOffsetSign (show baseOffset)
-                    Just (Left superOffsetReg, superOffsetScale) ->
-                        Printf.printf "QWORD [%s + %s * %s %s %s]" (show reg) (show superOffsetReg) (show superOffsetScale) baseOffsetSign (show baseOffset)
-                    Just (Right superOffsetConst, superOffsetScale) ->
-                        let totalOffset = superOffsetConst * superOffsetScale + baseOffset
+                        Printf.printf "QWORD [%s %s %s]" (show reg) baseOffsetSign (show . abs $ baseOffset)
+                    Just (Left superOffsetReg) ->
+                        Printf.printf "QWORD [%s + %s %s %s]" (show reg) (show superOffsetReg) baseOffsetSign (show . abs $ baseOffset)
+                    Just (Right superOffsetConst) ->
+                        let totalOffset = superOffsetConst + baseOffset
                             totalOffsetSign = if totalOffset >= 0 then "+" else "-"
-                        in Printf.printf "QWORD [%s %s %s]" (show reg) totalOffsetSign (show totalOffset)
+                        in Printf.printf "QWORD [%s %s %s]" (show reg) totalOffsetSign (show . abs $ totalOffset)
         CONST_ARGLOC const -> show const
 
 data Register

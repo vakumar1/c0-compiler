@@ -234,7 +234,7 @@ referencePassBBIr bbIr =
 referencePassCommIr :: CommandIr -> Maybe VariableIr
 referencePassCommIr commIr = 
     case commIr of
-        ASN_PURE_IR _ (PURE_UNOP_IR (PureUnopIr REF_IR _ puB)) _ ->
+        ASN_PURE_IR _ _ (PURE_UNOP_IR (PureUnopIr REF_IR _ puB)) ->
             case puB of
                 VAR_IR var -> Just var
                 _ -> error . compilerError $ ("Created reference unop on non-variable pure base=" ++ (show puB))

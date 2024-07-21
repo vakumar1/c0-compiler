@@ -215,16 +215,16 @@ getUsedVarsCommand comm =
     case comm of
         INIT_IR var -> 
             Set.empty
-        ASN_PURE_IR asnVar asnPure m_superOffset ->
-            case m_superOffset of
-                Nothing ->
+        ASN_PURE_IR memop asnVar asnPure ->
+            case memop of
+                MEMOP_NONE_IR ->
                     getUsedVarsPure asnPure
-                Just (superOffsetPuB, superOffsetScale) ->
-                    Set.union (getUsedVarsPure asnPure) (getUsedVarsPureBase superOffsetPuB)
+                MEMOP_DEREF_IR ->
+                    Set.insert asnVar (getUsedVarsPure asnPure)
+                MEMOP_OFFSET_IR base ->
+                    Set.insert asnVar (Set.union (getUsedVarsPure asnPure) (getUsedVarsPureBase base))
         ASN_IMPURE_IR asnVar asnImpure ->
             getUsedVarsImpure asnImpure
-        DEREF_ASN_PURE_IR asnVar asnPure ->
-            Set.insert asnVar (getUsedVarsPure asnPure)
         GOTO_BB_IR _ ->
             Set.empty
         SPLIT_BB_IR splitPure _ _ ->
@@ -241,12 +241,14 @@ getAssignedVarsCommand comm =
     case comm of
         INIT_IR var ->
             Nothing
-        ASN_PURE_IR asnVar asnPure _ ->
-            Just asnVar
+        ASN_PURE_IR memop asnVar asnPure ->
+            case memop of
+                MEMOP_NONE_IR ->
+                    Just asnVar
+                _ ->
+                    Nothing
         ASN_IMPURE_IR asnVar asnImpure ->
             Just asnVar
-        DEREF_ASN_PURE_IR _ _ ->
-            Nothing
         GOTO_BB_IR _ ->
             Nothing
         SPLIT_BB_IR _ _ _ ->
@@ -264,6 +266,8 @@ getUsedVarsPure pure =
         PURE_BASE_IR base -> getUsedVarsPureBase base
         PURE_BINOP_IR (PureBinopIr _ _ base1 base2) -> Set.union (getUsedVarsPureBase base1) (getUsedVarsPureBase base2)
         PURE_UNOP_IR (PureUnopIr _ _ base) -> getUsedVarsPureBase base
+        PURE_DEREF_IR var -> Set.singleton var
+        PURE_OFFSET_IR var base -> Set.insert var (getUsedVarsPureBase base)
 
 getUsedVarsImpure :: ImpureIr -> Set.Set VariableIr
 getUsedVarsImpure impure =

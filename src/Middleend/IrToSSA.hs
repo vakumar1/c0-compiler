@@ -140,21 +140,17 @@ commandIrToMaximalSSA comm versions =
     case comm of
         INIT_IR var -> 
             (comm, versions)
-        ASN_PURE_IR asnVar asnPure m_superOffset ->
+        ASN_PURE_IR memop asnVar asnPure ->
             let newPure = pureIrToMaximalSSA asnPure versions
+                newMemop = memopIrToMaximalSSA memop versions
                 (newVar, newVersions) = updateVarVersion asnVar versions 
-                newComm = ASN_PURE_IR newVar newPure m_superOffset
+                newComm = ASN_PURE_IR newMemop newVar newPure
              in (newComm, newVersions)
         ASN_IMPURE_IR asnVar asnImpure ->
             let newImpure = impureIrToMaximalSSA asnImpure versions
                 (newVar, newVersions) = updateVarVersion asnVar versions
                 newComm = ASN_IMPURE_IR newVar newImpure
              in (newComm, newVersions)
-        DEREF_ASN_PURE_IR asnVar asnPure ->
-            let newPure = pureIrToMaximalSSA asnPure versions
-                newVar = varIrToMaximalSSA asnVar versions 
-                newComm = DEREF_ASN_PURE_IR newVar newPure
-             in (newComm, versions)
         GOTO_BB_IR _ ->
             (comm, versions)
         SPLIT_BB_IR condPure splitLeft splitRight ->
@@ -170,6 +166,14 @@ commandIrToMaximalSSA comm versions =
         ABORT_IR ->
             (comm, versions)
 
+memopIrToMaximalSSA :: MemopIr -> VariableIrVersion -> MemopIr
+memopIrToMaximalSSA memop versions = 
+    case memop of
+        MEMOP_OFFSET_IR base ->
+            MEMOP_OFFSET_IR (pureBaseIrToMaximalSSA base versions)
+        _ ->
+            memop
+
 pureIrToMaximalSSA :: PureIr -> VariableIrVersion -> PureIr
 pureIrToMaximalSSA pure versions =
     case pure of
@@ -179,6 +183,10 @@ pureIrToMaximalSSA pure versions =
             PURE_BINOP_IR (PureBinopIr cat ty (pureBaseIrToMaximalSSA base1 versions) (pureBaseIrToMaximalSSA base2 versions))
         PURE_UNOP_IR (PureUnopIr cat ty base) ->
             PURE_UNOP_IR (PureUnopIr cat ty (pureBaseIrToMaximalSSA base versions))
+        PURE_DEREF_IR var ->
+            PURE_DEREF_IR (varIrToMaximalSSA var versions)
+        PURE_OFFSET_IR var base ->
+            PURE_OFFSET_IR (varIrToMaximalSSA var versions) (pureBaseIrToMaximalSSA base versions)
 
 impureIrToMaximalSSA :: ImpureIr -> VariableIrVersion -> ImpureIr
 impureIrToMaximalSSA impure versions =
