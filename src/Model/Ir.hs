@@ -69,8 +69,8 @@ data PureIr
     = PURE_BASE_IR PureBaseIr
     | PURE_BINOP_IR PureBinopIr
     | PURE_UNOP_IR PureUnopIr
-    | PURE_DEREF_IR VariableIr
-    | PURE_OFFSET_IR VariableIr PureBaseIr
+    | PURE_DEREF_IR VariableIr TypeCategory
+    | PURE_OFFSET_IR VariableIr PureBaseIr TypeCategory
     deriving (Show)
 
 data PureBaseIr

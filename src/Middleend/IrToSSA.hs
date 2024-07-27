@@ -137,34 +137,43 @@ bbIrToMaximalSSA bb versions =
 
 commandIrToMaximalSSA :: CommandIr -> VariableIrVersion -> (CommandIr, VariableIrVersion)
 commandIrToMaximalSSA comm versions = 
-    case comm of
-        INIT_IR var -> 
-            (comm, versions)
-        ASN_PURE_IR memop asnVar asnPure ->
-            let newPure = pureIrToMaximalSSA asnPure versions
-                newMemop = memopIrToMaximalSSA memop versions
-                (newVar, newVersions) = updateVarVersion asnVar versions 
-                newComm = ASN_PURE_IR newMemop newVar newPure
-             in (newComm, newVersions)
-        ASN_IMPURE_IR asnVar asnImpure ->
-            let newImpure = impureIrToMaximalSSA asnImpure versions
-                (newVar, newVersions) = updateVarVersion asnVar versions
-                newComm = ASN_IMPURE_IR newVar newImpure
-             in (newComm, newVersions)
-        GOTO_BB_IR _ ->
-            (comm, versions)
-        SPLIT_BB_IR condPure splitLeft splitRight ->
-            let newPure = pureIrToMaximalSSA condPure versions
-                newComm = SPLIT_BB_IR newPure splitLeft splitRight
-            in (newComm, versions)
-        RET_PURE_IR retPure ->
-            let newPure = pureIrToMaximalSSA retPure versions
-                newComm = RET_PURE_IR newPure
-             in (newComm, versions)
-        RET_IR ->
-            (comm, versions)
-        ABORT_IR ->
-            (comm, versions)
+    let m_assignedVar = getAssignedVarsCommand comm
+        updatedAsnVarVersions = 
+            case m_assignedVar of
+                Nothing ->
+                    versions
+                Just var ->
+                    let (newVar, newVersions) = updateVarVersion var versions
+                    in newVersions
+    in 
+        case comm of
+            INIT_IR var -> 
+                (comm, versions)
+            ASN_PURE_IR memop asnVar asnPure ->
+                let newPure = pureIrToMaximalSSA asnPure versions
+                    newMemop = memopIrToMaximalSSA memop versions
+                    newAsnVar = varIrToMaximalSSA asnVar updatedAsnVarVersions
+                    newComm = ASN_PURE_IR newMemop newAsnVar newPure
+                in (newComm, updatedAsnVarVersions)
+            ASN_IMPURE_IR asnVar asnImpure ->
+                let newImpure = impureIrToMaximalSSA asnImpure versions
+                    newAsnVar = varIrToMaximalSSA asnVar updatedAsnVarVersions
+                    newComm = ASN_IMPURE_IR newAsnVar newImpure
+                in (newComm, updatedAsnVarVersions)
+            GOTO_BB_IR _ ->
+                (comm, versions)
+            SPLIT_BB_IR condPure splitLeft splitRight ->
+                let newPure = pureIrToMaximalSSA condPure versions
+                    newComm = SPLIT_BB_IR newPure splitLeft splitRight
+                in (newComm, versions)
+            RET_PURE_IR retPure ->
+                let newPure = pureIrToMaximalSSA retPure versions
+                    newComm = RET_PURE_IR newPure
+                in (newComm, versions)
+            RET_IR ->
+                (comm, versions)
+            ABORT_IR ->
+                (comm, versions)
 
 memopIrToMaximalSSA :: MemopIr -> VariableIrVersion -> MemopIr
 memopIrToMaximalSSA memop versions = 
@@ -183,10 +192,10 @@ pureIrToMaximalSSA pure versions =
             PURE_BINOP_IR (PureBinopIr cat ty (pureBaseIrToMaximalSSA base1 versions) (pureBaseIrToMaximalSSA base2 versions))
         PURE_UNOP_IR (PureUnopIr cat ty base) ->
             PURE_UNOP_IR (PureUnopIr cat ty (pureBaseIrToMaximalSSA base versions))
-        PURE_DEREF_IR var ->
-            PURE_DEREF_IR (varIrToMaximalSSA var versions)
-        PURE_OFFSET_IR var base ->
-            PURE_OFFSET_IR (varIrToMaximalSSA var versions) (pureBaseIrToMaximalSSA base versions)
+        PURE_DEREF_IR var ty ->
+            PURE_DEREF_IR (varIrToMaximalSSA var versions) ty
+        PURE_OFFSET_IR var base ty ->
+            PURE_OFFSET_IR (varIrToMaximalSSA var versions) (pureBaseIrToMaximalSSA base versions) ty
 
 impureIrToMaximalSSA :: ImpureIr -> VariableIrVersion -> ImpureIr
 impureIrToMaximalSSA impure versions =
@@ -210,7 +219,7 @@ varIrToMaximalSSA :: VariableIr -> VariableIrVersion -> VariableIr
 varIrToMaximalSSA var versions = 
     case Map.lookup (variableIrName var) versions of
         Just currVar -> currVar
-        Nothing -> error . compilerError $ ("Uncaught use of variable before assignment: " ++ (show var))
+        Nothing -> var
 
 -- PHI FUNCTION INJECTION: inject variable passage from bb to all successors
 

@@ -223,7 +223,7 @@ elaborateExp e =
             in 
                 case memops of
                     [] -> IDENTIFIER_ELAB baseTok
-                    _ -> MEMOP_ELAB (MemopElab (IDENTIFIER_ELAB baseTok) memops)
+                    _ -> MEMOP_ELAB (MemopElab baseTok memops)
 
 elaborateTernop :: Ternop -> TernopElab
 elaborateTernop (Ternop op eCond e1 e2) = 

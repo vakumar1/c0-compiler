@@ -23,11 +23,9 @@ regAllocColoring fnIr (root, leaves, dag, sccMap) =
     let versionedLiveMap = livenessPass fnIr (root, leaves, dag, sccMap)
         ifg = constructIFG fnIr versionedLiveMap
         order = simplicialElimOrder ifg
-        referencedVars = referencedPass fnIr
-        nonAtomicVars = forceStackVars (graphNodes ifg)
-        allStackVars = Set.union referencedVars nonAtomicVars
-        coloring = greedyGraphColoring ifg allStackVars order
-     in Coloring coloring allStackVars
+        stackVars = forceStackPass fnIr
+        coloring = greedyGraphColoring ifg stackVars order
+     in Coloring coloring stackVars
 
 -- IFG CONSTRUCTION
 
@@ -179,17 +177,31 @@ simplicialElimOrderHelper ifg weights =
 -- GREEDY GRAPH COLORING
 
 greedyGraphColoring :: IFG -> Set.Set VariableIr -> [VariableIr] -> Map.Map VariableIr Int
-greedyGraphColoring ifg stackVars order = greedyGraphColoringHelper ifg stackVars order Map.empty 0
+greedyGraphColoring ifg stackVars order = 
+    let 
+        -- alloc stack var colors independently
+        (stackColoring, baseColor) = 
+            foldr
+                (\stackVar (interColoring, nextColor) ->
+                    (Map.insert stackVar nextColor interColoring, nextColor + 1)
+                )
+                (Map.empty, 0)
+                (Set.toList stackVars)
 
-greedyGraphColoringHelper :: IFG -> Set.Set VariableIr -> [VariableIr] -> Map.Map VariableIr Int -> Int -> Map.Map VariableIr Int
-greedyGraphColoringHelper ifg stackVars order initColoring nextHighestColor =
+        -- alloc all other var colors together
+        fullColoring = greedyGraphColoringHelper baseColor ifg stackVars order stackColoring
+    in fullColoring
+
+greedyGraphColoringHelper :: Int -> IFG -> Set.Set VariableIr -> [VariableIr] -> Map.Map VariableIr Int -> Map.Map VariableIr Int
+greedyGraphColoringHelper baseColor ifg stackVars order initColoring =
     case order of
         [] -> initColoring
         var : _ ->
             if Set.member var stackVars
+                -- skip duplicated stack vars
                 then 
-                    let newColoring = Map.insert var nextHighestColor initColoring
-                    in greedyGraphColoringHelper ifg stackVars (tail order) newColoring (nextHighestColor + 1)
+                    greedyGraphColoringHelper baseColor ifg stackVars (tail order) initColoring
+                -- alloc color for all other vars
                 else
                     let neighbors =
                             case Map.lookup var (graphSuccessors ifg) of
@@ -202,52 +214,46 @@ greedyGraphColoringHelper ifg stackVars order initColoring nextHighestColor =
                                         Just c -> (List.delete c unusedColors)
                                         Nothing -> unusedColors
                                 )
-                                [0 ..]
+                                [baseColor ..]
                                 neighbors
                         selectedColor = head remainingColors
                         newColoring = Map.insert var selectedColor initColoring
-                    in greedyGraphColoringHelper ifg stackVars (tail order) newColoring (max nextHighestColor (selectedColor + 1))
+                    in greedyGraphColoringHelper baseColor ifg stackVars (tail order) newColoring
 
 -- REFERENCED VARS PASS
-referencedPass :: FunctionIr -> Set.Set VariableIr
-referencedPass fnIr =
+forceStackPass :: FunctionIr -> Set.Set VariableIr
+forceStackPass fnIr =
     foldr
         (\index interVars ->
             case Map.lookup index (functionIrBlocks fnIr) of
-                Just bbIr -> Set.union interVars (referencePassBBIr bbIr)
+                Just bbIr -> Set.union interVars (forceStackBBIr bbIr)
                 Nothing -> error . compilerError $ "Attempted to access basic block during reference pass: index=" ++ (show index)
         )
         Set.empty
         [0..((length . functionIrBlocks $ fnIr) - 1)]
 
-referencePassBBIr :: BasicBlockIr -> Set.Set VariableIr
-referencePassBBIr bbIr =
+forceStackBBIr :: BasicBlockIr -> Set.Set VariableIr
+forceStackBBIr bbIr =
     foldr
         (\commIr interVars ->
-            case referencePassCommIr commIr of
+            case forceStackCommIr commIr of
                 Just var -> Set.insert var interVars
                 Nothing -> interVars
         )
         Set.empty
         (bbIrCommands bbIr)
 
-referencePassCommIr :: CommandIr -> Maybe VariableIr
-referencePassCommIr commIr = 
+forceStackCommIr :: CommandIr -> Maybe VariableIr
+forceStackCommIr commIr = 
     case commIr of
+        -- select all declared non-atomic vars
+        INIT_IR varIr ->
+            case (variableIrType varIr) of
+                ARRAY_TYPE _ _ -> Just varIr
+                _ -> Nothing
+        -- select all referenced vars
         ASN_PURE_IR _ _ (PURE_UNOP_IR (PureUnopIr REF_IR _ puB)) ->
             case puB of
                 VAR_IR var -> Just var
                 _ -> error . compilerError $ ("Created reference unop on non-variable pure base=" ++ (show puB))
         _ -> Nothing
-
--- FORCED (NON-ATOMIC) STACK VARS
-forceStackVars :: Set.Set VariableIr -> Set.Set VariableIr
-forceStackVars vars = 
-    foldr
-        (\var interStackVars ->
-            case (variableIrType var) of
-                ARRAY_TYPE _ _ -> Set.insert var interStackVars
-                _ -> interStackVars
-        )
-        Set.empty
-        (Set.toList vars)

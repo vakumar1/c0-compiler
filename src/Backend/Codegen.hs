@@ -670,7 +670,7 @@ asnPureIrToX86 coloring asnMemop asnVar asnPure alloc =
                                     _ ->
                                         error . compilerError $ ("Attempted to get ref on non-stack variable=" ++ (displayArgLoc pureVarLoc))
                 in asnInst ++ unopInst
-            PURE_DEREF_IR var ->
+            PURE_DEREF_IR var _ ->
                 let varLoc = getVarLoc var coloring alloc
                     derefInst = 
                         case (asnVarLoc, varLoc) of
@@ -692,7 +692,7 @@ asnPureIrToX86 coloring asnMemop asnVar asnPure alloc =
                                 ]
                 in asnInst ++ derefInst
             
-            PURE_OFFSET_IR var offsetPuB ->
+            PURE_OFFSET_IR var offsetPuB _ ->
                 let varLoc = getVarLoc var coloring alloc
                     (superOffsetInst, m_superOffsetOverwrite) = 
                         case offsetPuB of
@@ -1137,7 +1137,7 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                                     ]
                     in splitInst
         
-        PURE_DEREF_IR var ->
+        PURE_DEREF_IR var _ ->
             let varLoc = getVarLoc var coloring alloc
                 splitInst = 
                     case varLoc of
@@ -1162,7 +1162,7 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                             ]
             in splitInst
 
-        PURE_OFFSET_IR var offsetPuB ->
+        PURE_OFFSET_IR var offsetPuB _ ->
             let varLoc = getVarLoc var coloring alloc
                 (superOffsetInst, m_superOffsetOverwrite) = 
                     case offsetPuB of
@@ -1342,11 +1342,13 @@ retToX86 coloring retPure bbX86 alloc =
                                             if baseOffset == 0
                                                 then 
                                                     [ MOV_X86 (REG_ARGLOC AX) (REG_ARGLOC reg)
-                                                    ]
+                                                    ] ++
+                                                    (fnCalleePostprocessing alloc)
                                                 else
                                                     [ MOV_X86 (REG_ARGLOC AX) (REG_ARGLOC reg)
                                                     , ADD_X86 (REG_ARGLOC AX) (CONST_ARGLOC baseOffset)
-                                                    ]
+                                                    ] ++
+                                                    (fnCalleePostprocessing alloc)
                                         Just superOffsetBase ->
                                             case superOffsetBase of
                                                 Left superOffsetReg ->
@@ -1355,38 +1357,45 @@ retToX86 coloring retPure bbX86 alloc =
                                                             [ MOV_X86 (REG_ARGLOC AX) (REG_ARGLOC reg)
                                                             , ADD_X86 (REG_ARGLOC AX) (REG_ARGLOC superOffsetReg)
                                                             ]
+                                                             ++
+                                                            (fnCalleePostprocessing alloc)
                                                         else
                                                             [ MOV_X86 (REG_ARGLOC AX) (REG_ARGLOC reg)
                                                             , ADD_X86 (REG_ARGLOC AX) (CONST_ARGLOC baseOffset)
                                                             , ADD_X86 (REG_ARGLOC AX) (REG_ARGLOC superOffsetReg)
-                                                            ]
+                                                            ] ++
+                                                            (fnCalleePostprocessing alloc)
                                                 Right superOffsetInt ->
                                                     if (superOffsetInt + baseOffset) == 0
                                                         then
                                                             [ MOV_X86 (REG_ARGLOC AX) (REG_ARGLOC reg)
-                                                            ]
+                                                            ] ++
+                                                            (fnCalleePostprocessing alloc)
                                                         else
                                                             [ MOV_X86 (REG_ARGLOC AX) (REG_ARGLOC reg)
                                                             , ADD_X86 (REG_ARGLOC AX) (CONST_ARGLOC (superOffsetInt + baseOffset))
-                                                            ]
+                                                            ] ++
+                                                            (fnCalleePostprocessing alloc)
                                 _ ->
                                     error . compilerError $ ("Attempted to get ref on non-stack variable=" ++ (displayArgLoc pureVarLoc))
             in retInst
                         
-        PURE_DEREF_IR var ->
+        PURE_DEREF_IR var _ ->
             let varLoc = getVarLoc var coloring alloc
                 retInst = 
                     case varLoc of
                         REG_ARGLOC p ->
                             [ MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC p Nothing 0)
-                            ]
+                            ] ++
+                            (fnCalleePostprocessing alloc)
                         REFREG_ARGLOC _ _ _ ->
                             [ MOV_X86 (REG_ARGLOC DX) varLoc
                             , MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC DX Nothing 0)
-                            ]
+                            ] ++
+                            (fnCalleePostprocessing alloc)
             in retInst
         
-        PURE_OFFSET_IR var offsetPuB ->
+        PURE_OFFSET_IR var offsetPuB _ ->
             let varLoc = getVarLoc var coloring alloc
                 (superOffsetInst, m_superOffsetOverwrite) = 
                     case offsetPuB of
@@ -1413,7 +1422,10 @@ retToX86 coloring retPure bbX86 alloc =
                                     error . compilerError $ ("Attempted to overwrite non-empty super offset for mem variable=" ++ (displayArgLoc varLoc))
                                 Nothing ->
                                     [ MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC reg m_superOffsetOverwrite baseOffset)
-                                    ]
+                                    ] ++
+                                    (fnCalleePostprocessing alloc)
+                        _ ->
+                            error . compilerError $ ("Attempted to access offset within non-stack var=" ++ (displayArgLoc varLoc))
             in superOffsetInst ++ offsetInst
 
 retNoneToX86 :: AllocState -> [X86Instruction]

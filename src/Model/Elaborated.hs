@@ -201,7 +201,7 @@ data FunctionCallElab = FunctionCallElab
     deriving Show
 
 data MemopElab = MemopElab
-    { memopElabExp :: ExpElab
+    { memopElabTok :: Token
     , memopElabOps :: [MemopElabCat]
     }
     deriving Show

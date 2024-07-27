@@ -306,6 +306,13 @@ irIf (IfElab condExp ifStmt (Just elseStmt)) fnElab state =
     in (ifTerm && elseTerm, True, predecessorCommandsMerge ifPreds elsePreds, resetFinalTermState)
 
 irWhile :: WhileElab -> FunctionElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
+irWhile (WhileElab condExp whileStmt) fnElab state
+    | debugElabLogs && (Trace.trace 
+        ("\n\nirWhile -- " ++ 
+            "\ncondExp=" ++     (Pretty.ppShow condExp) ++ 
+            "\nwhileStmt=" ++   (Pretty.ppShow whileStmt)
+        ) 
+        False) = undefined
 irWhile (WhileElab condExp whileStmt) fnElab state = 
     let 
         -- PART I. cond block preparation
@@ -422,6 +429,14 @@ irDecl (DeclElab varElab (Just asn)) state =
     in (False, False, predecessorCommandsSingleton declState, asnState)    
 
 irAsn :: AsnElab -> IrProcessingState -> (Bool, Bool, PredecessorCommands, IrProcessingState)
+irAsn (AsnElab (LvalElab lvalTok memOps) e) state
+    | debugElabLogs && (Trace.trace 
+        ("\n\nirAsn -- " ++ 
+            "\nlvalTok=" ++     (Pretty.ppShow lvalTok) ++ 
+            "\nmemOps=" ++      (Pretty.ppShow memOps) ++ 
+            "\nexp=" ++         (Pretty.ppShow e)
+        ) 
+        False) = undefined
 irAsn (AsnElab (LvalElab lvalTok memOps) e) state =
     case (identifierLookup lvalTok (scopes . irProcScopeState $ state)) of
         -- fail if varElab is not declared
@@ -461,13 +476,21 @@ irAsn (AsnElab (LvalElab lvalTok memOps) e) state =
                                             if setAssigned
                                                 then
                                                     irProcessingStateUpdateScopeState
-                                                        (irProcessingScopeStateSetAssignedInScope (irProcScopeState asnState) varName varElab varScopeId)
-                                                        asnState
+                                                        (irProcessingScopeStateSetAssignedInScope (irProcScopeState processAsnState) varName varElab varScopeId)
+                                                        processAsnState
                                                 else
-                                                    asnState
+                                                    processAsnState
                                     in (False, False, predecessorCommandsSingleton asnState, asnState)
 
 processMemopAsn :: Token -> MemopIr -> VariableIr -> TypeCategory -> PureIr -> TypeCategory -> IrProcessingState -> (Bool, IrProcessingState)
+processMemopAsn idTok memop lvalVar lvalTy expPu expTy state
+    | debugElabLogs && (Trace.trace 
+        ("\n\nprocessMemopAsn -- " ++ 
+            "\nmemop=" ++       (Pretty.ppShow memop) ++ 
+            "\nlvalVar=" ++     (Pretty.ppShow lvalVar) ++
+            "\nexpPu=" ++       (Pretty.ppShow expPu)
+        ) 
+        False) = undefined
 processMemopAsn idTok memop lvalVar lvalTy expPu expTy state = 
     let (setAssigned, typeCheckErrs) =
             case memop of
@@ -559,7 +582,7 @@ irExp e state =
         UNOP_ELAB u -> irUnop u state
         FN_CALL_ELAB f -> irFunctionCall f state
         REF_LVAL_EXP_ELAB -> irRefLval state
-        -- MEMOP_ELAB m -> irMemop m state
+        MEMOP_ELAB m -> irMemop m state
 
 irRefLval :: IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irRefLval state = 
@@ -575,7 +598,7 @@ irRefLval state =
                     case lvalTy of
                         -- deref the lval
                         POINTER_TYPE derefTy ->
-                            (Just (PURE_DEREF_IR lvalVar, derefTy), state)
+                            (Just (PURE_DEREF_IR lvalVar derefTy, derefTy), state)
                         -- fail if the lval does not have a pointer type
                         _ ->
                             let refState = irProcessingStateAppendErrs [ASN_TYPE_DEREF (AsnTypeDereference lvalTok lvalTy)] state
@@ -585,7 +608,7 @@ irRefLval state =
                     case lvalTy of
                         -- index into the array lval
                         ARRAY_TYPE elemTy _ ->
-                            (Just (PURE_OFFSET_IR lvalVar offsetPuB, elemTy), state)
+                            (Just (PURE_OFFSET_IR lvalVar offsetPuB elemTy, elemTy), state)
                         -- fail if the lval does not have an array type
                         _ ->
                             let refState = irProcessingStateAppendErrs [ASN_TYPE_INDEX (AsnTypeIndex lvalTok lvalTy)] state
@@ -872,6 +895,43 @@ irFunctionArgsMismatchedErrs fnElabTy fnCallTy =
                     (zip fnElabTy fnCallTy)
                 then True
                 else False
+
+irMemop :: MemopElab -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
+irMemop memopElab state = 
+    let memopTok = memopElabTok memopElab
+        (m_idPT, idState) = irIdentifier memopTok state
+    in
+        case m_idPT of
+            Nothing ->
+                (Nothing, idState)
+            Just (idPu, idTy) ->
+                case idPu of
+                    (PURE_BASE_IR (VAR_IR varIr)) ->
+                        let (finalMemop, m_memVT, memState) = expandMemops memopTok varIr idTy (memopElabOps memopElab) idState
+                        in
+                            case m_memVT of
+                                Nothing ->
+                                    (Nothing, memState)
+                                Just (finalVarIr, finalVarTy) ->
+                                    case finalMemop of
+                                        MEMOP_NONE_IR ->
+                                            (Just (PURE_BASE_IR (VAR_IR finalVarIr), finalVarTy), memState)
+                                        MEMOP_DEREF_IR ->
+                                            case finalVarTy of
+                                                POINTER_TYPE derefTy ->
+                                                    (Just (PURE_DEREF_IR finalVarIr derefTy, derefTy), memState)
+                                                _ ->
+                                                    let errState = irProcessingStateAppendErrs [(OP_TYPE_MISMATCH (OpTypeMismatch memopTok [POINTER_TYPE WILDCARD_TYPE]))] memState
+                                                    in (Nothing, errState)
+                                        MEMOP_OFFSET_IR offsetPuB ->
+                                            case finalVarTy of
+                                                ARRAY_TYPE elemTy _ ->
+                                                    (Just (PURE_OFFSET_IR finalVarIr offsetPuB elemTy, elemTy), memState)
+                                                _ ->
+                                                    let errState = irProcessingStateAppendErrs [(OP_TYPE_MISMATCH (OpTypeMismatch memopTok [ARRAY_TYPE WILDCARD_TYPE 0]))] memState
+                                                    in (Nothing, errState)
+                    _ ->
+                        error . compilerError $ ("Attempted to perform memop on non-var exp=" ++ (show idPu))
 
 -- MANAGE AND ACCESS IR PROCESSING STATE - BASE UTILITIES
 
@@ -1315,6 +1375,16 @@ expandPureIr pu state =
                 unopTemp = VariableIr tempName 0 (pureUnopInfType unop) True
                 unopComm = ASN_PURE_IR MEMOP_NONE_IR unopTemp pu
              in ([unopComm], VAR_IR unopTemp, newState)
+        PURE_DEREF_IR varIr derefTy ->
+            let (tempName, newState) = irProcessingScopeStateAddTemp state
+                derefTemp = VariableIr tempName 0 derefTy True
+                derefComm = ASN_PURE_IR MEMOP_NONE_IR derefTemp pu
+             in ([derefComm], VAR_IR derefTemp, newState)
+        PURE_OFFSET_IR varIr offsetPuB elemTy ->
+            let (tempName, newState) = irProcessingScopeStateAddTemp state
+                offsetTemp = VariableIr tempName 0 elemTy True
+                offsetComm = ASN_PURE_IR MEMOP_NONE_IR offsetTemp pu
+             in ([offsetComm], VAR_IR offsetTemp, newState)
 
 expandMemops :: Token -> VariableIr -> TypeCategory -> [MemopElabCat] -> IrProcessingState -> (MemopIr, Maybe (VariableIr, TypeCategory), IrProcessingState)
 expandMemops idTok baseVarIr baseTy memOps state = 
@@ -1404,7 +1474,7 @@ processDerefMemopExp idTok varIr varTy state =
                     ASN_PURE_IR
                         MEMOP_NONE_IR
                         derefTemp
-                        (PURE_DEREF_IR varIr)
+                        (PURE_DEREF_IR varIr derefTy)
                 derefState = 
                     (irProcessingStateAddComms [derefComm]) .
                     (irProcessingStateUpdateScopeState tempScopeState) $
@@ -1433,7 +1503,7 @@ processMemAccessOpsExp idTok memAccessOps varIr varTy state =
                         ASN_PURE_IR
                             MEMOP_NONE_IR
                             indexTemp
-                            (PURE_OFFSET_IR varIr puBOffset)
+                            (PURE_OFFSET_IR varIr puBOffset finalVarTy)
                     indexState = 
                         (irProcessingStateAddComms [asnComm]) .
                         (irProcessingStateUpdateScopeState tempScopeState) $
@@ -1454,7 +1524,7 @@ accumulAndExpandOffsets idTok varTy memAccessOps state =
                 in (finalVarTy, Just cumulOffsetPuB, cumulOffsetState)
 
 -- helper: attempts to apply list of memory access (index) ops and returns (i) accumulated const sum and (ii) list of var offsets
-accumulateOffsets :: Token -> TypeCategory -> [MemopElabCat] -> IrProcessingState -> (TypeCategory, Bool, Int, [VariableIr], IrProcessingState)
+accumulateOffsets :: Token -> TypeCategory -> [MemopElabCat] -> IrProcessingState -> (TypeCategory, Bool, Int, [(VariableIr, Int)], IrProcessingState)
 accumulateOffsets idTok varTy memAccessOps state = 
     foldl
         (\(interVarTy, interOffsetValid, interOffsetConst, interOffsetVarIrs, interState) memOpElt ->
@@ -1492,7 +1562,7 @@ accumulateOffsets idTok varTy memAccessOps state =
                                                                     _ ->
                                                                         error . compilerError $ "Found non-int const pureBaseIr with required/checked type int: const=" ++ (show expPuB)
                                                             VAR_IR v ->
-                                                                (elemTy, interOffsetValid, interOffsetConst, interOffsetVarIrs ++ [v], expPuBState)
+                                                                (elemTy, interOffsetValid, interOffsetConst, interOffsetVarIrs ++ [(v, sizeofType elemTy)], expPuBState)
                                                 -- fail if offset is not an int
                                                 _ ->
                                                     let errState = irProcessingStateAppendErrs [ARR_INDEX_NON_INT_TYPE (ArrIndexNonIntType idTok expTy)] expState
@@ -1508,17 +1578,26 @@ accumulateOffsets idTok varTy memAccessOps state =
         memAccessOps
 
 -- helper: converts accumulated const offset sum and list of var offsets into a single PureBaseIr
-expandOffset :: Int -> [VariableIr] -> IrProcessingState -> (PureBaseIr, IrProcessingState)
+expandOffset :: Int -> [(VariableIr, Int)] -> IrProcessingState -> (PureBaseIr, IrProcessingState)
 expandOffset offsetConst offsetVars state = 
     case offsetVars of
         [] -> 
             (CONST_IR (INT_CONST offsetConst), state)
         _ ->
             foldl
-                (\(interPuB, interState) nextVar ->
+                (\(interPuB, interState) (nextVar, nextVarScale) ->
                     let (tempName, newScopeState) = irProcessingScopeStateAddTemp (irProcScopeState interState)
                         binopTemp = VariableIr tempName 0 INT_TYPE True
-                        binopPuB = VAR_IR binopTemp
+                        scaleComm = 
+                            ASN_PURE_IR
+                                MEMOP_NONE_IR
+                                binopTemp
+                                (PURE_BINOP_IR
+                                    (PureBinopIr
+                                        MUL_IR
+                                        INT_TYPE
+                                        (VAR_IR nextVar)
+                                        (CONST_IR (INT_CONST nextVarScale))))
                         binopComm = 
                             ASN_PURE_IR 
                                 MEMOP_NONE_IR 
@@ -1528,12 +1607,12 @@ expandOffset offsetConst offsetVars state =
                                         ADD_IR
                                         INT_TYPE
                                         interPuB
-                                        binopPuB))
+                                        (VAR_IR binopTemp)))
                         newState = 
-                            (irProcessingStateAddComms [binopComm]) .
+                            (irProcessingStateAddComms [binopComm, scaleComm]) .
                             (irProcessingStateUpdateScopeState newScopeState) $
                             interState
-                    in (binopPuB, newState)
+                    in (VAR_IR binopTemp, newState)
                 )
                 (CONST_IR (INT_CONST offsetConst), state)
                 offsetVars
