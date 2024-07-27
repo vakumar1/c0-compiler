@@ -36,16 +36,16 @@ compiler code =
         ast = parser (reverse tokens)
         elaborated = elaborateProg ast
         (ir, verErrors) = irProg "program" elaborated
-        colorings = 
+        zippedIrColorings = 
             map
                 (\fnIr ->
                     let (root, leaves, dag, sccMap) = tarjansAlgo 0 (functionIrCFG fnIr)
                         maxSSAIr = irToMaximalSSA fnIr (root, leaves, dag, sccMap)
                         coloring = regAllocColoring maxSSAIr (root, leaves, dag, sccMap)
-                    in coloring
+                    in (maxSSAIr, coloring)
                 )
                 ir
-        x86inst = zippedProgIrToX86 (zip ir colorings)
+        x86inst = zippedProgIrToX86 zippedIrColorings
         x86asm = concat $ map show x86inst
      in if not (null lexerErrors)
             then error . handleLexerErrors $ lexerErrors
