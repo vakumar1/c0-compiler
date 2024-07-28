@@ -175,14 +175,6 @@ commandIrToMaximalSSA comm versions =
             ABORT_IR ->
                 (comm, versions)
 
-memopIrToMaximalSSA :: MemopIr -> VariableIrVersion -> MemopIr
-memopIrToMaximalSSA memop versions = 
-    case memop of
-        MEMOP_OFFSET_IR base innerVarTy ->
-            MEMOP_OFFSET_IR (pureBaseIrToMaximalSSA base versions) innerVarTy
-        _ ->
-            memop
-
 pureIrToMaximalSSA :: PureIr -> VariableIrVersion -> PureIr
 pureIrToMaximalSSA pure versions =
     case pure of
@@ -192,10 +184,16 @@ pureIrToMaximalSSA pure versions =
             PURE_BINOP_IR (PureBinopIr cat ty (pureBaseIrToMaximalSSA base1 versions) (pureBaseIrToMaximalSSA base2 versions))
         PURE_UNOP_IR (PureUnopIr cat ty base) ->
             PURE_UNOP_IR (PureUnopIr cat ty (pureBaseIrToMaximalSSA base versions))
-        PURE_DEREF_IR var ty ->
-            PURE_DEREF_IR (varIrToMaximalSSA var versions) ty
-        PURE_OFFSET_IR var base ty ->
-            PURE_OFFSET_IR (varIrToMaximalSSA var versions) (pureBaseIrToMaximalSSA base versions) ty
+        PURE_MEMOP_IR var memop ->
+            PURE_MEMOP_IR var (memopIrToMaximalSSA memop versions)
+
+memopIrToMaximalSSA :: MemopIr -> VariableIrVersion -> MemopIr
+memopIrToMaximalSSA memop versions = 
+    case memopIrOffset memop of
+        Just offsetPuB ->
+            MemopIr (memopIrIsDeref memop) (Just (pureBaseIrToMaximalSSA offsetPuB versions)) (memopIrRetType memop)
+        Nothing ->
+            memop
 
 impureIrToMaximalSSA :: ImpureIr -> VariableIrVersion -> ImpureIr
 impureIrToMaximalSSA impure versions =
@@ -209,11 +207,7 @@ pureBaseIrToMaximalSSA :: PureBaseIr -> VariableIrVersion -> PureBaseIr
 pureBaseIrToMaximalSSA base versions =
     case base of
         CONST_IR _ -> base
-        VAR_IR baseVar -> 
-            case Map.lookup (variableIrName baseVar) versions of
-                Just currVar -> VAR_IR currVar
-                -- variable use in a pure IR must succeed the assignment of the variable
-                Nothing -> error (compilerError ("Uncaught use of variable before assignment: " ++ (show baseVar)))
+        VAR_IR baseVar -> VAR_IR (varIrToMaximalSSA baseVar versions)
 
 varIrToMaximalSSA :: VariableIr -> VariableIrVersion -> VariableIr
 varIrToMaximalSSA var versions = 

@@ -12,6 +12,7 @@ import Common.Constants
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.Maybe as Maybe
 
 import qualified Text.Show.Pretty as Pretty
 import qualified Debug.Trace as Trace
@@ -164,46 +165,55 @@ mainCommIrToX86 coloring comm alloc =
 asnPureIrToX86 :: Coloring -> MemopIr -> VariableIr -> PureIr -> AllocState -> [X86Instruction]
 asnPureIrToX86 coloring asnMemop asnVar asnPure alloc =
     let baseVarLoc = getVarLoc asnVar coloring alloc
+        (offsetInst, m_superOffset) = 
+            case memopIrOffset asnMemop of
+                Nothing ->
+                    ([], Nothing)
+                Just offsetPuB ->
+                    case offsetPuB of
+                        CONST_IR c ->
+                            case c of
+                                INT_CONST i ->
+                                    ([], Just (Right i))
+                                _ ->
+                                    error . compilerError $ "Attempted use non-int const in memory offset" ++ (show offsetPuB)
+                        VAR_IR offsetVar ->
+                            let offsetVarLoc = (getVarLoc offsetVar coloring alloc)
+                            in 
+                                case offsetVarLoc of
+                                    REG_ARGLOC offsetVarReg ->
+                                        ([], Just (Left offsetVarReg))
+                                    REFREG_ARGLOC _ _ _ ->
+                                        ([ MOV_X86 (REG_ARGLOC CX) offsetVarLoc
+                                        ],
+                                        Just (Left CX))
+
         (asnInst, asnVarLoc) = 
-            case asnMemop of
-                MEMOP_NONE_IR ->
-                    ([], baseVarLoc)
-                MEMOP_DEREF_IR ->
-                    case baseVarLoc of
-                        REG_ARGLOC varReg ->
-                            ([], REFREG_ARGLOC varReg Nothing 0)
-                        REFREG_ARGLOC _ _ _ ->
-                            ([ MOV_X86 (REG_ARGLOC CX) baseVarLoc
-                            ],
-                            REFREG_ARGLOC CX Nothing 0
-                            )
-                MEMOP_OFFSET_IR offsetPuB _ ->
+            if not . memopIrIsDeref $ asnMemop
+                then
                     case baseVarLoc of
                         REG_ARGLOC _ ->
-                            error . compilerError $ ("Attempted to add offset within register variable=" ++ (show asnVar))
-                        REFREG_ARGLOC varReg m_superOffset baseOffset ->
-                            case m_superOffset of
+                            if (Maybe.isNothing . memopIrOffset $ asnMemop)
+                                then
+                                    ([], baseVarLoc)
+                                else
+                                    error . compilerError $ ("Attempted to add offset within register variable=" ++ (show asnVar))
+                        REFREG_ARGLOC varReg m_currSuperOffset baseOffset ->
+                            case m_currSuperOffset of
                                 Just _ ->
                                     error . compilerError $ ("Attempted to overwrite non-empty super offset for mem variable=" ++ (displayArgLoc baseVarLoc))
                                 Nothing ->
-                                    case offsetPuB of
-                                        CONST_IR c ->
-                                            case c of
-                                                INT_CONST i ->
-                                                    ([], REFREG_ARGLOC varReg (Just (Right i)) baseOffset)
-                                                _ ->
-                                                    error . compilerError $ "Attempted use non-int const in memory offset" ++ (show offsetPuB)
-                                        VAR_IR offsetVar ->
-                                            let offsetVarLoc = (getVarLoc offsetVar coloring alloc)
-                                            in 
-                                                case offsetVarLoc of
-                                                    REG_ARGLOC offsetVarReg ->
-                                                        ([], REFREG_ARGLOC varReg (Just (Left offsetVarReg)) baseOffset)
-                                                    REFREG_ARGLOC _ _ _ ->
-                                                        ([ MOV_X86 (REG_ARGLOC CX) offsetVarLoc
-                                                        ],
-                                                        REFREG_ARGLOC varReg (Just (Left CX)) baseOffset
-                                                        )
+                                    (offsetInst, REFREG_ARGLOC varReg m_superOffset baseOffset)
+                else
+                    case baseVarLoc of
+                        REG_ARGLOC varReg ->
+                            (offsetInst, REFREG_ARGLOC varReg m_superOffset 0)
+                        REFREG_ARGLOC _ _ _ ->
+                            (offsetInst ++
+                            [ MOV_X86 (REG_ARGLOC BX) baseVarLoc
+                            ],
+                            REFREG_ARGLOC BX m_superOffset 0)
+
     in case asnPure of
             PURE_BASE_IR base ->
                 case base of
@@ -670,65 +680,72 @@ asnPureIrToX86 coloring asnMemop asnVar asnPure alloc =
                                     _ ->
                                         error . compilerError $ ("Attempted to get ref on non-stack variable=" ++ (displayArgLoc pureVarLoc))
                 in asnInst ++ unopInst
-            PURE_DEREF_IR var _ ->
+
+            PURE_MEMOP_IR var memop ->
                 let varLoc = getVarLoc var coloring alloc
-                    derefInst = 
-                        case (asnVarLoc, varLoc) of
-                            (REG_ARGLOC _, REG_ARGLOC p) ->
-                                [ MOV_X86 asnVarLoc (REFREG_ARGLOC p Nothing 0)
-                                ]
-                            (REG_ARGLOC _, REFREG_ARGLOC _ _ _) ->
-                                [ MOV_X86 (REG_ARGLOC DX) varLoc
-                                , MOV_X86 asnVarLoc (REFREG_ARGLOC DX Nothing 0)
-                                ]
-                            (REFREG_ARGLOC _ _ _, REG_ARGLOC _) ->
-                                [ MOV_X86 (REG_ARGLOC DX) varLoc
-                                , MOV_X86 asnVarLoc (REFREG_ARGLOC DX Nothing 0)
-                                ]
-                            (REFREG_ARGLOC _ _ _, REFREG_ARGLOC _ _ _) ->
-                                [ MOV_X86 (REG_ARGLOC DX) varLoc
-                                , MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC DX Nothing 0)
-                                , MOV_X86 asnVarLoc (REG_ARGLOC AX)
-                                ]
-                in asnInst ++ derefInst
-            
-            PURE_OFFSET_IR var offsetPuB _ ->
-                let varLoc = getVarLoc var coloring alloc
-                    (superOffsetInst, m_superOffsetOverwrite) = 
-                        case offsetPuB of
-                            CONST_IR c -> 
-                                case c of
-                                    INT_CONST i ->
-                                        ([], Just (Right i))
-                                    _ ->
-                                        error . compilerError $ ("Attempted use non-int const for memory offset const=" ++ (show offsetPuB))
-                            VAR_IR var -> 
-                                let superOffsetVarLoc = getVarLoc var coloring alloc
-                                in 
-                                    case superOffsetVarLoc of
-                                        REG_ARGLOC reg ->
-                                            ([], Just (Left reg))
-                                        REFREG_ARGLOC _ _ _ ->
-                                            ([ MOV_X86 (REG_ARGLOC AX) superOffsetVarLoc
-                                            ], Just (Left AX))
-                    offsetInst = 
-                        case varLoc of
-                            REFREG_ARGLOC reg m_superOffset baseOffset ->
-                                case m_superOffset of
-                                    Just _ ->
-                                        error . compilerError $ ("Attempted to overwrite non-empty super offset for mem variable=" ++ (displayArgLoc baseVarLoc))
-                                    Nothing ->
-                                        case asnVarLoc of
-                                            REG_ARGLOC _ ->
-                                                [ MOV_X86 asnVarLoc (REFREG_ARGLOC reg m_superOffsetOverwrite baseOffset)
-                                                ]
-                                            REFREG_ARGLOC _ _ _ ->
-                                                [ MOV_X86 (REG_ARGLOC DX) (REFREG_ARGLOC reg m_superOffsetOverwrite baseOffset)
-                                                , MOV_X86 asnVarLoc (REG_ARGLOC DX)
-                                                ]
-                            _ ->
-                                error . compilerError $ ("Attempted to get ref on non-stack variable=" ++ (show var) ++ " argLoc=" ++ (displayArgLoc varLoc))
-                in asnInst ++ superOffsetInst ++ offsetInst
+                    (offsetInst, m_superOffset) = 
+                        case memopIrOffset memop of
+                            Nothing ->
+                                ([], Nothing)
+                            Just offsetPuB ->
+                                case offsetPuB of
+                                    CONST_IR c -> 
+                                        case c of
+                                            INT_CONST i ->
+                                                ([], Just (Right i))
+                                            _ ->
+                                                error . compilerError $ ("Attempted use non-int const for memory offset const=" ++ (show offsetPuB))
+                                    VAR_IR var -> 
+                                        let superOffsetVarLoc = getVarLoc var coloring alloc
+                                        in 
+                                            case superOffsetVarLoc of
+                                                REG_ARGLOC reg ->
+                                                    ([], Just (Left reg))
+                                                REFREG_ARGLOC _ _ _ ->
+                                                    ([ MOV_X86 (REG_ARGLOC AX) superOffsetVarLoc
+                                                    ], Just (Left AX))
+                    memopInst =
+                        if not . memopIrIsDeref $ memop 
+                            then
+                                if Maybe.isNothing . memopIrOffset $ memop
+                                    then
+                                        error . compilerError $ "Encountered memopIr pure with not deref or offset: " ++ (show asnPure)
+                                    else
+                                        case varLoc of
+                                            REFREG_ARGLOC reg m_currSuperOffset baseOffset ->
+                                                case m_currSuperOffset of
+                                                    Just _ ->
+                                                        error . compilerError $ ("Attempted to overwrite non-empty super offset for mem variable=" ++ (displayArgLoc baseVarLoc))
+                                                    Nothing ->
+                                                        case asnVarLoc of
+                                                            REG_ARGLOC _ ->
+                                                                [ MOV_X86 asnVarLoc (REFREG_ARGLOC reg m_superOffset baseOffset)
+                                                                ]
+                                                            REFREG_ARGLOC _ _ _ ->
+                                                                [ MOV_X86 (REG_ARGLOC DX) (REFREG_ARGLOC reg m_superOffset baseOffset)
+                                                                , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                                                ]
+                                            _ ->
+                                                error . compilerError $ ("Attempted to get ref on non-stack variable=" ++ (show var) ++ " argLoc=" ++ (displayArgLoc varLoc))
+                            else
+                                case (asnVarLoc, varLoc) of
+                                    (REG_ARGLOC _, REG_ARGLOC p) ->
+                                        [ MOV_X86 asnVarLoc (REFREG_ARGLOC p m_superOffset 0)
+                                        ]
+                                    (REG_ARGLOC _, REFREG_ARGLOC _ _ _) ->
+                                        [ MOV_X86 (REG_ARGLOC DX) varLoc
+                                        , MOV_X86 asnVarLoc (REFREG_ARGLOC DX m_superOffset 0)
+                                        ]
+                                    (REFREG_ARGLOC _ _ _, REG_ARGLOC p) ->
+                                        [ MOV_X86 (REG_ARGLOC DX) (REFREG_ARGLOC p m_superOffset 0)
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC DX)
+                                        ]
+                                    (REFREG_ARGLOC _ _ _, REFREG_ARGLOC _ _ _) ->
+                                        [ MOV_X86 (REG_ARGLOC DX) varLoc
+                                        , MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC DX m_superOffset 0)
+                                        , MOV_X86 asnVarLoc (REG_ARGLOC AX)
+                                        ]
+                in asnInst ++ offsetInst ++ memopInst
 
 asnImpureIrToX86 :: Coloring -> VariableIr -> ImpureIr -> AllocState -> [X86Instruction]
 asnImpureIrToX86 coloring asnVar asnImpure alloc =
@@ -1139,59 +1156,55 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                                     ]
                     in splitInst
         
-        PURE_DEREF_IR var _ ->
+        PURE_MEMOP_IR var memop ->
             let varLoc = getVarLoc var coloring alloc
-                splitInst = 
-                    case varLoc of
-                        REG_ARGLOC p ->
-                            [ CMP_X86 (REFREG_ARGLOC p Nothing 0) (CONST_ARGLOC trueX86)
-                            ] ++
-                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                            [ JZ_X86 (bbToLabel fnName splitTrue)
-                            ] ++
-                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                            [ JMP_X86 (bbToLabel fnName splitFalse)
-                            ]
-                        REFREG_ARGLOC _ _ _ ->
-                            [ MOV_X86 (REG_ARGLOC DX) varLoc
-                            , CMP_X86 (REFREG_ARGLOC DX Nothing 0) (CONST_ARGLOC trueX86)
-                            ] ++
-                            (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
-                            [ JZ_X86 (bbToLabel fnName splitTrue)
-                            ] ++
-                            (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
-                            [ JMP_X86 (bbToLabel fnName splitFalse)
-                            ]
-            in splitInst
-
-        PURE_OFFSET_IR var offsetPuB _ ->
-            let varLoc = getVarLoc var coloring alloc
-                (superOffsetInst, m_superOffsetOverwrite) = 
-                    case offsetPuB of
-                        CONST_IR c -> 
-                            case c of
-                                INT_CONST i ->
-                                    ([], Just (Right i))
-                                _ ->
-                                    error . compilerError $ ("Attempted use non-int const for memory offset const=" ++ (show offsetPuB))
-                        VAR_IR superOffsetVar -> 
-                            let superOffsetVarLoc = getVarLoc superOffsetVar coloring alloc
-                            in 
-                                case superOffsetVarLoc of
-                                    REG_ARGLOC reg ->
-                                        ([], Just (Left reg))
-                                    REFREG_ARGLOC _ _ _ ->
-                                        ([ MOV_X86 (REG_ARGLOC AX) superOffsetVarLoc
-                                        ], Just (Left AX))
-                splitInst = 
-                    case varLoc of
-                        REFREG_ARGLOC reg m_superOffset baseOffset ->
-                            case m_superOffset of
-                                Just _ ->
-                                    error . compilerError $ ("Attempted to overwrite non-empty super offset for mem variable=" ++ (displayArgLoc varLoc))
-                                Nothing ->
-                                    [ MOV_X86 (REG_ARGLOC DX) (REFREG_ARGLOC reg m_superOffsetOverwrite baseOffset)
-                                    , CMP_X86 (REG_ARGLOC DX) (CONST_ARGLOC trueX86)
+                (offsetInst, m_superOffset) = 
+                    case memopIrOffset memop of
+                        Nothing ->
+                            ([], Nothing)
+                        Just offsetPuB ->
+                            case offsetPuB of
+                                CONST_IR c -> 
+                                    case c of
+                                        INT_CONST i ->
+                                            ([], Just (Right i))
+                                        _ ->
+                                            error . compilerError $ ("Attempted use non-int const for memory offset const=" ++ (show offsetPuB))
+                                VAR_IR var -> 
+                                    let superOffsetVarLoc = getVarLoc var coloring alloc
+                                    in 
+                                        case superOffsetVarLoc of
+                                            REG_ARGLOC reg ->
+                                                ([], Just (Left reg))
+                                            REFREG_ARGLOC _ _ _ ->
+                                                ([ MOV_X86 (REG_ARGLOC AX) superOffsetVarLoc
+                                                ], Just (Left AX))
+                splitInst =
+                    if not . memopIrIsDeref $ memop 
+                        then
+                            if Maybe.isNothing . memopIrOffset $ memop
+                                then
+                                    error . compilerError $ "Encountered memopIr pure with not deref or offset: " ++ (show memop)
+                                else
+                                    case varLoc of
+                                        REFREG_ARGLOC reg m_currSuperOffset baseOffset ->
+                                            case m_currSuperOffset of
+                                                Just _ ->
+                                                    error . compilerError $ ("Attempted to overwrite non-empty super offset for mem variable=" ++ (displayArgLoc varLoc))
+                                                Nothing ->
+                                                    [ MOV_X86 (REG_ARGLOC DX) (REFREG_ARGLOC reg m_superOffset baseOffset)
+                                                    , CMP_X86 (REG_ARGLOC DX) (CONST_ARGLOC trueX86)
+                                                    ] ++
+                                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                                    [ JZ_X86 (bbToLabel fnName splitTrue)
+                                                    ] ++
+                                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                                    [ JMP_X86 (bbToLabel fnName splitFalse)
+                                                    ]
+                        else
+                            case varLoc of
+                                REG_ARGLOC p ->
+                                    [ CMP_X86 (REFREG_ARGLOC p m_superOffset 0) (CONST_ARGLOC trueX86)
                                     ] ++
                                     (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
                                     [ JZ_X86 (bbToLabel fnName splitTrue)
@@ -1199,7 +1212,17 @@ splitToX86 coloring fnName condPure splitTrue splitFalse bbX86 alloc =
                                     (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
                                     [ JMP_X86 (bbToLabel fnName splitFalse)
                                     ]
-            in superOffsetInst ++ splitInst
+                                REFREG_ARGLOC _ _ _ ->
+                                    [ MOV_X86 (REG_ARGLOC DX) varLoc
+                                    , CMP_X86 (REFREG_ARGLOC DX m_superOffset 0) (CONST_ARGLOC trueX86)
+                                    ] ++
+                                    (basicBlockX86InjectedPhiFnPredCommands1 bbX86) ++
+                                    [ JZ_X86 (bbToLabel fnName splitTrue)
+                                    ] ++
+                                    (basicBlockX86InjectedPhiFnPredCommands2 bbX86) ++
+                                    [ JMP_X86 (bbToLabel fnName splitFalse)
+                                    ]
+            in offsetInst ++ splitInst
 
 
 -- RET: prepends no phi-fn insts. to ret inst.
@@ -1381,54 +1404,60 @@ retToX86 coloring retPure bbX86 alloc =
                                 _ ->
                                     error . compilerError $ ("Attempted to get ref on non-stack variable=" ++ (displayArgLoc pureVarLoc))
             in retInst
-                        
-        PURE_DEREF_IR var _ ->
+
+        PURE_MEMOP_IR var memop ->
             let varLoc = getVarLoc var coloring alloc
-                retInst = 
-                    case varLoc of
-                        REG_ARGLOC p ->
-                            [ MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC p Nothing 0)
-                            ] ++
-                            (fnCalleePostprocessing alloc)
-                        REFREG_ARGLOC _ _ _ ->
-                            [ MOV_X86 (REG_ARGLOC DX) varLoc
-                            , MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC DX Nothing 0)
-                            ] ++
-                            (fnCalleePostprocessing alloc)
-            in retInst
-        
-        PURE_OFFSET_IR var offsetPuB _ ->
-            let varLoc = getVarLoc var coloring alloc
-                (superOffsetInst, m_superOffsetOverwrite) = 
-                    case offsetPuB of
-                        CONST_IR c -> 
-                            case c of
-                                INT_CONST i ->
-                                    ([], Just (Right i))
-                                _ ->
-                                    error . compilerError $ ("Attempted use non-int const for memory offset const=" ++ (show offsetPuB))
-                        VAR_IR superOffsetVar -> 
-                            let superOffsetVarLoc = getVarLoc superOffsetVar coloring alloc
-                            in 
-                                case superOffsetVarLoc of
-                                    REG_ARGLOC reg ->
-                                        ([], Just (Left reg))
-                                    REFREG_ARGLOC _ _ _ ->
-                                        ([ MOV_X86 (REG_ARGLOC AX) superOffsetVarLoc
-                                        ], Just (Left AX))
-                offsetInst = 
-                    case varLoc of
-                        REFREG_ARGLOC reg m_superOffset baseOffset ->
-                            case m_superOffset of
-                                Just _ ->
-                                    error . compilerError $ ("Attempted to overwrite non-empty super offset for mem variable=" ++ (displayArgLoc varLoc))
-                                Nothing ->
-                                    [ MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC reg m_superOffsetOverwrite baseOffset)
+                (offsetInst, m_superOffset) = 
+                    case memopIrOffset memop of
+                        Nothing ->
+                            ([], Nothing)
+                        Just offsetPuB ->
+                            case offsetPuB of
+                                CONST_IR c -> 
+                                    case c of
+                                        INT_CONST i ->
+                                            ([], Just (Right i))
+                                        _ ->
+                                            error . compilerError $ ("Attempted use non-int const for memory offset const=" ++ (show offsetPuB))
+                                VAR_IR var -> 
+                                    let superOffsetVarLoc = getVarLoc var coloring alloc
+                                    in 
+                                        case superOffsetVarLoc of
+                                            REG_ARGLOC reg ->
+                                                ([], Just (Left reg))
+                                            REFREG_ARGLOC _ _ _ ->
+                                                ([ MOV_X86 (REG_ARGLOC AX) superOffsetVarLoc
+                                                ], Just (Left AX))
+                retInst =
+                    if not . memopIrIsDeref $ memop 
+                        then
+                            if Maybe.isNothing . memopIrOffset $ memop
+                                then
+                                    error . compilerError $ "Encountered memopIr pure with not deref or offset: " ++ (show memop)
+                                else
+                                    case varLoc of
+                                        REFREG_ARGLOC reg m_currSuperOffset baseOffset ->
+                                            case m_currSuperOffset of
+                                                Just _ ->
+                                                    error . compilerError $ ("Attempted to overwrite non-empty super offset for mem variable=" ++ (displayArgLoc varLoc))
+                                                Nothing ->
+                                                    [ MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC reg m_superOffset baseOffset)
+                                                    ] ++
+                                                    (fnCalleePostprocessing alloc)
+                                        _ ->
+                                            error . compilerError $ ("Attempted to access offset within non-stack var=" ++ (displayArgLoc varLoc))
+                        else
+                            case varLoc of
+                                REG_ARGLOC p ->
+                                    [ MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC p m_superOffset 0)
                                     ] ++
                                     (fnCalleePostprocessing alloc)
-                        _ ->
-                            error . compilerError $ ("Attempted to access offset within non-stack var=" ++ (displayArgLoc varLoc))
-            in superOffsetInst ++ offsetInst
+                                REFREG_ARGLOC _ _ _ ->
+                                    [ MOV_X86 (REG_ARGLOC DX) varLoc
+                                    , MOV_X86 (REG_ARGLOC AX) (REFREG_ARGLOC DX m_superOffset 0)
+                                    ] ++
+                                    (fnCalleePostprocessing alloc)
+            in offsetInst ++ retInst
 
 retNoneToX86 :: AllocState -> [X86Instruction]
 retNoneToX86 alloc = 

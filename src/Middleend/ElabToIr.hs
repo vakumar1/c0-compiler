@@ -456,11 +456,11 @@ irAsn (AsnElab (LvalElab lvalTok memOps) e) state =
                     Nothing ->
                         (False, False, predecessorCommandsSingleton lvalState, lvalState)
                     -- process exp after unwrapping lval (with lval substitution in scope state)
-                    Just (lvalVar, lvalTy) ->
+                    Just (lvalVar, _) ->
                         let 
                             refLvalState = 
                                 irProcessingStateUpdateScopeState 
-                                    (irProcessingScopeStateSetAsnCtx (irProcScopeState lvalState) lvalMemopIr lvalTok lvalVar lvalTy)
+                                    (irProcessingScopeStateSetAsnCtx (irProcScopeState lvalState) lvalMemopIr lvalTok lvalVar (memopIrRetType lvalMemopIr))
                                     lvalState
                             (m_expPT, refExpState) = irExp e refLvalState
                             expState = irProcessingStateUpdateScopeState (irProcessingScopeStateUnsetAsnCtx (irProcScopeState refExpState)) refExpState
@@ -471,7 +471,7 @@ irAsn (AsnElab (LvalElab lvalTok memOps) e) state =
                                     (False, False, predecessorCommandsSingleton expState, expState)
                                 -- check that unwrapped lval and exp have same type (without aborting) + add final asn statement
                                 Just (expPu, expTy) ->
-                                    let (setAssigned, processAsnState) = processMemopAsn lvalTok lvalMemopIr lvalVar lvalTy expPu expTy expState
+                                    let (setAssigned, processAsnState) = processMemopAsn lvalTok lvalMemopIr lvalVar expPu expTy expState
                                         asnState = 
                                             if setAssigned
                                                 then
@@ -482,8 +482,8 @@ irAsn (AsnElab (LvalElab lvalTok memOps) e) state =
                                                     processAsnState
                                     in (False, False, predecessorCommandsSingleton asnState, asnState)
 
-processMemopAsn :: Token -> MemopIr -> VariableIr -> TypeCategory -> PureIr -> TypeCategory -> IrProcessingState -> (Bool, IrProcessingState)
-processMemopAsn idTok memop lvalVar lvalTy expPu expTy state
+processMemopAsn :: Token -> MemopIr -> VariableIr -> PureIr -> TypeCategory -> IrProcessingState -> (Bool, IrProcessingState)
+processMemopAsn idTok memop lvalVar expPu expTy state
     | debugElabLogs && (Trace.trace 
         ("\n\nprocessMemopAsn -- " ++ 
             "\nmemop=" ++       (Pretty.ppShow memop) ++ 
@@ -491,30 +491,17 @@ processMemopAsn idTok memop lvalVar lvalTy expPu expTy state
             "\nexpPu=" ++       (Pretty.ppShow expPu)
         ) 
         False) = undefined
-processMemopAsn idTok memop lvalVar lvalTy expPu expTy state = 
-    let (setAssigned, typeCheckErrs) =
-            case memop of
-                MEMOP_NONE_IR ->
-                    let typeCheckErrs = 
-                            if lvalTy == expTy
-                                then []
-                                else [ASN_TYPE_MISMATCH (AsnTypeMismatch idTok lvalTy expTy)]
-                    in (True, typeCheckErrs)
-                MEMOP_DEREF_IR ->
-                    let typeCheckErrs = 
-                            case lvalTy of
-                                POINTER_TYPE derefTy ->
-                                    if derefTy == expTy
-                                        then []
-                                        else [ASN_TYPE_MISMATCH (AsnTypeMismatch idTok derefTy expTy)]
-                                _ -> [ASN_TYPE_DEREF (AsnTypeDereference idTok lvalTy)]
-                    in (False, typeCheckErrs)
-                MEMOP_OFFSET_IR _ innerVarTy ->
-                    let typeCheckErrs = 
-                            if innerVarTy == expTy
-                                then []
-                                else [ASN_TYPE_MISMATCH (AsnTypeMismatch idTok innerVarTy expTy)]
-                    in (False, typeCheckErrs)
+processMemopAsn idTok memop lvalVar expPu expTy state = 
+    let typeCheckErrs = 
+            if (memopIrRetType memop) == expTy
+                then []
+                else [ASN_TYPE_MISMATCH (AsnTypeMismatch idTok (memopIrRetType memop) expTy)]
+        setAssigned = 
+            case memopIrOffset memop of
+                Nothing ->
+                    not . memopIrIsDeref $ memop
+                Just _ ->
+                    False
         asnComm = ASN_PURE_IR memop lvalVar expPu
         asnState = 
             (irProcessingStateAppendErrs typeCheckErrs) .
@@ -584,26 +571,14 @@ irExp e state =
 irRefLval :: IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irRefLval state = 
     case (asnVarCtx . irProcScopeState $ state) of
-        Just (memop, lvalTok, lvalVar, lvalTy) -> 
-            case memop of
-                -- directly use the lval
-                MEMOP_NONE_IR ->
+        Just (memop, _, lvalVar, lvalTy) -> 
+            if ((not . memopIrIsDeref $ memop) && (Maybe.isNothing . memopIrOffset $ memop))
+                then
                     (Just (PURE_BASE_IR (VAR_IR lvalVar), lvalTy), state)
-
-                -- attempt to deref the lval
-                MEMOP_DEREF_IR ->
-                    case lvalTy of
-                        -- deref the lval
-                        POINTER_TYPE derefTy ->
-                            (Just (PURE_DEREF_IR lvalVar derefTy, derefTy), state)
-                        -- fail if the lval does not have a pointer type
-                        _ ->
-                            let refState = irProcessingStateAppendErrs [ASN_TYPE_DEREF (AsnTypeDereference lvalTok lvalTy)] state
-                            in (Nothing, refState)
-                -- attempt to index into the lval
-                MEMOP_OFFSET_IR offsetPuB innerVarTy ->
-                    (Just (PURE_OFFSET_IR lvalVar offsetPuB innerVarTy, innerVarTy), state)
-        Nothing -> error . compilerError $ "Attempted to substitute lval reference in non-asn exp context"
+                else
+                    (Just (PURE_MEMOP_IR lvalVar memop, lvalTy), state)
+        Nothing -> 
+            error . compilerError $ "Attempted to substitute lval reference in non-asn exp context"
 
 irConst :: Const -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
 irConst const state = (Just (PURE_BASE_IR (CONST_IR const), constToType const), state)
@@ -637,8 +612,8 @@ irTernop (TernopElab op eCond e1 e2) state =
         (m_condExp, condState) = irCond eCond initState
         asnCommCond = 
             case m_condExp of
-                Just expPu -> ASN_PURE_IR MEMOP_NONE_IR tCond expPu
-                Nothing -> ASN_PURE_IR MEMOP_NONE_IR tCond dummyPureIr
+                Just expPu -> ASN_PURE_IR emptyMemopIr tCond expPu
+                Nothing -> ASN_PURE_IR emptyMemopIr tCond dummyPureIr
         
         -- add SPLIT comm on tCond (and prepare predecessor injection) - then commit current BB
         condBBIndex = bbIndex . irProcStateCurrBb $ condState
@@ -658,8 +633,8 @@ irTernop (TernopElab op eCond e1 e2) state =
         (m_expPT1, expState1) = irExp e1 startState1
         asnComm1 = 
             case m_expPT1 of
-                Just (expPu1, expTy1) -> ASN_PURE_IR MEMOP_NONE_IR (VariableIr tAsnName 0 expTy1 True) expPu1
-                Nothing -> ASN_PURE_IR MEMOP_NONE_IR (dummyVariableIr tAsnName) dummyPureIr
+                Just (expPu1, expTy1) -> ASN_PURE_IR emptyMemopIr (VariableIr tAsnName 0 expTy1 True) expPu1
+                Nothing -> ASN_PURE_IR emptyMemopIr (dummyVariableIr tAsnName) dummyPureIr
         predGotoComm1 = predecessorCommandsSingleton expState1
         termState1 = 
             irProcessingStateCommitBB .
@@ -674,8 +649,8 @@ irTernop (TernopElab op eCond e1 e2) state =
         (m_expPT2, expState2) = irExp e2 startState2
         asnComm2 = 
             case m_expPT2 of
-                Just (expPu2, expTy2) -> ASN_PURE_IR MEMOP_NONE_IR (VariableIr tAsnName 0 expTy2 True) expPu2
-                Nothing -> ASN_PURE_IR MEMOP_NONE_IR (dummyVariableIr tAsnName) dummyPureIr
+                Just (expPu2, expTy2) -> ASN_PURE_IR emptyMemopIr (VariableIr tAsnName 0 expTy2 True) expPu2
+                Nothing -> ASN_PURE_IR emptyMemopIr (dummyVariableIr tAsnName) dummyPureIr
         predGotoComm2 = predecessorCommandsSingleton expState2
         termState2 = 
             irProcessingStateCommitBB .
@@ -711,8 +686,8 @@ irLogBinop (LogBinopElab cat op e1 e2) state =
         (m_expPu1, expState1) = irCond e1 initState
         asnComm1 = 
             case m_expPu1 of
-                Just expPu1 -> ASN_PURE_IR MEMOP_NONE_IR temp expPu1
-                Nothing -> ASN_PURE_IR MEMOP_NONE_IR temp dummyPureIr
+                Just expPu1 -> ASN_PURE_IR emptyMemopIr temp expPu1
+                Nothing -> ASN_PURE_IR emptyMemopIr temp dummyPureIr
 
         -- add SPLIT comm on t (and prepare predecessor injection) - then commit current BB + start a new BB + inject BB to SPLIT comm
         splitComm = SPLIT_BB_IR tempPu 0 0
@@ -733,8 +708,8 @@ irLogBinop (LogBinopElab cat op e1 e2) state =
         (m_expPu2, expState2) = irCond e2 splitState
         asnComm2 = 
             case m_expPu2 of
-                Just expPu2 -> ASN_PURE_IR MEMOP_NONE_IR temp expPu2
-                Nothing -> ASN_PURE_IR MEMOP_NONE_IR temp dummyPureIr
+                Just expPu2 -> ASN_PURE_IR emptyMemopIr temp expPu2
+                Nothing -> ASN_PURE_IR emptyMemopIr temp dummyPureIr
 
         -- prepare predecessor injection for GOTO + commit current BB + start a new BB + inject SPLIT/GOTO comms to BB
         predComm2 = predecessorCommandsMerge predSplitComm2 (predecessorCommandsSingleton expState2)
@@ -902,19 +877,8 @@ irMemop memopElab state =
                             case m_memVT of
                                 Nothing ->
                                     (Nothing, memState)
-                                Just (finalVarIr, finalVarTy) ->
-                                    case finalMemop of
-                                        MEMOP_NONE_IR ->
-                                            (Just (PURE_BASE_IR (VAR_IR finalVarIr), finalVarTy), memState)
-                                        MEMOP_DEREF_IR ->
-                                            case finalVarTy of
-                                                POINTER_TYPE derefTy ->
-                                                    (Just (PURE_DEREF_IR finalVarIr derefTy, derefTy), memState)
-                                                _ ->
-                                                    let errState = irProcessingStateAppendErrs [(OP_TYPE_MISMATCH (OpTypeMismatch memopTok [POINTER_TYPE WILDCARD_TYPE]))] memState
-                                                    in (Nothing, errState)
-                                        MEMOP_OFFSET_IR offsetPuB innerVarTy ->
-                                            (Just (PURE_OFFSET_IR finalVarIr offsetPuB innerVarTy, innerVarTy), memState)
+                                Just (finalVarIr, _) ->
+                                    (Just (PURE_MEMOP_IR finalVarIr finalMemop, (memopIrRetType finalMemop)), memState)
                     _ ->
                         error . compilerError $ ("Attempted to perform memop on non-var exp=" ++ (show idPu))
 
@@ -1353,30 +1317,25 @@ expandPureIr pu state =
         PURE_BINOP_IR binop ->
             let (tempName, newState) = irProcessingScopeStateAddTemp state
                 binopTemp = VariableIr tempName 0 (pureBinopInfType binop) True
-                binopComm = ASN_PURE_IR MEMOP_NONE_IR binopTemp pu
+                binopComm = ASN_PURE_IR emptyMemopIr binopTemp pu
              in ([binopComm], VAR_IR binopTemp, newState)
         PURE_UNOP_IR unop ->
             let (tempName, newState) = irProcessingScopeStateAddTemp state
                 unopTemp = VariableIr tempName 0 (pureUnopInfType unop) True
-                unopComm = ASN_PURE_IR MEMOP_NONE_IR unopTemp pu
+                unopComm = ASN_PURE_IR emptyMemopIr unopTemp pu
              in ([unopComm], VAR_IR unopTemp, newState)
-        PURE_DEREF_IR varIr derefTy ->
+        PURE_MEMOP_IR varIr memopIr ->
             let (tempName, newState) = irProcessingScopeStateAddTemp state
-                derefTemp = VariableIr tempName 0 derefTy True
-                derefComm = ASN_PURE_IR MEMOP_NONE_IR derefTemp pu
-             in ([derefComm], VAR_IR derefTemp, newState)
-        PURE_OFFSET_IR varIr offsetPuB elemTy ->
-            let (tempName, newState) = irProcessingScopeStateAddTemp state
-                offsetTemp = VariableIr tempName 0 elemTy True
-                offsetComm = ASN_PURE_IR MEMOP_NONE_IR offsetTemp pu
-             in ([offsetComm], VAR_IR offsetTemp, newState)
+                memopTemp = VariableIr tempName 0 (memopIrRetType memopIr) True
+                memopComm = ASN_PURE_IR emptyMemopIr memopTemp pu
+            in ([memopComm], VAR_IR memopTemp, newState)
 
 expandMemops :: Token -> VariableIr -> TypeCategory -> [MemopElabCat] -> IrProcessingState -> (MemopIr, Maybe (VariableIr, TypeCategory), IrProcessingState)
 expandMemops idTok baseVarIr baseTy memOps state = 
     case memOps of
         -- no memops --> directly return var
         [] -> 
-            (MEMOP_NONE_IR, Just (baseVarIr, baseTy), state)
+            (MemopIr False Nothing baseTy, Just (baseVarIr, baseTy), state)
         
         -- >= 1 memop
         _ ->
@@ -1384,7 +1343,7 @@ expandMemops idTok baseVarIr baseTy memOps state =
                 -- split flat list of memops based on whether cat is deref/mem index
                 nestedLists = splitMemopsList memOps
 
-                -- process each element of nestedLists (except last element - this will be included in deref context)
+                -- process each element of nestedLists (except last element - these will be included in deref context)
                 (m_finalVT, processedState) = 
                     foldl
                         (\(m_lvalVT, interState) memOpElt ->
@@ -1393,10 +1352,14 @@ expandMemops idTok baseVarIr baseTy memOps state =
                                     (m_lvalVT, interState)
                                 Just (varIr, varTy) ->
                                     case memOpElt of
-                                        Left derefOp ->
+                                        [ Left derefOp ] ->
                                             processDerefMemopExp idTok varIr varTy interState
-                                        Right memAccessOps ->
+                                        [ Right memAccessOps ] ->
                                             processMemAccessOpsExp idTok memAccessOps varIr varTy interState
+                                        [ Left derefOp, Right memAccessOps ] ->
+                                            processPairMemopExp idTok memAccessOps varIr varTy interState
+                                        _ ->
+                                            error . compilerError $ "Attempted to process memop list that did not contain exactly a deref, access, or deref + access: " ++ (show nestedLists)
                         )
                         (Just (baseVarIr, baseTy), state)
                         (init nestedLists)
@@ -1405,46 +1368,78 @@ expandMemops idTok baseVarIr baseTy memOps state =
                 case m_finalVT of
                     -- abort if failed to evaluate intermediary memops
                     Nothing ->
-                        (MEMOP_NONE_IR, m_finalVT, processedState)
+                        (emptyMemopIr, m_finalVT, processedState)
                     Just (_, varTy) ->
                         case (last nestedLists) of
-                            -- apply final deref op
-                            Left derefOp ->
-                                (MEMOP_DEREF_IR, m_finalVT, processedState)
-                            -- attempt to apply final mem access op
-                            Right memAccessOps ->
+                            [ Left derefOp ] ->
+                                case varTy of
+                                    POINTER_TYPE derefTy ->
+                                        (MemopIr True Nothing derefTy, m_finalVT, processedState)
+                                    _ ->
+                                        -- abort if cannot deref type
+                                        let errState = irProcessingStateAppendErrs [(OP_TYPE_MISMATCH (OpTypeMismatch idTok [POINTER_TYPE WILDCARD_TYPE]))] processedState
+                                        in (emptyMemopIr, m_finalVT, errState)
+                            [ Right memAccessOps ] ->
                                 let (finalVarTy, m_puBOffset, offsetState) = accumulAndExpandOffsets idTok varTy memAccessOps processedState
                                 in
                                     case m_puBOffset of
                                         Nothing ->
                                             -- abort if failed to evaluate final offset
-                                            (MEMOP_NONE_IR, Nothing, offsetState)
+                                            (emptyMemopIr, m_finalVT, offsetState)
                                         Just puBOffset ->
-                                            (MEMOP_OFFSET_IR puBOffset finalVarTy, m_finalVT, offsetState)
+                                            (MemopIr False (Just puBOffset) finalVarTy, m_finalVT, offsetState)
+                            [ Left derefOp, Right memAccessOps ] ->
+                                case varTy of
+                                    POINTER_TYPE derefTy ->
+                                        let (finalVarTy, m_puBOffset, offsetState) = accumulAndExpandOffsets idTok derefTy memAccessOps processedState
+                                        in
+                                            case m_puBOffset of
+                                                Nothing ->
+                                                    -- abort if failed to evaluate final offset
+                                                    (emptyMemopIr, m_finalVT, offsetState)
+                                                Just puBOffset ->
+                                                    (MemopIr True (Just puBOffset) finalVarTy, m_finalVT, offsetState)
+                                    _ ->
+                                        -- abort if cannot deref type
+                                        let errState = irProcessingStateAppendErrs [(OP_TYPE_MISMATCH (OpTypeMismatch idTok [POINTER_TYPE WILDCARD_TYPE]))] processedState
+                                        in (emptyMemopIr, m_finalVT, errState)
+                            _ ->
+                                error . compilerError $ "Attempted to process memop list that did not terminate with deref, access, or deref + access: " ++ (show nestedLists)
 
 -- split list of memops into list of separate deref ops or chains of index ops
-splitMemopsList :: [MemopElabCat] -> [Either MemopElabCat [MemopElabCat]]
-splitMemopsList memOps = splitMemopsListHelper [] memOps []
+splitMemopsList :: [MemopElabCat] -> [[Either MemopElabCat [MemopElabCat]]]
+splitMemopsList memOps = splitMemopsListHelper [] memOps [] []
 
-splitMemopsListHelper :: [Either MemopElabCat [MemopElabCat]] -> [MemopElabCat] -> [MemopElabCat] -> [Either MemopElabCat [MemopElabCat]]
-splitMemopsListHelper currSplitMemops remainingMemops currMemAccessOps = 
+splitMemopsListHelper :: [[Either MemopElabCat [MemopElabCat]]] -> [MemopElabCat] -> [Either MemopElabCat [MemopElabCat]] -> [MemopElabCat] -> [[Either MemopElabCat [MemopElabCat]]]
+splitMemopsListHelper currSplitMemops remainingMemops interMemopGroup interMemAccessOps = 
     case remainingMemops of
         [] ->
-            case currMemAccessOps of
-                [] -> 
+            case (interMemopGroup, interMemAccessOps) of
+                ([], []) ->
                     currSplitMemops
-                _ -> 
-                    currSplitMemops ++ [Right currMemAccessOps]
+                (_, []) ->
+                    currSplitMemops ++ [interMemopGroup]
+                ([], _) ->
+                    currSplitMemops ++ [[Right interMemAccessOps]]
+                (_, _) ->
+                    currSplitMemops ++ [interMemopGroup ++ [Right interMemAccessOps]]
         headMemop : newRemainingMemops ->
             case headMemop of
                 DEREF_MEMOP_ELAB ->
-                    case currMemAccessOps of
-                        [] ->
-                            splitMemopsListHelper (currSplitMemops ++ [Left headMemop]) newRemainingMemops []
-                        _ ->
-                            splitMemopsListHelper (currSplitMemops ++ [Right currMemAccessOps, Left headMemop]) newRemainingMemops []
+                    let newSplitMemops = 
+                            case (interMemopGroup, interMemAccessOps) of
+                                ([], []) ->
+                                    currSplitMemops
+                                (_, []) ->
+                                    currSplitMemops ++ [interMemopGroup]
+                                ([], _) ->
+                                    currSplitMemops ++ [[Right interMemAccessOps]]
+                                (_, _) ->
+                                    currSplitMemops ++ [interMemopGroup ++ [Right interMemAccessOps]]
+                    in splitMemopsListHelper newSplitMemops newRemainingMemops [Left headMemop] []
                 _ ->
-                    splitMemopsListHelper currSplitMemops newRemainingMemops (currMemAccessOps ++ [headMemop])
+                    splitMemopsListHelper currSplitMemops newRemainingMemops interMemopGroup (interMemAccessOps ++ [headMemop])
+
 
 -- process Deref memop with type-checking + new state + next intermediate variable
 -- attempts to add an ASN comm with an EXP deref (i.e. temp = *var)
@@ -1457,9 +1452,9 @@ processDerefMemopExp idTok varIr varTy state =
                 derefTemp = VariableIr tempName 0 derefTy True
                 derefComm = 
                     ASN_PURE_IR
-                        MEMOP_NONE_IR
+                        emptyMemopIr
                         derefTemp
-                        (PURE_DEREF_IR varIr derefTy)
+                        (PURE_MEMOP_IR varIr (MemopIr True Nothing derefTy))
                 derefState = 
                     (irProcessingStateAddComms [derefComm]) .
                     (irProcessingStateUpdateScopeState tempScopeState) $
@@ -1486,15 +1481,42 @@ processMemAccessOpsExp idTok memAccessOps varIr varTy state =
                     indexTemp = VariableIr tempName 0 finalVarTy True
                     asnComm = 
                         ASN_PURE_IR
-                            MEMOP_NONE_IR
+                            emptyMemopIr
                             indexTemp
-                            (PURE_OFFSET_IR varIr puBOffset finalVarTy)
+                            (PURE_MEMOP_IR varIr (MemopIr False (Just puBOffset) finalVarTy))
                     indexState = 
                         (irProcessingStateAddComms [asnComm]) .
                         (irProcessingStateUpdateScopeState tempScopeState) $
                         offsetState
                 in (Just (indexTemp, finalVarTy), indexState)
 
+processPairMemopExp :: Token -> [MemopElabCat] -> VariableIr -> TypeCategory -> IrProcessingState -> (Maybe (VariableIr, TypeCategory), IrProcessingState)
+processPairMemopExp idTok memAccessOps varIr varTy state = 
+    let (finalVarTy, m_puBOffset, offsetState) = accumulAndExpandOffsets idTok varTy memAccessOps state
+    in 
+        case m_puBOffset of
+            Nothing -> 
+                (Nothing, offsetState)
+            Just puBOffset ->
+                case finalVarTy of
+                    POINTER_TYPE derefTy ->
+                        let 
+                        -- create ASN inst that sets temp var to result of indexing into pureBaseIr w/ deref
+                            (tempName, tempScopeState) = irProcessingScopeStateAddTemp (irProcScopeState offsetState)
+                            indexTemp = VariableIr tempName 0 derefTy True
+                            asnComm = 
+                                ASN_PURE_IR
+                                    emptyMemopIr
+                                    indexTemp
+                                    (PURE_MEMOP_IR varIr (MemopIr True (Just puBOffset) derefTy))
+                            indexState = 
+                                (irProcessingStateAddComms [asnComm]) .
+                                (irProcessingStateUpdateScopeState tempScopeState) $
+                                offsetState
+                        in (Just (indexTemp, derefTy), indexState)
+                    _ ->
+                        let errState = irProcessingStateAppendErrs [ASN_TYPE_DEREF (AsnTypeDereference idTok finalVarTy)] state
+                        in (Nothing, errState)
 
 -- converts list of mem access ops into a single PureBaseIr offset
 accumulAndExpandOffsets :: Token -> TypeCategory -> [MemopElabCat] -> IrProcessingState -> (TypeCategory, Maybe PureBaseIr, IrProcessingState)
@@ -1575,7 +1597,7 @@ expandOffset offsetConst offsetVars state =
                         binopTemp = VariableIr tempName 0 INT_TYPE True
                         scaleComm = 
                             ASN_PURE_IR
-                                MEMOP_NONE_IR
+                                emptyMemopIr
                                 binopTemp
                                 (PURE_BINOP_IR
                                     (PureBinopIr
@@ -1585,7 +1607,7 @@ expandOffset offsetConst offsetVars state =
                                         (CONST_IR (INT_CONST nextVarScale))))
                         binopComm = 
                             ASN_PURE_IR 
-                                MEMOP_NONE_IR 
+                                emptyMemopIr 
                                 binopTemp
                                 (PURE_BINOP_IR
                                     (PureBinopIr

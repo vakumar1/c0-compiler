@@ -5,13 +5,14 @@ module Model.Ir (
     CommandIr (..),
     PhiFnIr (..),
     PureIr (..),
+    dummyPureIr,
     PureBaseIr (..),
     PureBinopIr (..),
     PureBinopCatIr (..),
     PureUnopIr (..),
     PureUnopCatIr (..),
     MemopIr (..),
-    dummyPureIr,
+    emptyMemopIr,
     ImpureIr (..),
     ImpureFnCallIr (..),
     ImpureBinopIr (..),
@@ -69,9 +70,11 @@ data PureIr
     = PURE_BASE_IR PureBaseIr
     | PURE_BINOP_IR PureBinopIr
     | PURE_UNOP_IR PureUnopIr
-    | PURE_DEREF_IR VariableIr TypeCategory
-    | PURE_OFFSET_IR VariableIr PureBaseIr TypeCategory
+    | PURE_MEMOP_IR VariableIr MemopIr
     deriving (Show)
+
+dummyPureIr :: PureIr
+dummyPureIr = PURE_BASE_IR (CONST_IR (BOOL_CONST False))
 
 data PureBaseIr
     = CONST_IR Const
@@ -119,14 +122,15 @@ data PureUnopCatIr
     | REF_IR
     deriving (Show)
 
-data MemopIr
-    = MEMOP_NONE_IR
-    | MEMOP_DEREF_IR
-    | MEMOP_OFFSET_IR PureBaseIr TypeCategory
+data MemopIr = MemopIr
+    { memopIrIsDeref :: Bool
+    , memopIrOffset :: Maybe PureBaseIr
+    , memopIrRetType :: TypeCategory
+    }
     deriving (Show)
 
-dummyPureIr :: PureIr
-dummyPureIr = PURE_BASE_IR (CONST_IR (BOOL_CONST False))
+emptyMemopIr :: MemopIr
+emptyMemopIr = MemopIr False Nothing WILDCARD_TYPE
 
 -- impure operations
 data ImpureIr

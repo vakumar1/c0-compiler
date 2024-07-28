@@ -13,6 +13,7 @@ module Common.Liveness (
 where
 
 import Model.Ir
+import Model.Types
 import Common.Graphs
 import Common.Errors
 import Common.Constants
@@ -20,6 +21,7 @@ import Common.Constants
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.Maybe as Maybe
 
 import qualified Text.Show.Pretty as Pretty
 import qualified Debug.Trace as Trace
@@ -216,13 +218,17 @@ getUsedVarsCommand comm =
         INIT_IR var -> 
             Set.empty
         ASN_PURE_IR memop asnVar asnPure ->
-            case memop of
-                MEMOP_NONE_IR ->
-                    getUsedVarsPure asnPure
-                MEMOP_DEREF_IR ->
-                    Set.insert asnVar (getUsedVarsPure asnPure)
-                MEMOP_OFFSET_IR base _ ->
-                    Set.union (getUsedVarsPure asnPure) (getUsedVarsPureBase base)
+            let asnVarSet = 
+                    if memopIrIsDeref memop
+                        then Set.singleton asnVar
+                        else Set.empty
+                offsetSet = 
+                    case memopIrOffset memop of
+                        Just offsetPuB ->
+                            getUsedVarsPureBase offsetPuB
+                        Nothing ->
+                            Set.empty
+            in Set.union (getUsedVarsPure asnPure) (Set.union asnVarSet offsetSet)
         ASN_IMPURE_IR asnVar asnImpure ->
             getUsedVarsImpure asnImpure
         GOTO_BB_IR _ ->
@@ -242,11 +248,9 @@ getAssignedVarsCommand comm =
         INIT_IR var ->
             Nothing
         ASN_PURE_IR memop asnVar asnPure ->
-            case memop of
-                MEMOP_NONE_IR ->
-                    Just asnVar
-                _ ->
-                    Nothing
+            if memopIrIsDeref memop || (Maybe.isJust . memopIrOffset $ memop)
+                then Nothing
+                else Just asnVar
         ASN_IMPURE_IR asnVar asnImpure ->
             Just asnVar
         GOTO_BB_IR _ ->
@@ -266,8 +270,18 @@ getUsedVarsPure pure =
         PURE_BASE_IR base -> getUsedVarsPureBase base
         PURE_BINOP_IR (PureBinopIr _ _ base1 base2) -> Set.union (getUsedVarsPureBase base1) (getUsedVarsPureBase base2)
         PURE_UNOP_IR (PureUnopIr _ _ base) -> getUsedVarsPureBase base
-        PURE_DEREF_IR var _ -> Set.singleton var
-        PURE_OFFSET_IR var base _ -> getUsedVarsPureBase base
+        PURE_MEMOP_IR var memop ->
+            let varSet = 
+                    if excludedStackVar var
+                        then Set.empty
+                        else Set.singleton var
+                offsetSet = 
+                    case memopIrOffset memop of
+                        Just offsetPuB ->
+                            getUsedVarsPureBase offsetPuB
+                        Nothing ->
+                            Set.empty
+            in Set.union varSet offsetSet
 
 getUsedVarsImpure :: ImpureIr -> Set.Set VariableIr
 getUsedVarsImpure impure =
@@ -279,4 +293,13 @@ getUsedVarsPureBase :: PureBaseIr -> Set.Set VariableIr
 getUsedVarsPureBase base =
     case base of
         CONST_IR const -> Set.empty
-        VAR_IR var -> Set.singleton var
+        VAR_IR var -> 
+            if excludedStackVar var
+                then Set.empty
+                else Set.singleton var
+
+excludedStackVar :: VariableIr -> Bool
+excludedStackVar var = 
+    case (variableIrType var) of
+        ARRAY_TYPE _ _ -> True
+        _ -> False
