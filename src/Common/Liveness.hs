@@ -221,7 +221,7 @@ getUsedVarsCommand comm =
                     getUsedVarsPure asnPure
                 MEMOP_DEREF_IR ->
                     Set.insert asnVar (getUsedVarsPure asnPure)
-                MEMOP_OFFSET_IR base ->
+                MEMOP_OFFSET_IR base _ ->
                     Set.union (getUsedVarsPure asnPure) (getUsedVarsPureBase base)
         ASN_IMPURE_IR asnVar asnImpure ->
             getUsedVarsImpure asnImpure

@@ -178,8 +178,8 @@ commandIrToMaximalSSA comm versions =
 memopIrToMaximalSSA :: MemopIr -> VariableIrVersion -> MemopIr
 memopIrToMaximalSSA memop versions = 
     case memop of
-        MEMOP_OFFSET_IR base ->
-            MEMOP_OFFSET_IR (pureBaseIrToMaximalSSA base versions)
+        MEMOP_OFFSET_IR base innerVarTy ->
+            MEMOP_OFFSET_IR (pureBaseIrToMaximalSSA base versions) innerVarTy
         _ ->
             memop
 

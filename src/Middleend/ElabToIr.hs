@@ -509,14 +509,11 @@ processMemopAsn idTok memop lvalVar lvalTy expPu expTy state =
                                         else [ASN_TYPE_MISMATCH (AsnTypeMismatch idTok derefTy expTy)]
                                 _ -> [ASN_TYPE_DEREF (AsnTypeDereference idTok lvalTy)]
                     in (False, typeCheckErrs)
-                MEMOP_OFFSET_IR _ ->
+                MEMOP_OFFSET_IR _ innerVarTy ->
                     let typeCheckErrs = 
-                            case lvalTy of
-                                ARRAY_TYPE elemTy _ ->
-                                    if elemTy == expTy
-                                        then []
-                                        else [ASN_TYPE_MISMATCH (AsnTypeMismatch idTok elemTy expTy)]
-                                _ -> [ASN_TYPE_INDEX (AsnTypeIndex idTok lvalTy)]
+                            if innerVarTy == expTy
+                                then []
+                                else [ASN_TYPE_MISMATCH (AsnTypeMismatch idTok innerVarTy expTy)]
                     in (False, typeCheckErrs)
         asnComm = ASN_PURE_IR memop lvalVar expPu
         asnState = 
@@ -604,15 +601,8 @@ irRefLval state =
                             let refState = irProcessingStateAppendErrs [ASN_TYPE_DEREF (AsnTypeDereference lvalTok lvalTy)] state
                             in (Nothing, refState)
                 -- attempt to index into the lval
-                MEMOP_OFFSET_IR offsetPuB ->
-                    case lvalTy of
-                        -- index into the array lval
-                        ARRAY_TYPE elemTy _ ->
-                            (Just (PURE_OFFSET_IR lvalVar offsetPuB elemTy, elemTy), state)
-                        -- fail if the lval does not have an array type
-                        _ ->
-                            let refState = irProcessingStateAppendErrs [ASN_TYPE_INDEX (AsnTypeIndex lvalTok lvalTy)] state
-                            in (Nothing, refState)
+                MEMOP_OFFSET_IR offsetPuB innerVarTy ->
+                    (Just (PURE_OFFSET_IR lvalVar offsetPuB innerVarTy, innerVarTy), state)
         Nothing -> error . compilerError $ "Attempted to substitute lval reference in non-asn exp context"
 
 irConst :: Const -> IrProcessingState -> (Maybe (PureIr, TypeCategory), IrProcessingState)
@@ -923,13 +913,8 @@ irMemop memopElab state =
                                                 _ ->
                                                     let errState = irProcessingStateAppendErrs [(OP_TYPE_MISMATCH (OpTypeMismatch memopTok [POINTER_TYPE WILDCARD_TYPE]))] memState
                                                     in (Nothing, errState)
-                                        MEMOP_OFFSET_IR offsetPuB ->
-                                            case finalVarTy of
-                                                ARRAY_TYPE elemTy _ ->
-                                                    (Just (PURE_OFFSET_IR finalVarIr offsetPuB elemTy, elemTy), memState)
-                                                _ ->
-                                                    let errState = irProcessingStateAppendErrs [(OP_TYPE_MISMATCH (OpTypeMismatch memopTok [ARRAY_TYPE WILDCARD_TYPE 0]))] memState
-                                                    in (Nothing, errState)
+                                        MEMOP_OFFSET_IR offsetPuB innerVarTy ->
+                                            (Just (PURE_OFFSET_IR finalVarIr offsetPuB innerVarTy, innerVarTy), memState)
                     _ ->
                         error . compilerError $ ("Attempted to perform memop on non-var exp=" ++ (show idPu))
 
@@ -1428,14 +1413,14 @@ expandMemops idTok baseVarIr baseTy memOps state =
                                 (MEMOP_DEREF_IR, m_finalVT, processedState)
                             -- attempt to apply final mem access op
                             Right memAccessOps ->
-                                let (_, m_puBOffset, offsetState) = accumulAndExpandOffsets idTok varTy memAccessOps processedState
+                                let (finalVarTy, m_puBOffset, offsetState) = accumulAndExpandOffsets idTok varTy memAccessOps processedState
                                 in
                                     case m_puBOffset of
                                         Nothing ->
                                             -- abort if failed to evaluate final offset
                                             (MEMOP_NONE_IR, Nothing, offsetState)
                                         Just puBOffset ->
-                                            (MEMOP_OFFSET_IR puBOffset, m_finalVT, offsetState)
+                                            (MEMOP_OFFSET_IR puBOffset finalVarTy, m_finalVT, offsetState)
 
 -- split list of memops into list of separate deref ops or chains of index ops
 splitMemopsList :: [MemopElabCat] -> [Either MemopElabCat [MemopElabCat]]

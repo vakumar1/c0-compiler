@@ -177,7 +177,7 @@ asnPureIrToX86 coloring asnMemop asnVar asnPure alloc =
                             ],
                             REFREG_ARGLOC CX Nothing 0
                             )
-                MEMOP_OFFSET_IR offsetPuB ->
+                MEMOP_OFFSET_IR offsetPuB _ ->
                     case baseVarLoc of
                         REG_ARGLOC _ ->
                             error . compilerError $ ("Attempted to add offset within register variable=" ++ (show asnVar))
@@ -726,6 +726,8 @@ asnPureIrToX86 coloring asnMemop asnVar asnPure alloc =
                                                 [ MOV_X86 (REG_ARGLOC DX) (REFREG_ARGLOC reg m_superOffsetOverwrite baseOffset)
                                                 , MOV_X86 asnVarLoc (REG_ARGLOC DX)
                                                 ]
+                            _ ->
+                                error . compilerError $ ("Attempted to get ref on non-stack variable=" ++ (show var) ++ " argLoc=" ++ (displayArgLoc varLoc))
                 in asnInst ++ superOffsetInst ++ offsetInst
 
 asnImpureIrToX86 :: Coloring -> VariableIr -> ImpureIr -> AllocState -> [X86Instruction]

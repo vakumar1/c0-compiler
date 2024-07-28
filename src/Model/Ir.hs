@@ -122,7 +122,7 @@ data PureUnopCatIr
 data MemopIr
     = MEMOP_NONE_IR
     | MEMOP_DEREF_IR
-    | MEMOP_OFFSET_IR PureBaseIr
+    | MEMOP_OFFSET_IR PureBaseIr TypeCategory
     deriving (Show)
 
 dummyPureIr :: PureIr
