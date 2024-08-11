@@ -1,5 +1,6 @@
 module Model.Types (
     TypeAliasContext (..),
+    emptyTypeAliasCtx,
     TypeCategory (..),
     Const (..),
     constToType,
@@ -7,8 +8,15 @@ module Model.Types (
 ) where
 
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
-type TypeAliasContext = Map.Map String TypeCategory
+data TypeAliasContext = TypeAliasContext
+    { typeAliasContextAliases :: Map.Map String TypeCategory
+    , typeAliasContextStructs :: Map.Map String TypeCategory
+    , typeAliasContextStructDecls :: Set.Set String
+    }
+emptyTypeAliasCtx :: TypeAliasContext
+emptyTypeAliasCtx = TypeAliasContext Map.empty Map.empty Set.empty
 
 data TypeCategory
     = INT_TYPE
@@ -18,6 +26,7 @@ data TypeCategory
     | VOID_TYPE
     | POINTER_TYPE TypeCategory
     | ARRAY_TYPE TypeCategory Int
+    | STRUCT_TYPE String [(String, TypeCategory)]
     | WILDCARD_TYPE
     deriving (Show)
 instance Eq TypeCategory where
@@ -54,3 +63,4 @@ sizeofType ty =
         BOOL_TYPE -> 8
         POINTER_TYPE _ -> 8
         ARRAY_TYPE innerTy size -> (sizeofType innerTy) * size
+        STRUCT_TYPE _ innerITs -> sum (map (\(_, ty) -> sizeofType ty) innerITs)

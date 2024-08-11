@@ -1,4 +1,7 @@
 module Common.Errors (
+    DuplicateTypedefDefnError (..),
+    DuplicateStructDefnError (..),
+    UndeclaredStructError (..),
     LexerErrorCategory (..),
     LexerError (..),
     UseBeforeDeclarationError (..),
@@ -36,6 +39,24 @@ data CircularTypeResolutionError = CircularTypeResolutionError
     }
     deriving (Show)
 
+data DuplicateTypedefDefnError = DuplicateTypedefDefnError
+    { duplicateTypedefDefnAlias :: Token
+    , duplicateTypedefDefnTarget1 :: TypeCategory
+    , duplicateTypedefDefnTarget2 :: TypeCategory
+    }
+    deriving (Show)
+
+data DuplicateStructDefnError = DuplicateStructDefnError
+    { duplicateStructDefnTarget1 :: TypeCategory
+    , duplicateStructDefnTarget2 :: TypeCategory
+    }
+    deriving (Show)
+
+data UndeclaredStructError = UndeclaredStructError
+    { undeclaredStructTok :: Token
+    }
+    deriving (Show)
+
 data LexerErrorCategory
     = INVALID_TOKEN
     | DANGLING_COMMENT
@@ -43,6 +64,9 @@ data LexerErrorCategory
     | DANGLING_CLOSED_ENCLOSER
     | NONEXISTENT_TYPE NonexistentTypeError
     | CIRCULAR_TYPE_RESOLUTION CircularTypeResolutionError
+    | DUPLICATE_TYPEDEF_DEFN DuplicateTypedefDefnError
+    | DUPLICATE_STRUCT_DEFN DuplicateStructDefnError
+    | UNDECLARED_STRUCT UndeclaredStructError
     deriving (Show)
 
 data LexerError = LexerError

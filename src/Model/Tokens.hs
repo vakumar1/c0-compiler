@@ -78,6 +78,7 @@ data TokenCategory
     | ALLOC
     | ALLOC_ARRAY
     | TYPEDEF
+    | STRUCT
     | EOF
     deriving (Eq, Show)
 data TokenData = TokenData
