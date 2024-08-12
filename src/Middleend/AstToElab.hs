@@ -19,21 +19,23 @@ ELABORATION
 
 -}
 
-elaborateProg :: Program -> ProgramElab
-elaborateProg prog = Maybe.mapMaybe elaborateGDecl prog
+elaborateProg :: TypeAliasContext -> Program -> ProgramElab
+elaborateProg aliasCtx prog = Maybe.mapMaybe (elaborateGDecl aliasCtx) prog
 
-elaborateGDecl :: GlobalDecl -> Maybe GlobalDeclElab
-elaborateGDecl gdecl = 
+elaborateGDecl :: TypeAliasContext -> GlobalDecl -> Maybe GlobalDeclElab
+elaborateGDecl aliasCtx gdecl = 
     case gdecl of
         TYPEDEF_GDECL td -> Nothing
-        FNDECL_GDECL fndecl -> Just (FNDECL_GDECL_ELAB (elaborateFnSignature fndecl))
-        FNDEFN_GDECL fndefn -> Just (FNDEFN_GDECL_ELAB (elaborateFn fndefn))
+        STRUCTDECL_GDECL _ -> Nothing
+        STRUCTDEFN_GDECL _ -> Nothing
+        FNDECL_GDECL fndecl -> Just (FNDECL_GDECL_ELAB (elaborateFnSignature aliasCtx fndecl))
+        FNDEFN_GDECL fndefn -> Just (FNDEFN_GDECL_ELAB (elaborateFn aliasCtx fndefn))
 
-elaborateFn :: Function -> FunctionElab
-elaborateFn fn =
-    let fnSignElab = elaborateFnSignature . functionSignature $ fn
+elaborateFn :: TypeAliasContext -> Function -> FunctionElab
+elaborateFn aliasCtx fn =
+    let fnSignElab = (elaborateFnSignature aliasCtx) . functionSignature $ fn
         fnRetTy = typeElabType . functionSignatureElabRetType $ fnSignElab
-        stmtsElab = elaborateStmts . functionBlock $ fn
+        stmtsElab = (elaborateStmts aliasCtx) . functionBlock $ fn
         terminatedStmtsElab = 
             if fnRetTy == VOID_TYPE
                 then stmtsElab ++ [RET_ELAB (RetElab Nothing)]
@@ -43,53 +45,53 @@ elaborateFn fn =
             fnSignElab
             terminatedStmtsElab
 
-elaborateFnSignature :: FunctionSignature -> FunctionSignatureElab
-elaborateFnSignature fnSign = 
+elaborateFnSignature :: TypeAliasContext -> FunctionSignature -> FunctionSignatureElab
+elaborateFnSignature aliasCtx fnSign = 
     FunctionSignatureElab
         (functionSignatureName fnSign)
-        (map elaborateParam (functionSignatureArgs fnSign))
-        (elaborateType . functionSignatureRetType $ fnSign)
+        (map (elaborateParam aliasCtx) (functionSignatureArgs fnSign))
+        (elaborateType aliasCtx . functionSignatureRetType $ fnSign)
 
-elaborateParam :: Param -> VariableElab
-elaborateParam param = 
+elaborateParam :: TypeAliasContext -> Param -> VariableElab
+elaborateParam aliasCtx param = 
     VariableElab
         (paramIdentifier param)
-        (elaborateType . paramType $ param)
+        (elaborateType aliasCtx . paramType $ param)
 
-elaborateStmt :: Statement -> StatementElab
-elaborateStmt st = 
+elaborateStmt :: TypeAliasContext -> Statement -> StatementElab
+elaborateStmt aliasCtx st = 
     case st of
-        SIMP_STMT s -> elaborateSimp s
-        CONTROL_STMT c -> elaborateControl c
-        BLOCK_STMT b -> elaborateBlock b
+        SIMP_STMT s -> elaborateSimp aliasCtx s
+        CONTROL_STMT c -> elaborateControl aliasCtx c
+        BLOCK_STMT b -> elaborateBlock aliasCtx b
 
-elaborateSimp :: Simp -> StatementElab
-elaborateSimp s = 
+elaborateSimp :: TypeAliasContext -> Simp -> StatementElab
+elaborateSimp aliasCtx s = 
     case s of
         ASN_SIMP a -> ASN_ELAB (elaborateAsn a)
-        DECL_SIMP d -> DECL_ELAB (elaborateDecl d)
+        DECL_SIMP d -> DECL_ELAB (elaborateDecl aliasCtx d)
         POST_SIMP p -> ASN_ELAB (elaboratePost p)
         EXP_SIMP e -> EXP_ELAB (elaborateExp e)
         ASSERT_SIMP a -> IF_ELAB (elaborateAssert a)
 
-elaborateControl :: Control -> StatementElab
-elaborateControl c = 
+elaborateControl :: TypeAliasContext -> Control -> StatementElab
+elaborateControl aliasCtx c = 
     case c of
         RET_CTRL m_e -> 
             case m_e of
                 Just e -> RET_ELAB (RetElab (Just (elaborateExp e)))
                 Nothing -> RET_ELAB (RetElab Nothing)
-        IF_CTRL i -> IF_ELAB (elaborateIf i)
-        WHILE_CTRL w -> WHILE_ELAB (elaborateWhile w)
-        FOR_CTRL f -> SEQ_ELAB (elaborateFor f)
+        IF_CTRL i -> IF_ELAB (elaborateIf aliasCtx i)
+        WHILE_CTRL w -> WHILE_ELAB (elaborateWhile aliasCtx w)
+        FOR_CTRL f -> SEQ_ELAB (elaborateFor aliasCtx f)
 
-elaborateBlock :: Block -> StatementElab
-elaborateBlock b = SEQ_ELAB (elaborateStmts b)
+elaborateBlock :: TypeAliasContext -> Block -> StatementElab
+elaborateBlock aliasCtx b = SEQ_ELAB (elaborateStmts aliasCtx b)
 
 -- individual statement elaboration
 
-elaborateStmts :: Statements -> SeqElab
-elaborateStmts ss = map elaborateStmt ss
+elaborateStmts :: TypeAliasContext -> Statements -> SeqElab
+elaborateStmts aliasCtx ss = map (elaborateStmt aliasCtx) ss
 
 elaborateAsn :: Asn -> AsnElab
 elaborateAsn (Asn as lval e) =
@@ -121,13 +123,13 @@ elaborateAsn (Asn as lval e) =
                     (elaborateLval lval)
                     binop
 
-elaborateDecl :: Decl -> DeclElab
-elaborateDecl decl =
+elaborateDecl :: TypeAliasContext -> Decl -> DeclElab
+elaborateDecl aliasCtx decl =
     case decl of
         Decl id ty Nothing Nothing ->
-            DeclElab (VariableElab id (elaborateType ty)) Nothing
+            DeclElab (VariableElab id (elaborateType aliasCtx ty)) Nothing
         Decl id ty (Just as) (Just e) ->
-            DeclElab (VariableElab id (elaborateType ty)) (Just (elaborateAsn (Asn as (BASE_GEN_IDENT id) e)))
+            DeclElab (VariableElab id (elaborateType aliasCtx ty)) (Just (elaborateAsn (Asn as (BASE_GEN_IDENT id) e)))
 
 elaboratePost :: Post -> AsnElab
 elaboratePost (Post po lval) = 
@@ -169,32 +171,32 @@ elaborateAssert (Assert assertTok e) =
             (ABORT_ELAB (AbortElab assertTok))
             Nothing
 
-elaborateIf :: If -> IfElab
-elaborateIf ifAst = 
+elaborateIf :: TypeAliasContext -> If -> IfElab
+elaborateIf aliasCtx ifAst = 
     IfElab
         (elaborateExp (ifExp ifAst))
-        (elaborateStmt (ifStmt ifAst))
-        (fmap elaborateStmt (ifElseoptStmt ifAst))
+        (elaborateStmt aliasCtx (ifStmt ifAst))
+        (fmap (elaborateStmt aliasCtx) (ifElseoptStmt ifAst))
 
-elaborateWhile :: While -> WhileElab
-elaborateWhile while = 
+elaborateWhile :: TypeAliasContext -> While -> WhileElab
+elaborateWhile aliasCtx while = 
     WhileElab 
         (elaborateExp (whileExp while))
-        (elaborateStmt (whileStmt while))
+        (elaborateStmt aliasCtx (whileStmt while))
 
-elaborateFor :: For -> SeqElab
-elaborateFor for = 
+elaborateFor :: TypeAliasContext -> For -> SeqElab
+elaborateFor aliasCtx for = 
     let initStmtElabs = 
             case (forInitSimp for) of
                 Nothing -> []
-                Just s -> [elaborateSimp s]
+                Just s -> [elaborateSimp aliasCtx s]
         termExpElab = elaborateExp (forTermExp for)
         innerStmtElab = 
-            let forStmtElabs = [elaborateStmt (forStmt for)]
+            let forStmtElabs = [elaborateStmt aliasCtx (forStmt for)]
                 forInterSimpElabs = 
                     case (forInterSimp for) of
                         Nothing -> []
-                        Just s -> [elaborateSimp s]
+                        Just s -> [elaborateSimp aliasCtx s]
             in SEQ_ELAB (forStmtElabs ++ forInterSimpElabs)
         whileStmtElab = WhileElab termExpElab innerStmtElab
     in initStmtElabs ++ [WHILE_ELAB whileStmtElab]
@@ -239,15 +241,21 @@ elaborateUnop :: Unop -> UnopElab
 elaborateUnop (Unop op e) =
     UnopElab (translateUnop (tokenCat op)) op (elaborateExp e)
 
-elaborateType :: Type -> TypeElab
-elaborateType ty = 
+elaborateType :: TypeAliasContext -> Type -> TypeElab
+elaborateType aliasCtx ty = 
     case ty of
         BASE_TYPE_AST tok ->
             case (tokenCat tok) of
-                TYPE typeCat -> TypeElab typeCat tok
+                TYPE typeCat -> 
+                    case typeCat of
+                        STRUCT_TYPE structName _ ->
+                            case Map.lookup structName (typeAliasContextStructs aliasCtx) of
+                                Just structTy -> TypeElab structTy tok
+                                Nothing -> error . compilerError $ "No definition for struct: " ++ structName
+                        _ -> TypeElab typeCat tok
                 _ -> error . compilerError $ "Attempted to elaborate non-type token as type: " ++ (show tok)
         POINTER_TYPE_AST t ->
-            let subElaboratedType = elaborateType t
+            let subElaboratedType = elaborateType aliasCtx t
             in 
                 TypeElab
                     (POINTER_TYPE (typeElabType subElaboratedType))
@@ -257,7 +265,7 @@ elaborateType ty =
                 INT_CONST i ->
                     if i > 0
                         then
-                            let subElaboratedType = elaborateType t
+                            let subElaboratedType = elaborateType aliasCtx t
                             in
                                 TypeElab
                                     (ARRAY_TYPE (typeElabType subElaboratedType) i)

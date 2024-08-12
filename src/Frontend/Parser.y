@@ -79,6 +79,7 @@ import Model.Ast
     alloc_arr       { Token ALLOC_ARRAY _ }
     type            { Token (TYPE _) _ }
     typedef         { Token TYPEDEF _ }
+    struct          { Token STRUCT _ }
     eof             { Token EOF _ }
 
 
@@ -161,9 +162,20 @@ Program :               { [] }
 GDecl : Typedef         { TYPEDEF_GDECL $1 }
     | FunctionDecl      { FNDECL_GDECL $1 }
     | Function          { FNDEFN_GDECL $1 }
+    | StructDecl        { STRUCTDECL_GDECL $1 }
+    | StructDefn        { STRUCTDEFN_GDECL $1 }
 
 Typedef : typedef Type ident ';'
                         { Typedef $2 $3 }
+
+StructDecl : struct ident ';'
+                        { StructDecl $2 }
+
+StructDefn : struct ident '{' Fields '}' ';'
+                        { StructDefn $2 $4 }
+
+Fields :                { [] }
+    | Param ';' Fields  { ($1):($3) }
 
 FunctionDecl : Type ident Params ';'
                         { FunctionSignature $2 $3 $1 }

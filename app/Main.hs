@@ -32,9 +32,9 @@ handleVerificationErrors errors =
 
 compiler :: String -> String
 compiler code =
-    let (tokens, lexerErrors) = lexer code
+    let (tokens, lexerErrors, typeAliasCtx) = lexer code
         ast = parser (reverse tokens)
-        elaborated = elaborateProg ast
+        elaborated = elaborateProg typeAliasCtx ast
         (ir, verErrors) = irProg "program" elaborated
         zippedIrColorings = 
             map

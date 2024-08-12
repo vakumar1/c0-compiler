@@ -20,15 +20,15 @@ lineNoStart = 1
 linePosStart :: Int
 linePosStart = 1
 
-lexer :: String -> ([Token], [LexerError])
+lexer :: String -> ([Token], [LexerError], TypeAliasContext)
 lexer code = lexerHelper [] [] [] "" (code ++ ['\n']) emptyTypeAliasCtx lineNoStart linePosStart
 
-lexerHelper :: [Token] -> [Token] -> [LexerError] -> String -> String -> TypeAliasContext -> Int -> Int -> ([Token], [LexerError])
+lexerHelper :: [Token] -> [Token] -> [LexerError] -> String -> String -> TypeAliasContext -> Int -> Int -> ([Token], [LexerError], TypeAliasContext)
 lexerHelper finishedTokens openerStack errors currToken remainingStr aliasCtx lineNo linePos
     -- EOF
     | null remainingStr =
         let errorsAddDangler = foldr (\o l -> (LexerError ((tokenLineNo . tokenData) o) ((tokenLinePos . tokenData) o) DANGLING_OPEN_ENCLOSER) : l) errors openerStack
-         in (finishedTokens, errorsAddDangler)
+         in (finishedTokens, errorsAddDangler, aliasCtx)
     -- delimiters
     | isDelim remainingStr =
         -- try to process current token and delimiter
@@ -86,7 +86,7 @@ lexerHelper finishedTokens openerStack errors currToken remainingStr aliasCtx li
 
 -- COMMENT HELPERS
 
-oneLineComment :: [Token] -> [Token] -> [LexerError] -> String -> TypeAliasContext -> Int -> ([Token], [LexerError])
+oneLineComment :: [Token] -> [Token] -> [LexerError] -> String -> TypeAliasContext -> Int -> ([Token], [LexerError], TypeAliasContext)
 oneLineComment finishedTokens openerStack errors remainingStr aliasCtx lineNo =
     case remainingStr of
         "" ->
@@ -96,7 +96,7 @@ oneLineComment finishedTokens openerStack errors remainingStr aliasCtx lineNo =
         _ ->
             oneLineComment finishedTokens openerStack errors (tail remainingStr) aliasCtx lineNo
 
-multilineComment :: [Token] -> [Token] -> [LexerError] -> String -> TypeAliasContext -> Int -> Int -> Int -> Int -> ([Token], [LexerError])
+multilineComment :: [Token] -> [Token] -> [LexerError] -> String -> TypeAliasContext -> Int -> Int -> Int -> Int -> ([Token], [LexerError], TypeAliasContext)
 multilineComment finishedTokens openerStack errors remainingStr aliasCtx commentStartLineNo commentStartLinePos lineNo linePos =
     case remainingStr of
         "" ->

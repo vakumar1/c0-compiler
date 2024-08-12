@@ -4,6 +4,8 @@ module Model.Ast (
     Typedef (..),
     Function (..),
     FunctionSignature (..),
+    StructDecl (..),
+    StructDefn (..),
     Param (..),
     Block,
     Statements,
@@ -36,10 +38,21 @@ data GlobalDecl
     = TYPEDEF_GDECL Typedef
     | FNDECL_GDECL FunctionSignature
     | FNDEFN_GDECL Function
+    | STRUCTDECL_GDECL StructDecl
+    | STRUCTDEFN_GDECL StructDefn
 
 data Typedef = Typedef
     { typedefType :: Type
     , typedefAlias :: Token
+    }
+
+data StructDecl = StructDecl
+    { structDeclName :: Token
+    }
+
+data StructDefn = StructDefn
+    { structDefnName :: Token
+    , structDefnFields :: [Param]
     }
 
 data FunctionSignature = FunctionSignature
