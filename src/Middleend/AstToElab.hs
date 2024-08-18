@@ -395,6 +395,9 @@ generateLvalMemops lval =
         STRUCT_ACCESS_GEN_IDENT innerLval field ->
             let (i, subOps) = generateLvalMemops innerLval
             in (i, subOps ++ [STRUCT_ACCESS_MEMOP_ELAB field])
+        STRUCT_DEREF_ACCESS_GEN_IDENT innerLval field ->
+            let (i, subOps) = generateLvalMemops innerLval
+            in (i, subOps ++ [DEREF_MEMOP_ELAB, STRUCT_ACCESS_MEMOP_ELAB field])
 
 generateExpMemops :: GenIdent -> (Token, [MemopElabCat])
 generateExpMemops genIdent = 
@@ -411,3 +414,6 @@ generateExpMemops genIdent =
         STRUCT_ACCESS_GEN_IDENT innerGenIdent field ->
             let (e, subOps) = generateExpMemops innerGenIdent
             in (e, subOps ++ [STRUCT_ACCESS_MEMOP_ELAB field])
+        STRUCT_DEREF_ACCESS_GEN_IDENT innerGenIdent field ->
+            let (e, subOps) = generateExpMemops innerGenIdent
+            in (e, subOps ++ [DEREF_MEMOP_ELAB, STRUCT_ACCESS_MEMOP_ELAB field])

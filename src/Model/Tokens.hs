@@ -57,6 +57,7 @@ data TokenCategory
     | PIPE_EQ
     | PLUS_PLUS
     | DASH_DASH
+    | ARROW
     -- three-char delims
     | LEFT_LEFT_EQ
     | RIGHT_RIGHT_EQ

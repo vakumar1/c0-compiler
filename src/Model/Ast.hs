@@ -202,6 +202,7 @@ data GenIdent
     | DEREF_GEN_IDENT GenIdent
     | ARR_INDEX_GEN_IDENT GenIdent Exp
     | STRUCT_ACCESS_GEN_IDENT GenIdent Token
+    | STRUCT_DEREF_ACCESS_GEN_IDENT GenIdent Token
     deriving (Show)
 
 getBaseTypeToken :: Type -> Token

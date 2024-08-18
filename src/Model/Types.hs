@@ -45,6 +45,7 @@ instance Eq TypeCategory where
             (VOID_TYPE, VOID_TYPE) -> True
             (POINTER_TYPE s1, POINTER_TYPE s2) -> s1 == s2
             (ARRAY_TYPE t1 s1, ARRAY_TYPE t2 s2) -> t1 == t2 && s1 == s2
+            (STRUCT_TYPE s1, STRUCT_TYPE s2) -> s1 == s2
             _ -> False
 
 data Const

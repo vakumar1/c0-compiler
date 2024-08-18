@@ -179,6 +179,7 @@ reservedDoubleTok s =
         '|' : '=' : _ -> Just PIPE_EQ
         '+' : '+' : _ -> Just PLUS_PLUS
         '-' : '-' : _ -> Just DASH_DASH
+        '-' : '>' : _ -> Just ARROW
         _ -> Nothing
 
 reservedCharTok :: String -> Maybe TokenCategory

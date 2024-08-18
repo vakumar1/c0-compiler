@@ -46,6 +46,7 @@ import Model.Ast
     ':'             { Token COLON _ }
     ','             { Token COMMA _ }
     '.'             { Token PERIOD _ }
+    '->'            { Token ARROW _ }
 
     '='             { Token EQUAL _ }
     '+='            { Token PLUS_EQ _ }
@@ -326,6 +327,9 @@ GenIdent :
                         { ARR_INDEX_GEN_IDENT $1 $3 }
     | GenIdent '.' ident
                         { STRUCT_ACCESS_GEN_IDENT $1 $3 }
+    | GenIdent '->' ident
+                        { STRUCT_DEREF_ACCESS_GEN_IDENT $1 $3 }
+    
 
 {
 parseError :: [Token] -> a

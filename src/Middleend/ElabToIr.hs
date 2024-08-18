@@ -1342,6 +1342,12 @@ expandPureIr pu state =
             in ([memopComm], VAR_IR memopTemp, newState)
 
 expandMemops :: Token -> VariableIr -> TypeCategory -> [MemopElabCat] -> IrProcessingState -> (MemopIr, Maybe (VariableIr, TypeCategory), IrProcessingState)
+expandMemops idTok baseVarIr baseTy memOps state
+    | debugElabLogs && (Trace.trace
+        ("\n\n -- " ++
+            "\nidTok=" ++ (Pretty.ppShow idTok) ++
+            "\nmemOps" ++ (Pretty.ppShow memOps)
+        ) False) = undefined
 expandMemops idTok baseVarIr baseTy memOps state = 
     case memOps of
         -- no memops --> directly return var
@@ -1503,31 +1509,31 @@ processMemAccessOpsExp idTok memAccessOps varIr varTy state =
 
 processPairMemopExp :: Token -> [MemopElabCat] -> VariableIr -> TypeCategory -> IrProcessingState -> (Maybe (VariableIr, TypeCategory), IrProcessingState)
 processPairMemopExp idTok memAccessOps varIr varTy state = 
-    let (finalVarTy, m_puBOffset, offsetState) = accumulAndExpandOffsets idTok varTy memAccessOps state
-    in 
-        case m_puBOffset of
-            Nothing -> 
-                (Nothing, offsetState)
-            Just puBOffset ->
-                case finalVarTy of
-                    POINTER_TYPE derefTy ->
+    case varTy of
+        POINTER_TYPE derefTy ->
+            let (finalVarTy, m_puBOffset, offsetState) = accumulAndExpandOffsets idTok derefTy memAccessOps state
+            in 
+                case m_puBOffset of
+                    Nothing ->
+                        (Nothing, offsetState)
+                    Just puBOffset ->
                         let 
-                        -- create ASN inst that sets temp var to result of indexing into pureBaseIr w/ deref
+                        -- create ASN inst that sets temp var to result of indexing into pureBaseIr after deref
                             (tempName, tempScopeState) = irProcessingScopeStateAddTemp (irProcScopeState offsetState)
-                            indexTemp = VariableIr tempName 0 derefTy True
+                            indexTemp = VariableIr tempName 0 finalVarTy True
                             asnComm = 
                                 ASN_PURE_IR
                                     emptyMemopIr
                                     indexTemp
-                                    (PURE_MEMOP_IR varIr (MemopIr True (Just puBOffset) derefTy))
+                                    (PURE_MEMOP_IR varIr (MemopIr True (Just puBOffset) finalVarTy))
                             indexState = 
                                 (irProcessingStateAddComms [asnComm]) .
                                 (irProcessingStateUpdateScopeState tempScopeState) $
                                 offsetState
-                        in (Just (indexTemp, derefTy), indexState)
-                    _ ->
-                        let errState = irProcessingStateAppendErrs [ASN_TYPE_DEREF (AsnTypeDereference idTok finalVarTy)] state
-                        in (Nothing, errState)
+                        in (Just (indexTemp, finalVarTy), indexState)
+        _ ->
+            let errState = irProcessingStateAppendErrs [ASN_TYPE_DEREF (AsnTypeDereference idTok varTy)] state
+            in (Nothing, errState)
 
 -- converts list of mem access ops into a single PureBaseIr offset
 accumulAndExpandOffsets :: Token -> TypeCategory -> [MemopElabCat] -> IrProcessingState -> (TypeCategory, Maybe PureBaseIr, IrProcessingState)
