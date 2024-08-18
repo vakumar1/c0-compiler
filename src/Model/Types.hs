@@ -6,6 +6,7 @@ module Model.Types (
     Const (..),
     constToType,
     sizeofType,
+    extractStructFieldOffset,
 ) where
 
 import qualified Data.Map as Map
@@ -70,3 +71,22 @@ sizeofType structCtx ty =
             case Map.lookup structName (structContextDefined structCtx) of
                 Just structFields -> sum (map (\(_, ty) -> sizeofType structCtx ty) structFields)
                 Nothing -> error ("No definition/declaration for struct: " ++ structName)
+
+extractStructFieldOffset :: StructContext -> [(String, TypeCategory)] -> String -> Maybe (Int, TypeCategory)
+extractStructFieldOffset structCtx fields fieldName = 
+    let (offset, m_ty) = 
+            foldl
+                (\(interOffset, interType) (currFieldName, currFieldType) ->
+                    case interType of
+                        Just _ -> (interOffset, interType)
+                        Nothing ->
+                            if fieldName == currFieldName
+                                then (interOffset, Just currFieldType)
+                                else (interOffset + (sizeofType structCtx currFieldType), Nothing)
+                )
+                (0, Nothing)
+                fields
+    in
+        case m_ty of
+            Just ty -> Just (offset, ty)
+            Nothing -> Nothing

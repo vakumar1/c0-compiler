@@ -37,6 +37,7 @@ data TokenCategory
     | QUEST
     | COLON
     | COMMA
+    | PERIOD
     -- double-char delims
     | LEFT_LEFT
     | RIGHT_RIGHT

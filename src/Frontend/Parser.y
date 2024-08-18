@@ -45,6 +45,7 @@ import Model.Ast
     '?'             { Token QUEST _ }
     ':'             { Token COLON _ }
     ','             { Token COMMA _ }
+    '.'             { Token PERIOD _ }
 
     '='             { Token EQUAL _ }
     '+='            { Token PLUS_EQ _ }
@@ -151,6 +152,9 @@ import Model.Ast
 %right PAREN
 %left ')'
 %right '('
+
+-- struct field access
+%left '.'
 
 %nonassoc EXP_PAREN
 %nonassoc GENIDENT_PAREN
@@ -320,6 +324,8 @@ GenIdent :
     | '*' GenIdent      { DEREF_GEN_IDENT $2 }
     | GenIdent '[' Exp ']'  
                         { ARR_INDEX_GEN_IDENT $1 $3 }
+    | GenIdent '.' ident
+                        { STRUCT_ACCESS_GEN_IDENT $1 $3 }
 
 {
 parseError :: [Token] -> a

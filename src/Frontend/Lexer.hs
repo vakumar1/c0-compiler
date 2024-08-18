@@ -207,6 +207,7 @@ reservedCharTok s =
         '?' : _ -> Just QUEST
         ':' : _ -> Just COLON
         ',' : _ -> Just COMMA
+        '.' : _ -> Just PERIOD
         _ -> Nothing
 
 classifyToken :: String -> TypeAliasContext -> Maybe TokenCategory

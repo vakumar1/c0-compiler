@@ -407,7 +407,7 @@ irDecl (DeclElab varElab Nothing) state =
                     declState = (irProcessingStateAppendErrs [err] state)
                 in (False, False, predecessorCommandsSingleton declState, declState)
             -- insert the variable into the top scope if it does not exist
-            -- and set to assigned if variable is an array
+            -- and set to assigned if variable is an array or a struct
             Nothing ->
                 let topScopeId = scopeId . head . scopes $ scopeState
                     var = varElabToIr varElab topScopeId
@@ -416,6 +416,8 @@ irDecl (DeclElab varElab Nothing) state =
                     declScopeState = 
                         case (typeElabType . variableElabType $ varElab) of
                             ARRAY_TYPE _ _ ->
+                                irProcessingScopeStateSetAssignedInScope (irProcessingScopeStateInsertToTopScope scopeState name varElab False) name varElab topScopeId
+                            STRUCT_TYPE _ ->
                                 irProcessingScopeStateSetAssignedInScope (irProcessingScopeStateInsertToTopScope scopeState name varElab False) name varElab topScopeId
                             _ ->
                                 irProcessingScopeStateInsertToTopScope scopeState name varElab False
@@ -1587,6 +1589,30 @@ accumulateOffsets idTok varTy memAccessOps state =
                                 -- fail if variable is not an array
                                 _ ->
                                     let errState = irProcessingStateAppendErrs [ASN_TYPE_INDEX (AsnTypeIndex idTok interVarTy)] interState
+                                    in (interVarTy, False, interOffsetConst, interOffsetVarIrs, errState)
+                        STRUCT_ACCESS_MEMOP_ELAB field ->
+                            -- type-check inter variable type for struct access memop
+                            case interVarTy of
+                                STRUCT_TYPE structName ->
+                                    let fieldName = extractIdentifierName field
+                                        structCtx = globalStructCtx . irProcScopeState $ state
+                                    in 
+                                        case Map.lookup structName (structContextDefined structCtx) of
+                                            Just structFields ->
+                                                case (extractStructFieldOffset structCtx structFields fieldName) of
+                                                    Just (fieldOffset, fieldTy) ->
+                                                        (fieldTy, interOffsetValid, interOffsetConst + fieldOffset, interOffsetVarIrs, interState)
+                                                    -- fail if field does not exist in struct
+                                                    Nothing ->
+                                                        let errState = irProcessingStateAppendErrs [STRUCT_FIELD_UNDEFINED (StructFieldUndefined idTok field)] interState
+                                                        in (interVarTy, False, interOffsetConst, interOffsetVarIrs, errState)
+                                            -- fail if struct is not defined
+                                            Nothing ->
+                                                let errState = irProcessingStateAppendErrs [STRUCT_UNDEFINED (StructUndefined idTok)] interState
+                                                in (interVarTy, False, interOffsetConst, interOffsetVarIrs, errState)
+                                -- fail if variable is not a struct
+                                _ ->
+                                    let errState = irProcessingStateAppendErrs [ASN_TYPE_FIELD_ACCESS (AsnTypeFieldAccess idTok interVarTy)] interState
                                     in (interVarTy, False, interOffsetConst, interOffsetVarIrs, errState)
                         _ ->
                             error . compilerError $ "Unsupported mem access op=" ++ (show memOpElt)

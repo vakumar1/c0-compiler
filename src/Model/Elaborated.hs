@@ -224,6 +224,7 @@ instance Eq TypeElab where
 data MemopElabCat
     = DEREF_MEMOP_ELAB
     | ARR_INDEX_MEMOP_ELAB ExpElab
+    | STRUCT_ACCESS_MEMOP_ELAB Token
     deriving Show
 
 -- HELPERS

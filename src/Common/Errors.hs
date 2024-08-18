@@ -12,7 +12,10 @@ module Common.Errors (
     AsnTypeMismatch (..),
     AsnTypeDereference (..),
     AsnTypeIndex (..),
+    AsnTypeFieldAccess (..),
     ArrIndexNonIntType (..),
+    StructUndefined (..),
+    StructFieldUndefined (..),
     IfCondTypeMismatch (..),
     RetTypeMismatch (..),
     InvalidReturnError (..),
@@ -122,9 +125,26 @@ data AsnTypeIndex = AsnTypeIndex
     }
     deriving (Show)
 
+data AsnTypeFieldAccess = AsnTypeFieldAccess
+    { asnTypeFieldAccessVar :: Token
+    , asnTypeFieldAccessVarType :: TypeCategory
+    }
+    deriving (Show)
+
 data ArrIndexNonIntType = ArrIndexNonIntType
     { arrIndexNonIntTypeVar :: Token
     , arrIndexNonIntType :: TypeCategory
+    }
+    deriving (Show)
+
+data StructUndefined = StructUndefined
+    { structUndefinedStructTok :: Token
+    }
+    deriving (Show)
+
+data StructFieldUndefined = StructFieldUndefined
+    { structFieldUndefinedStructTok :: Token
+    , structFieldUndefinedFieldTok :: Token
     }
     deriving (Show)
 
@@ -176,7 +196,10 @@ data VerificationError
     | ASN_TYPE_MISMATCH AsnTypeMismatch
     | ASN_TYPE_DEREF AsnTypeDereference
     | ASN_TYPE_INDEX AsnTypeIndex
+    | ASN_TYPE_FIELD_ACCESS AsnTypeFieldAccess
     | ARR_INDEX_NON_INT_TYPE ArrIndexNonIntType
+    | STRUCT_UNDEFINED StructUndefined
+    | STRUCT_FIELD_UNDEFINED StructFieldUndefined
     | IF_COND_TYPE_MISMATCH IfCondTypeMismatch
     | RET_TYPE_MISMATCH RetTypeMismatch
     | INVALID_RET InvalidReturnError
