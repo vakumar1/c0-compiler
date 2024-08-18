@@ -250,6 +250,7 @@ forceStackCommIr commIr =
         INIT_IR varIr ->
             case (variableIrType varIr) of
                 ARRAY_TYPE _ _ -> Just varIr
+                STRUCT_TYPE _ -> Just varIr
                 _ -> Nothing
         -- select all referenced vars
         ASN_PURE_IR _ _ (PURE_UNOP_IR (PureUnopIr REF_IR _ puB)) ->

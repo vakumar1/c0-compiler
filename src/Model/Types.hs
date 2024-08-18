@@ -1,6 +1,7 @@
 module Model.Types (
     TypeAliasContext (..),
-    emptyTypeAliasCtx,
+    StructContext (..),
+    emptyStructCtx,
     TypeCategory (..),
     Const (..),
     constToType,
@@ -10,13 +11,15 @@ module Model.Types (
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-data TypeAliasContext = TypeAliasContext
-    { typeAliasContextAliases :: Map.Map String TypeCategory
-    , typeAliasContextStructs :: Map.Map String TypeCategory
-    , typeAliasContextStructDecls :: Set.Set String
+type TypeAliasContext = Map.Map String TypeCategory
+
+data StructContext = StructContext
+    { structContextDefined :: Map.Map String [(String, TypeCategory)]
+    , structContextDeclared :: Set.Set String
     }
-emptyTypeAliasCtx :: TypeAliasContext
-emptyTypeAliasCtx = TypeAliasContext Map.empty Map.empty Set.empty
+    deriving Show
+emptyStructCtx :: StructContext
+emptyStructCtx = StructContext Map.empty Set.empty
 
 data TypeCategory
     = INT_TYPE
@@ -26,7 +29,7 @@ data TypeCategory
     | VOID_TYPE
     | POINTER_TYPE TypeCategory
     | ARRAY_TYPE TypeCategory Int
-    | STRUCT_TYPE String [(String, TypeCategory)]
+    | STRUCT_TYPE String
     | WILDCARD_TYPE
     deriving (Show)
 instance Eq TypeCategory where
@@ -56,11 +59,14 @@ constToType const =
         BOOL_CONST _ -> BOOL_TYPE
         NULL_CONST -> POINTER_TYPE WILDCARD_TYPE
 
-sizeofType :: TypeCategory -> Int
-sizeofType ty = 
+sizeofType :: StructContext -> TypeCategory -> Int
+sizeofType structCtx ty = 
     case ty of
         INT_TYPE -> 8
         BOOL_TYPE -> 8
         POINTER_TYPE _ -> 8
-        ARRAY_TYPE innerTy size -> (sizeofType innerTy) * size
-        STRUCT_TYPE _ innerITs -> sum (map (\(_, ty) -> sizeofType ty) innerITs)
+        ARRAY_TYPE innerTy size -> (sizeofType structCtx innerTy) * size
+        STRUCT_TYPE structName -> 
+            case Map.lookup structName (structContextDefined structCtx) of
+                Just structFields -> sum (map (\(_, ty) -> sizeofType structCtx ty) structFields)
+                Nothing -> error ("No definition/declaration for struct: " ++ structName)

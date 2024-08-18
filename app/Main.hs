@@ -32,10 +32,10 @@ handleVerificationErrors errors =
 
 compiler :: String -> String
 compiler code =
-    let (tokens, lexerErrors, typeAliasCtx) = lexer code
+    let (tokens, lexerErrors) = lexer code
         ast = parser (reverse tokens)
-        elaborated = elaborateProg typeAliasCtx ast
-        (ir, verErrors) = irProg "program" elaborated
+        (elaborated, structCtx) = elaborateProg ast
+        (ir, verErrors) = irProg "program" structCtx elaborated
         zippedIrColorings = 
             map
                 (\fnIr ->
@@ -45,7 +45,7 @@ compiler code =
                     in (maxSSAIr, coloring)
                 )
                 ir
-        x86inst = zippedProgIrToX86 zippedIrColorings
+        x86inst = zippedProgIrToX86 structCtx zippedIrColorings
         x86asm = concat $ map show x86inst
      in if not (null lexerErrors)
             then error . handleLexerErrors $ lexerErrors

@@ -20,15 +20,15 @@ lineNoStart = 1
 linePosStart :: Int
 linePosStart = 1
 
-lexer :: String -> ([Token], [LexerError], TypeAliasContext)
-lexer code = lexerHelper [] [] [] "" (code ++ ['\n']) emptyTypeAliasCtx lineNoStart linePosStart
+lexer :: String -> ([Token], [LexerError])
+lexer code = lexerHelper [] [] [] "" (code ++ ['\n']) Map.empty lineNoStart linePosStart
 
-lexerHelper :: [Token] -> [Token] -> [LexerError] -> String -> String -> TypeAliasContext -> Int -> Int -> ([Token], [LexerError], TypeAliasContext)
+lexerHelper :: [Token] -> [Token] -> [LexerError] -> String -> String -> TypeAliasContext -> Int -> Int -> ([Token], [LexerError])
 lexerHelper finishedTokens openerStack errors currToken remainingStr aliasCtx lineNo linePos
     -- EOF
     | null remainingStr =
         let errorsAddDangler = foldr (\o l -> (LexerError ((tokenLineNo . tokenData) o) ((tokenLinePos . tokenData) o) DANGLING_OPEN_ENCLOSER) : l) errors openerStack
-         in (finishedTokens, errorsAddDangler, aliasCtx)
+         in (finishedTokens, errorsAddDangler)
     -- delimiters
     | isDelim remainingStr =
         -- try to process current token and delimiter
@@ -40,12 +40,12 @@ lexerHelper finishedTokens openerStack errors currToken remainingStr aliasCtx li
                 case classifyToken currToken aliasCtx of
                     Just tc -> 
                         let uncompressedTokens = Token tc (TokenData lineNo (linePos - (length currToken))) : finishedTokens
-                            (compressedTokens, compressionErrCats) = compressTokens delimTokenCat uncompressedTokens aliasCtx
+                            compressedTokens = compressTokens delimTokenCat uncompressedTokens aliasCtx
                             (newTypeAliasContext, aliasErrCats) = updateTypeAliasContext newFinishedTokens aliasCtx
                             errs = 
                                 map
                                     (\errCat -> LexerError lineNo (linePos - (length currToken)) errCat)
-                                    (compressionErrCats ++ aliasErrCats)
+                                    aliasErrCats
                         in (compressedTokens, newTypeAliasContext, errs)
                     Nothing -> 
                         (finishedTokens, aliasCtx, if currToken == "" then [] else [LexerError lineNo (linePos - (length currToken)) INVALID_TOKEN])
@@ -86,7 +86,7 @@ lexerHelper finishedTokens openerStack errors currToken remainingStr aliasCtx li
 
 -- COMMENT HELPERS
 
-oneLineComment :: [Token] -> [Token] -> [LexerError] -> String -> TypeAliasContext -> Int -> ([Token], [LexerError], TypeAliasContext)
+oneLineComment :: [Token] -> [Token] -> [LexerError] -> String -> TypeAliasContext -> Int -> ([Token], [LexerError])
 oneLineComment finishedTokens openerStack errors remainingStr aliasCtx lineNo =
     case remainingStr of
         "" ->
@@ -96,7 +96,7 @@ oneLineComment finishedTokens openerStack errors remainingStr aliasCtx lineNo =
         _ ->
             oneLineComment finishedTokens openerStack errors (tail remainingStr) aliasCtx lineNo
 
-multilineComment :: [Token] -> [Token] -> [LexerError] -> String -> TypeAliasContext -> Int -> Int -> Int -> Int -> ([Token], [LexerError], TypeAliasContext)
+multilineComment :: [Token] -> [Token] -> [LexerError] -> String -> TypeAliasContext -> Int -> Int -> Int -> Int -> ([Token], [LexerError])
 multilineComment finishedTokens openerStack errors remainingStr aliasCtx commentStartLineNo commentStartLinePos lineNo linePos =
     case remainingStr of
         "" ->
@@ -277,7 +277,7 @@ typeTok s aliasCtx =
         "char" -> Just (TYPE CHAR_TYPE)
         "string" -> Just (TYPE STRING_TYPE)
         _ ->
-            case Map.lookup s (typeAliasContextAliases aliasCtx) of
+            case Map.lookup s aliasCtx of
                 Just resolved -> Just (TYPE resolved)
                 Nothing -> Nothing
 
@@ -291,72 +291,32 @@ identifierTok s =
                     Just (IDENTIFIER s)
             _ -> Nothing
 
-compressTokens :: Maybe TokenCategory -> [Token] -> TypeAliasContext -> ([Token], [LexerErrorCategory])
+-- compress struct identifier into single Type token
+compressTokens :: Maybe TokenCategory -> [Token] -> TypeAliasContext -> [Token]
 compressTokens delimTok finishedTokens aliasCtx = 
     case map tokenCat finishedTokens of
         IDENTIFIER structName : STRUCT : _ ->
-            -- attempt to resolve struct type if this is a decl or struct is already declared
-            if ((Maybe.isJust delimTok && Maybe.fromJust delimTok == SEMICOLON) || Set.member structName (typeAliasContextStructDecls aliasCtx))
-                then 
-                    let compressTok = Token (TYPE (STRUCT_TYPE structName [])) (tokenData . head $ finishedTokens)
-                    in (compressTok : (drop 2 finishedTokens), [])
-                else
-                    let err = UNDECLARED_STRUCT (UndeclaredStructError (head finishedTokens))
-                    in (finishedTokens, [err])
+            let compressTok = Token (TYPE (STRUCT_TYPE structName)) (tokenData . head $ finishedTokens)
+            in compressTok : (drop 2 finishedTokens)
         _ ->
-            (finishedTokens, [])
+            finishedTokens
 
+-- add type aliases to alias context
 updateTypeAliasContext :: [Token] -> TypeAliasContext -> (TypeAliasContext, [LexerErrorCategory])
 updateTypeAliasContext finishedTokens aliasCtx = 
     let finishedTokenCats = map tokenCat finishedTokens
     in case finishedTokenCats of
             -- insert new type alias
             SEMICOLON : IDENTIFIER alias : TYPE target : TYPEDEF : _ ->
-                let newCtx = 
-                        TypeAliasContext 
-                            (Map.insert alias target (typeAliasContextAliases aliasCtx))
-                            (typeAliasContextStructs aliasCtx)
-                            (typeAliasContextStructDecls aliasCtx)
+                let newCtx = Map.insert alias target aliasCtx
+                        -- TypeAliasContext 
+                        --     (Map.insert alias target (typeAliasContextAliases aliasCtx))
+                        --     (typeAliasContextStructs aliasCtx)
+                        --     (typeAliasContextStructDecls aliasCtx)
                     errs = 
-                        case Map.lookup alias (typeAliasContextAliases aliasCtx) of
+                        case Map.lookup alias aliasCtx of
                             Just currTarget -> [DUPLICATE_TYPEDEF_DEFN (DuplicateTypedefDefnError (finishedTokens !! 1) currTarget target)]
                             Nothing -> []
                 in (newCtx, errs)
-            -- insert new struct decl
-            SEMICOLON : TYPE (STRUCT_TYPE structName _) : _ ->
-                let newCtx = 
-                        TypeAliasContext
-                            (typeAliasContextAliases aliasCtx)
-                            (typeAliasContextStructs aliasCtx)
-                            (Set.insert structName (typeAliasContextStructDecls aliasCtx))
-                    errs = []
-                in (newCtx, errs)
-            -- attempt to insert new struct defn
             _ ->
-                case (extractStructDefn finishedTokenCats) of
-                    Just (STRUCT_TYPE structName structFields) ->
-                        let newCtx = 
-                                TypeAliasContext
-                                    (typeAliasContextAliases aliasCtx)
-                                    (Map.insert structName (STRUCT_TYPE structName structFields) (typeAliasContextStructs aliasCtx))
-                                    (Set.insert structName (typeAliasContextStructDecls aliasCtx))
-                            errs = 
-                                case Map.lookup structName (typeAliasContextStructs aliasCtx) of
-                                    Just currTarget -> [DUPLICATE_STRUCT_DEFN (DuplicateStructDefnError currTarget (STRUCT_TYPE structName structFields))]
-                                    Nothing -> []
-                        in (newCtx, errs)
-                    _ -> 
-                        (aliasCtx, [])
-
-extractStructDefn :: [TokenCategory] -> Maybe TypeCategory
-extractStructDefn finishedTokens = 
-    case finishedTokens of
-        SEMICOLON : tailTokens -> extractStructDefnFields tailTokens []
-        _ -> Nothing
-
-extractStructDefnFields :: [TokenCategory] -> [(String, TypeCategory)] -> Maybe TypeCategory
-extractStructDefnFields remainingTokens currFields = 
-    case remainingTokens of
-        OPEN_BRACE : TYPE (STRUCT_TYPE structName _) : _ -> Just (STRUCT_TYPE structName currFields)
-        SEMICOLON : IDENTIFIER fieldName : TYPE fieldType : tailTokens -> extractStructDefnFields tailTokens ((fieldName, fieldType) : currFields)
-        _ -> Nothing
+                (aliasCtx, [])

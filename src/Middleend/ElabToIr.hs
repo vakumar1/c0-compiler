@@ -42,6 +42,7 @@ data PredecessorCommands = PredecessorCommands
 data IrProcessingScopeState = IrProcessingScopeState
     { scopes :: [Scope]                             -- current ordered list of scopes
     , globalFnScope :: GlobalFnScope                -- current fn signatures in global scope
+    , globalStructCtx :: StructContext              -- global struct definitions
     , regCtr :: Int                                 -- current register id counter
     , mapCtr :: Int                                 -- current scope id counter
     , asnVarCtx :: Maybe (MemopIr, Token, VariableIr, TypeCategory)
@@ -63,8 +64,8 @@ data GlobalFnScope = GlobalFnScope
     }
     deriving Show
 
-irProg :: String -> ProgramElab -> (ProgramIr, [VerificationError])
-irProg progIdentifier progElab = 
+irProg :: String -> StructContext -> ProgramElab -> (ProgramIr, [VerificationError])
+irProg progIdentifier structCtx progElab = 
     let initGlobalFnScope = 
             GlobalFnScope
                 progIdentifier
@@ -79,7 +80,7 @@ irProg progIdentifier progElab =
                             let (newGlobalFnScope, fndeclErrs) = irFunctionDecl interFnScope fndeclElab
                             in (newGlobalFnScope, interFnIrs, interErrs ++ fndeclErrs)
                         FNDEFN_GDECL_ELAB fndefnElab ->
-                            let (newGlobalFnScope, fnIr, fndefnErrs) = irFunction interFnScope fndefnElab
+                            let (newGlobalFnScope, fnIr, fndefnErrs) = irFunction interFnScope structCtx fndefnElab
                             in (newGlobalFnScope, interFnIrs ++ [fnIr], interErrs ++ fndefnErrs)
                 )
                 (initGlobalFnScope, [], [])
@@ -111,8 +112,8 @@ irFunctionDecl fnScope fnSignElab =
                 Nothing -> []
     in (newFnScope, conflictErrs)
 
-irFunction :: GlobalFnScope -> FunctionElab -> (GlobalFnScope, FunctionIr, [VerificationError])
-irFunction fnScope fnElab =
+irFunction :: GlobalFnScope -> StructContext -> FunctionElab -> (GlobalFnScope, FunctionIr, [VerificationError])
+irFunction fnScope structCtx fnElab =
     let 
         -- update global fn scope and translate fnElab
         fnName = extractIdentifierName . functionSignatureElabName . functionElabSignature $ fnElab
@@ -124,6 +125,7 @@ irFunction fnScope fnElab =
                 (Set.insert fnName (globalFnScopeDefined fnScope))
                 ((globalFnScopeCounter fnScope) + 1)
         initBbIr = BasicBlockIr fnName 0 Map.empty []
+        baseScopeState = irProcessingScopeStateAddScope (IrProcessingScopeState [] newFnScope structCtx 0 0 Nothing)
         (fnIrArgVars, initScopeState, initDeclErrs) = 
             foldl
                 (\(interArgVars, interScopeState, interDeclErrs) varElab ->
@@ -136,7 +138,7 @@ irFunction fnScope fnElab =
                             Nothing ->
                                 (interArgVars ++ [varIr], irProcessingScopeStateInsertToTopScope interScopeState varName varElab True, interDeclErrs)
                 )
-                ([], irProcessingScopeStateAddScope (IrProcessingScopeState [] newFnScope 0 0 Nothing), [])
+                ([], baseScopeState, [])
                 (functionSignatureElabArgs . functionElabSignature $ fnElab)
         initFnIr = FunctionIr fnName fnIrArgVars Map.empty emptyGraph
         initState = IrProcessingState initBbIr initFnIr [] 1 initScopeState
@@ -1048,6 +1050,7 @@ irProcessingScopeStateAddTemp state =
             IrProcessingScopeState
                 (scopes state) 
                 (globalFnScope state)
+                (globalStructCtx state)
                 ((regCtr state) + 1) 
                 (mapCtr state)
                 (asnVarCtx state)
@@ -1059,6 +1062,7 @@ irProcessingScopeStateAddScope state =
     in IrProcessingScopeState
             (newScope : (scopes state)) 
             (globalFnScope state)
+            (globalStructCtx state)
             (regCtr state) 
             ((mapCtr state) + 1)
             (asnVarCtx state)
@@ -1073,6 +1077,7 @@ irProcessingScopeStateInsertToTopScope state name varElab initAssigned =
     in IrProcessingScopeState
             (varScope : (tail (scopes state))) 
             (globalFnScope state)
+            (globalStructCtx state)
             (regCtr state) 
             (mapCtr state)
             (asnVarCtx state)
@@ -1092,6 +1097,7 @@ irProcessingScopeStateSetAssignedInScope state varName varElab varScopeId =
      in IrProcessingScopeState 
             newScopes 
             (globalFnScope state)
+            (globalStructCtx state)
             (regCtr state) 
             (mapCtr state)
             (asnVarCtx state)
@@ -1101,6 +1107,7 @@ irProcessingScopeStatePopScopeMap state =
     IrProcessingScopeState 
         (tail (scopes state)) 
         (globalFnScope state)
+        (globalStructCtx state)
         (regCtr state) 
         (mapCtr state)
         (asnVarCtx state)
@@ -1110,6 +1117,7 @@ irProcessingScopeStateSetAsnCtx state memop asnTok asnVar asnTy =
     IrProcessingScopeState 
         (scopes state)
         (globalFnScope state)
+        (globalStructCtx state)
         (regCtr state) 
         (mapCtr state)
         (Just (memop, asnTok, asnVar, asnTy))
@@ -1119,6 +1127,7 @@ irProcessingScopeStateUnsetAsnCtx state =
     IrProcessingScopeState 
         (scopes state)
         (globalFnScope state)
+        (globalStructCtx state)
         (regCtr state) 
         (mapCtr state)
         Nothing
@@ -1547,6 +1556,7 @@ accumulateOffsets idTok varTy memAccessOps state =
                             case interVarTy of
                                 ARRAY_TYPE elemTy _ ->
                                     let (m_expPT, expState) = irExp indexExpElab interState
+                                        structCtx = globalStructCtx . irProcScopeState $ state
                                     in case m_expPT of
                                         -- abort if failed to parse index exp
                                         Nothing ->
@@ -1565,11 +1575,11 @@ accumulateOffsets idTok varTy memAccessOps state =
                                                             CONST_IR c ->
                                                                 case c of
                                                                     INT_CONST i -> 
-                                                                        (elemTy, interOffsetValid, interOffsetConst + i * (sizeofType elemTy), interOffsetVarIrs, expPuBState)
+                                                                        (elemTy, interOffsetValid, interOffsetConst + i * (sizeofType structCtx elemTy), interOffsetVarIrs, expPuBState)
                                                                     _ ->
                                                                         error . compilerError $ "Found non-int const pureBaseIr with required/checked type int: const=" ++ (show expPuB)
                                                             VAR_IR v ->
-                                                                (elemTy, interOffsetValid, interOffsetConst, interOffsetVarIrs ++ [(v, sizeofType elemTy)], expPuBState)
+                                                                (elemTy, interOffsetValid, interOffsetConst, interOffsetVarIrs ++ [(v, sizeofType structCtx elemTy)], expPuBState)
                                                 -- fail if offset is not an int
                                                 _ ->
                                                     let errState = irProcessingStateAppendErrs [ARR_INDEX_NON_INT_TYPE (ArrIndexNonIntType idTok expTy)] expState

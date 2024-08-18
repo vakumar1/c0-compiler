@@ -168,11 +168,11 @@ GDecl : Typedef         { TYPEDEF_GDECL $1 }
 Typedef : typedef Type ident ';'
                         { Typedef $2 $3 }
 
-StructDecl : struct ident ';'
-                        { StructDecl $2 }
+StructDecl : type ';'
+                        { StructDecl $1 }
 
-StructDefn : struct ident '{' Fields '}' ';'
-                        { StructDefn $2 $4 }
+StructDefn : type '{' Fields '}' ';'
+                        { StructDefn $1 $3 }
 
 Fields :                { [] }
     | Param ';' Fields  { ($1):($3) }

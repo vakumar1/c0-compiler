@@ -17,28 +17,28 @@ import qualified Data.Maybe as Maybe
 import qualified Text.Show.Pretty as Pretty
 import qualified Debug.Trace as Trace
 
-zippedProgIrToX86 :: [(FunctionIr, Coloring)] -> [X86Instruction]
-zippedProgIrToX86 zippedProgIr
+zippedProgIrToX86 :: StructContext -> [(FunctionIr, Coloring)] -> [X86Instruction]
+zippedProgIrToX86 structCtx zippedProgIr
     | debugCodegenLogs && (Trace.trace
         ("\n\nzippedProgIrToX86 -- " ++
             "\nzippedProgIr=" ++ (Pretty.ppShow zippedProgIr)
         ) False) = undefined
-zippedProgIrToX86 zippedProgIr = 
+zippedProgIrToX86 structCtx zippedProgIr = 
     concat $
     map
-        (\(fnIr, coloring) -> irToX86 coloring fnIr)
+        (\(fnIr, coloring) -> irToX86 structCtx coloring fnIr)
         zippedProgIr
 
-irToX86 :: Coloring -> FunctionIr -> [X86Instruction]
-irToX86 coloring fnIr
+irToX86 :: StructContext -> Coloring -> FunctionIr -> [X86Instruction]
+irToX86 structCtx coloring fnIr
     | debugCodegenLogs && (Trace.trace
         ("\n\nirToX86 -- " ++
             "\nname=" ++ (Pretty.ppShow (functionIrIdentifier fnIr)) ++ 
             "\ncoloring=" ++ (Pretty.ppShow coloring)
         ) False) = undefined
-irToX86 coloring fnIr =
+irToX86 structCtx coloring fnIr =
     let 
-        (alloc, preprocessingInst) = fnCalleePreprocessing coloring fnIr
+        (alloc, preprocessingInst) = fnCalleePreprocessing structCtx coloring fnIr
 
         -- apply phiFn Ir->x86 translation
         phiBlockMap = 
@@ -1465,8 +1465,8 @@ retNoneToX86 alloc =
 
 -- HELPERS
 
-fnCalleePreprocessing :: Coloring -> FunctionIr -> (AllocState, [X86Instruction])
-fnCalleePreprocessing coloring fnIr = 
+fnCalleePreprocessing :: StructContext -> Coloring -> FunctionIr -> (AllocState, [X86Instruction])
+fnCalleePreprocessing structCtx coloring fnIr = 
     let 
         -- initialize function spillover at SP + 0 and w/ all available registers
         -- for each color allocate a register if the color has not been alloc'd yet
@@ -1477,7 +1477,7 @@ fnCalleePreprocessing coloring fnIr =
                         Just argLoc -> interAlloc
                         Nothing -> 
                             let isStackColor = Set.member var (coloringStackVars coloring)
-                                varSize = sizeofType . variableIrType $ var
+                                varSize = (sizeofType structCtx) . variableIrType $ var
                             in allocColor color varSize isStackColor interAlloc
                 )
                 (AllocState Map.empty 0 availableRegisters)

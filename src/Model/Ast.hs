@@ -49,11 +49,13 @@ data Typedef = Typedef
 data StructDecl = StructDecl
     { structDeclName :: Token
     }
+    deriving (Show)
 
 data StructDefn = StructDefn
     { structDefnName :: Token
     , structDefnFields :: [Param]
     }
+    deriving (Show)
 
 data FunctionSignature = FunctionSignature
     { functionSignatureName :: Token
@@ -65,6 +67,7 @@ data Param = Param
     { paramIdentifier :: Token
     , paramType :: Type
     }
+    deriving (Show)
 
 data Function = Function
     { functionSignature :: FunctionSignature

@@ -26,6 +26,7 @@ module Model.Elaborated (
     VariableElab (..),
     TypeElab (..),
     extractIdentifierName,
+    extractStructName,
     isMainFunction,
     generateFnIdentifier,
 ) where
@@ -232,6 +233,12 @@ extractIdentifierName token =
     case (tokenCat token) of
         IDENTIFIER name -> name
         _ -> error (compilerError "Expected an identifer token but got token=" ++ (show token))
+
+extractStructName :: Token -> String
+extractStructName token = 
+    case (tokenCat token) of
+        TYPE (STRUCT_TYPE structName) -> structName
+        _ -> error . compilerError $ " Expected a struct token but got token=" ++ (show token)
 
 isMainFunction :: FunctionSignatureElab -> Bool
 isMainFunction fnSignElab = 
