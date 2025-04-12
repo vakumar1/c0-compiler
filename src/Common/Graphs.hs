@@ -1,5 +1,6 @@
 module Common.Graphs (
     DirectedGraph (..),
+    TarjanResult (..),
     emptyGraph,
     addNode,
     addEdge,
@@ -74,16 +75,37 @@ data TarjanState a = TarjanState
     , tarjanStateSCCs :: Map.Map Int (SCC a)            -- map from index to SCC
     , tarjanStateMapToSCC :: Map.Map a Int              -- map from node value to SCC index
     }
+data TarjanResult a = TarjanResult
+    { tarjanResultRootSCC :: Int                        -- root SCC index
+    , tarjanResultLeaves :: Set.Set Int                 -- leaf SCC indices
+    , tarjanResultGraph :: DirectedGraph Int            -- SCC index DAG
+    , tarjanResultMapToSCC :: Map.Map Int (SCC a)       -- map from index to SCC
+    }
 
-tarjansAlgo :: (Ord a, Show a) => a -> DirectedGraph a -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC a))
+tarjansAlgo :: (Ord a, Show a) => a -> DirectedGraph a -> TarjanResult a
 tarjansAlgo initNode graph = 
-    let initState = TarjanState 0 Map.empty [] 0 emptyGraph Set.empty Map.empty Map.empty
+    let initState = 
+            TarjanState
+                0
+                Map.empty
+                []
+                0
+                emptyGraph
+                Set.empty
+                Map.empty
+                Map.empty
         finalState = tarjanHelper initNode graph initState
         rootSCC = 
             case Map.lookup initNode (tarjanStateMapToSCC finalState) of
                 Just r -> r
                 Nothing -> error . compilerError $ "Attempted to look up root node SCC after Tarjan's algo but root was never assigned an SCC: root=" ++ (show initNode)
-    in (rootSCC, tarjanStateDAGLeaves finalState, tarjanStateCurrDAG finalState, tarjanStateSCCs finalState)
+        tarjanResult = 
+            TarjanResult
+                rootSCC
+                (tarjanStateDAGLeaves finalState)
+                (tarjanStateCurrDAG finalState)
+                (tarjanStateSCCs finalState)
+    in tarjanResult
 
 tarjanHelper :: (Ord a, Show a) => a -> DirectedGraph a -> TarjanState a -> TarjanState a
 tarjanHelper node graph state = 

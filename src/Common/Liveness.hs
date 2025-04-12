@@ -38,39 +38,44 @@ data Coloring = Coloring
 
 -- LIVENESS PASS ON CFG -> returns map of (base) variables that are live-in for each BB
 
-livenessPass :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> LiveMap
-livenessPass fnIr (root, leaves, dag, sccMap)
+livenessPass :: FunctionIr -> TarjanResult Int -> LiveMap
+livenessPass fnIr tarjanResult
     | debugLivenessLogs && (Trace.trace 
         ("\n\nlivenessPass -- " ++
             "\nCFG=" ++ (Pretty.ppShow . functionIrCFG $ fnIr) ++
             "\nBBs=" ++ (Pretty.ppShow . functionIrBlocks $ fnIr)
         )
         False) = undefined
-livenessPass fnIr (root, leaves, dag, sccMap) = 
-    let (_, liveMap) = livenessPassSCCHelper root fnIr dag sccMap (Set.empty, Map.empty)
+livenessPass fnIr tarjanResult = 
+    let (_, liveMap) = 
+            livenessPassSCCHelper
+                (tarjanResultRootSCC tarjanResult)
+                fnIr
+                tarjanResult
+                (Set.empty, Map.empty)
     in liveMap
 
 -- constructs the liveness map - i.e., a map from the BB index to
 -- the set of variables that are live-in to the BB for each BB in SCC
-livenessPassSCCHelper :: Int -> FunctionIr -> DirectedGraph Int -> Map.Map Int (SCC Int) -> (Set.Set Int, LiveMap) -> (Set.Set Int, LiveMap)
-livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap)
+livenessPassSCCHelper :: Int -> FunctionIr -> TarjanResult Int -> (Set.Set Int, LiveMap) -> (Set.Set Int, LiveMap)
+livenessPassSCCHelper sccIndex fnIr tarjanResult (visitedSCCs, liveMap)
     | debugLivenessLogs && (Trace.trace 
         ("\n\nlivenessPassSCCHelper -- " ++
             "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++
             "\ncurrSCCLiveMap=" ++ (Pretty.ppShow liveMap) ++
-            "\ndag=" ++ (Pretty.ppShow dag)
+            "\ndag=" ++ (Pretty.ppShow (tarjanResultGraph tarjanResult))
         )
         False) = undefined
-livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap) = 
+livenessPassSCCHelper sccIndex fnIr tarjanResult (visitedSCCs, liveMap) = 
     let 
         -- collect the successors of the SCC and for each
         -- apply livenessPassSCCHelper to populate the liveMap if the SCC has not been seen yet
         scc = 
-            case Map.lookup sccIndex sccMap of
+            case Map.lookup sccIndex (tarjanResultMapToSCC tarjanResult) of
                 Just s -> s
                 Nothing -> error . compilerError $ "Attempted to access scc during liveMap construction that does not exist: sccIndex=" ++ (show sccIndex)
         succSCCIndices = 
-            case Map.lookup sccIndex (graphSuccessors dag) of
+            case Map.lookup sccIndex (graphSuccessors . tarjanResultGraph $ tarjanResult) of
                 Just s -> s
                 Nothing -> Set.empty
         (recursedVisitedSCCs, recursedLiveMap) = 
@@ -78,7 +83,7 @@ livenessPassSCCHelper sccIndex fnIr dag sccMap (visitedSCCs, liveMap) =
                 (\succSCCIndex (interVisitedSCCs, interLiveMap) ->
                     if Set.member succSCCIndex interVisitedSCCs
                         then (interVisitedSCCs, interLiveMap)
-                        else livenessPassSCCHelper succSCCIndex fnIr dag sccMap (interVisitedSCCs, interLiveMap)
+                        else livenessPassSCCHelper succSCCIndex fnIr tarjanResult (interVisitedSCCs, interLiveMap)
                 )
                 (Set.insert sccIndex visitedSCCs, liveMap)
                 succSCCIndices

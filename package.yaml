@@ -65,3 +65,6 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - c0-compiler
+    - text
+    - containers
+    - hspec

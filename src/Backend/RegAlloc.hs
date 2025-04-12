@@ -18,9 +18,9 @@ import qualified Data.Set as Set
 import qualified Debug.Trace as Trace
 import qualified Text.Show.Pretty as Pretty
 
-regAllocColoring :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> Coloring
-regAllocColoring fnIr (root, leaves, dag, sccMap) =
-    let versionedLiveMap = livenessPass fnIr (root, leaves, dag, sccMap)
+regAllocColoring :: FunctionIr -> TarjanResult Int -> Coloring
+regAllocColoring fnIr tarjanResult =
+    let versionedLiveMap = livenessPass fnIr tarjanResult
         ifg = constructIFG fnIr versionedLiveMap
         order = simplicialElimOrder ifg
         stackVars = forceStackPass fnIr

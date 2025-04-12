@@ -39,9 +39,9 @@ compiler code =
         zippedIrColorings = 
             map
                 (\fnIr ->
-                    let (root, leaves, dag, sccMap) = tarjansAlgo 0 (functionIrCFG fnIr)
-                        maxSSAIr = irToMaximalSSA fnIr (root, leaves, dag, sccMap)
-                        coloring = regAllocColoring maxSSAIr (root, leaves, dag, sccMap)
+                    let sccDag = tarjansAlgo 0 (functionIrCFG fnIr)
+                        maxSSAIr = irToMaximalSSA fnIr sccDag
+                        coloring = regAllocColoring maxSSAIr sccDag
                     in (maxSSAIr, coloring)
                 )
                 ir

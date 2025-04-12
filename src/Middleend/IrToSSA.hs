@@ -22,15 +22,15 @@ import qualified Text.Show.Pretty as Pretty
 -- - (i) the updated FnIr
 -- - (ii) the SCC DAG + metadata constructed as a byproduct
 
-irToMaximalSSA :: FunctionIr -> (Int, Set.Set Int, DirectedGraph Int, Map.Map Int (SCC Int)) -> FunctionIr
-irToMaximalSSA fnIr (root, leaves, dag, sccMap)
+irToMaximalSSA :: FunctionIr -> TarjanResult Int -> FunctionIr
+irToMaximalSSA fnIr tarjanResult
     | debugProcessingLogs && (Trace.trace 
         ("\n\nirToMaximalSSA -- " ++
             "\nfnIr=" ++ (Pretty.ppShow fnIr)
         )
         False) = undefined
-irToMaximalSSA fnIr (root, leaves, dag, sccMap) =
-    let bbLiveMap = livenessPass fnIr (root, leaves, dag, sccMap)
+irToMaximalSSA fnIr tarjanResult =
+    let bbLiveMap = livenessPass fnIr tarjanResult
         initPhiFnIr = initPhiFn fnIr bbLiveMap
         versionedFnIr = versionPass initPhiFnIr bbLiveMap
     in versionedFnIr
