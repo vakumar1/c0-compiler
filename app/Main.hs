@@ -1,18 +1,22 @@
 module Main (main) where
 
 -- import Ast
+import Frontend.Lexer
 
-import Middleend.AstToElab
+import Frontend.Parser
+import Frontend.AstToElab
+import Frontend.ElabToIr
+
+import Middleend.IrToSSA
+
+import Backend.RegAlloc
 import Backend.Codegen
-import Middleend.ElabToIr
+
 import Common.Errors
 import Common.Graphs
-import Model.Ir
-import Middleend.IrToSSA
-import Frontend.Lexer
 import Common.Liveness
-import Frontend.Parser
-import Backend.RegAlloc
+
+import Model.Ir
 import Model.X86
 
 -- import Parser

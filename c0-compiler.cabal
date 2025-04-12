@@ -31,10 +31,10 @@ library
       Common.Errors
       Common.Graphs
       Common.Liveness
+      Frontend.AstToElab
+      Frontend.ElabToIr
       Frontend.Lexer
       Frontend.Parser
-      Middleend.AstToElab
-      Middleend.ElabToIr
       Middleend.IrToSSA
       Model.Ast
       Model.Elaborated

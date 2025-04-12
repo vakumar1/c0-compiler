@@ -1,4 +1,4 @@
-module Middleend.AstToElab (
+module Frontend.AstToElab (
     elaborateProg,
 ) where
 

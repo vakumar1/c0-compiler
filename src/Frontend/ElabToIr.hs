@@ -1,4 +1,4 @@
-module Middleend.ElabToIr (
+module Frontend.ElabToIr (
     irProg,
 )
 where
