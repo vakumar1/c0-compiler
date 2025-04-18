@@ -80,6 +80,7 @@ test-suite c0-compiler-test
   main-is: Spec.hs
   other-modules:
       Common.GraphsTest
+      Common.LivenessTest
       Paths_c0_compiler
   autogen-modules:
       Paths_c0_compiler
