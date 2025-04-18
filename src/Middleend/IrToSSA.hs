@@ -25,7 +25,7 @@ import qualified Text.Show.Pretty as Pretty
 
 irToMaximalSSA :: FunctionIr -> TarjanResult Int -> FunctionIr
 irToMaximalSSA fnIr tarjanResult
-    | debugProcessingLogs && (Trace.trace 
+    | debugSSALogs && (Trace.trace 
         ("\n\nirToMaximalSSA -- " ++
             "\nfnIr=" ++ (Pretty.ppShow fnIr)
         )
@@ -85,7 +85,7 @@ initPhiFn fnIr liveMap =
 -- version pass converts variable versions within BBs in loose BFS order
 versionPass :: FunctionIr -> LiveMap -> FunctionIr
 versionPass fnIr bbLiveMap
-    | debugProcessingLogs && (Trace.trace 
+    | debugSSALogs && (Trace.trace 
         ("\n\nversionPass -- " ++
             "\nbbLiveMap=" ++ (Pretty.ppShow bbLiveMap)
         )
@@ -106,7 +106,7 @@ versionPass fnIr bbLiveMap =
 
 bbIrToMaximalSSA :: BasicBlockIr -> VariableIrVersion -> (BasicBlockIr, VariableIrVersion)
 bbIrToMaximalSSA bb versions
-    | debugProcessingLogs && (Trace.trace 
+    | debugSSALogs && (Trace.trace 
         ("\n\nbbIrToMaximalSSA -- " ++
             "\nbbIr=" ++ (Pretty.ppShow bb) ++
             "\nversions=" ++ (Pretty.ppShow versions)

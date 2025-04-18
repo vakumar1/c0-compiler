@@ -8,6 +8,7 @@ import Frontend.AstToElab
 import Frontend.ElabToIr
 
 import Middleend.IrToSSA
+import Middleend.SSAMinimization
 
 import Backend.RegAlloc
 import Backend.Codegen
@@ -45,8 +46,9 @@ compiler code =
                 (\fnIr ->
                     let sccDag = tarjansAlgo 0 (functionIrCFG fnIr)
                         maxSSAIr = irToMaximalSSA fnIr sccDag
-                        coloring = regAllocColoring maxSSAIr sccDag
-                    in (maxSSAIr, coloring)
+                        minSSAIr = irToMinimalSSA maxSSAIr
+                        coloring = regAllocColoring minSSAIr sccDag
+                    in (minSSAIr, coloring)
                 )
                 ir
         x86inst = zippedProgIrToX86 structCtx zippedIrColorings

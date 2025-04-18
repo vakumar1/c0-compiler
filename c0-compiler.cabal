@@ -37,6 +37,7 @@ library
       Frontend.Lexer
       Frontend.Parser
       Middleend.IrToSSA
+      Middleend.SSAMinimization
       Model.Ast
       Model.Elaborated
       Model.Ir
