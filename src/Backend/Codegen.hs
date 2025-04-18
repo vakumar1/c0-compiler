@@ -4,9 +4,10 @@ module Backend.Codegen (
 where
 
 import Model.Ir
-import Common.Liveness
 import Model.Types
 import Model.X86
+import Common.Liveness
+import Common.IrUtils
 import Common.Errors
 import Common.Constants
 
@@ -44,9 +45,7 @@ irToX86 structCtx coloring fnIr =
         phiBlockMap = 
             foldl
                 ( \interBlockMap index ->
-                    case Map.lookup index (functionIrBlocks fnIr) of
-                        Just bb -> phiFnIrToX86 coloring fnIr index (bbIrPhiFn bb) interBlockMap alloc
-                        Nothing -> error . compilerError $ "Attempted to access basic block during phi-fn x86 translation: index=" ++ (show index)
+                    phiFnIrToX86 coloring fnIr index (bbIrPhiFn $ getBB fnIr index) interBlockMap alloc
                 )
                 Map.empty
                 [0..((length . functionIrBlocks $ fnIr) - 1)]
@@ -55,9 +54,7 @@ irToX86 structCtx coloring fnIr =
         commBlockMap =
             foldl
                 ( \interBlockMap index ->
-                    case Map.lookup index (functionIrBlocks fnIr) of
-                        Just bb -> bbIrCommsToX86 coloring bb interBlockMap alloc
-                        Nothing -> error . compilerError $ "Attempted to access basic block during command x86 translation: index=" ++ (show index)
+                    bbIrCommsToX86 coloring (getBB fnIr index) interBlockMap alloc
                 )
                 phiBlockMap
                 [0..((length . functionIrBlocks $ fnIr) - 1)]
@@ -114,11 +111,8 @@ phiFnArgToX86 coloring fnIr (succIndex, asnVar) (predIndex, predVar) initBlockMa
                     ]
 
         -- attempt to inject the phi-fn inst to the predecessor bbX86
-        newBBX86 = 
-            case Map.lookup predIndex (functionIrBlocks fnIr) of
-                Just bb -> injectPhiFnPredCommand (head . bbIrCommands $ bb) asnInst succIndex currBBX86
-                Nothing -> error . compilerError $ "Attempted to access basic block during phi-fn pred injection: predIndex=" ++ (show predIndex)
-        in Map.insert predIndex newBBX86 initBlockMap
+        newBBX86 = injectPhiFnPredCommand (head . bbIrCommands $ getBB fnIr predIndex) asnInst succIndex currBBX86
+    in Map.insert predIndex newBBX86 initBlockMap
 
 -- converts bb main + tail commands to x86 
 bbIrCommsToX86 :: Coloring -> BasicBlockIr -> Map.Map Int BasicBlockX86 -> AllocState -> Map.Map Int BasicBlockX86

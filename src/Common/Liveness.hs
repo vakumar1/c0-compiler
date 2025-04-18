@@ -14,6 +14,7 @@ where
 
 import Model.Ir
 import Model.Types
+import Common.IrUtils
 import Common.Graphs
 import Common.Errors
 import Common.Constants
@@ -92,11 +93,7 @@ livenessPassSCCHelper sccIndex fnIr tarjanResult (visitedSCCs, liveMap) =
         -- to the set of vars that are live-in to the BB
         innerBBs = 
             map
-                (\index ->
-                    case Map.lookup index (functionIrBlocks fnIr) of
-                        Just bb -> bb
-                        Nothing -> error . compilerError $ "Attempted to access basic block during liveness pass that does not exist: bbIndex=" ++ (show index)
-                )
+                (getBB fnIr)
                 (Set.toList scc)
 
         finalLiveMap = livenessPassSaturationHelper sccIndex fnIr innerBBs recursedLiveMap
@@ -307,4 +304,5 @@ excludedStackVar :: VariableIr -> Bool
 excludedStackVar var = 
     case (variableIrType var) of
         ARRAY_TYPE _ _ -> True
+        STRUCT_TYPE _ -> True
         _ -> False

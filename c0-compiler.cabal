@@ -30,6 +30,7 @@ library
       Common.Constants
       Common.Errors
       Common.Graphs
+      Common.IrUtils
       Common.Liveness
       Frontend.AstToElab
       Frontend.ElabToIr

@@ -4,6 +4,7 @@ module Middleend.IrToSSA (
 
 import Common.Errors
 import Common.Graphs
+import Common.IrUtils
 import Model.Ir
 import Common.Liveness
 import Common.Constants
@@ -58,10 +59,7 @@ initPhiFn fnIr liveMap =
     let initPhiBBs = 
             map
                 (\index ->
-                    let bb = 
-                            case Map.lookup index (functionIrBlocks fnIr) of
-                                Just b -> b
-                                Nothing -> error . compilerError $ "Attempted to access bb index supplied from BFS ordering that does not exist: bbIndex=" ++ (show index)
+                    let bb = getBB fnIr index
                         liveInVars = 
                             case Map.lookup index liveMap of
                                 Just l -> l
@@ -96,13 +94,11 @@ versionPass fnIr bbLiveMap =
     let (newFnIr, _) = 
             foldl
                 (\(interFnIr, interVersions) index ->
-                    case Map.lookup index (functionIrBlocks interFnIr) of
-                        Just bb -> 
-                            let (updatedBb, newVersions) = bbIrToMaximalSSA bb interVersions
-                                currUpdatedFnIr = addBbsToFunction [updatedBb] interFnIr
-                                succUpdatedFnIr = bbInjectPhiFn currUpdatedFnIr bbLiveMap newVersions (bbIndex updatedBb)
-                            in (succUpdatedFnIr, newVersions)
-                        Nothing -> error (compilerError ("Attempted to access bb index supplied from BFS ordering that does not exist: bbIndex=" ++ (show index)))
+                    let bb = getBB interFnIr index
+                        (updatedBb, newVersions) = bbIrToMaximalSSA bb interVersions
+                        currUpdatedFnIr = addBbsToFunction [updatedBb] interFnIr
+                        succUpdatedFnIr = bbInjectPhiFn currUpdatedFnIr bbLiveMap newVersions (bbIndex updatedBb)
+                    in (succUpdatedFnIr, newVersions)
                 )
                 (fnIr, Map.empty)
                 [0..((length . functionIrBlocks $ fnIr) - 1)]
@@ -226,9 +222,11 @@ bbInjectPhiFn fnIr liveMap versions predBbIndex =
         injectedSuccBBs = 
             map
                 (\succIndex ->
-                    case Map.lookup succIndex (functionIrBlocks fnIr) of
-                        Just bb ->  succBbInjectPhiFn bb liveMap versions predBbIndex
-                        Nothing -> error . compilerError $ "BB Phi-Fn injection succ map lookup encountered basic block index not in fnIr" ++ (show succIndex)
+                    succBbInjectPhiFn
+                        (getBB fnIr succIndex)
+                        liveMap
+                        versions
+                        predBbIndex
                 )
                 (Set.toList succBbIndices)
     in addBbsToFunction injectedSuccBBs fnIr

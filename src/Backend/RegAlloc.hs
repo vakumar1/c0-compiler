@@ -6,6 +6,7 @@ where
 
 import Model.Ir
 import Model.Types
+import Common.IrUtils
 import Common.Liveness
 import Common.Graphs
 import Common.Errors
@@ -66,10 +67,7 @@ constructIFG fnIr versionedLiveMap =
                         )
                         Set.empty
                         successors
-                bb = 
-                    case Map.lookup bbIndex (functionIrBlocks fnIr) of
-                        Just bb -> bb
-                        Nothing -> error (compilerError ("Attempted to lookup basic block during IFG construction that does not exist: bb=" ++ (show bbIndex)))
+                bb = getBB fnIr bbIndex
             in constructIFGBasicBlock bb liveOutVars interIFG
         )
         emptyGraph
@@ -224,10 +222,8 @@ greedyGraphColoringHelper baseColor ifg stackVars order initColoring =
 forceStackPass :: FunctionIr -> Set.Set VariableIr
 forceStackPass fnIr =
     foldr
-        (\index interVars ->
-            case Map.lookup index (functionIrBlocks fnIr) of
-                Just bbIr -> Set.union interVars (forceStackBBIr bbIr)
-                Nothing -> error . compilerError $ "Attempted to access basic block during reference pass: index=" ++ (show index)
+        (\index interVars -> 
+            Set.union interVars (forceStackBBIr $ getBB fnIr index)
         )
         Set.empty
         [0..((length . functionIrBlocks $ fnIr) - 1)]
