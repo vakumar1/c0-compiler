@@ -18,6 +18,7 @@ import Common.IrUtils
 import Common.Graphs
 import Common.Errors
 import Common.Constants
+import Common.Aliasing
 
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -39,35 +40,38 @@ data Coloring = Coloring
 
 -- LIVENESS PASS ON CFG -> returns map of (base) variables that are live-in for each BB
 
-livenessPass :: FunctionIr -> TarjanResult Int -> LiveMap
-livenessPass fnIr tarjanResult
+livenessPass :: FunctionIr -> TarjanResult Int -> AliasingCtx -> LiveMap
+livenessPass fnIr tarjanResult aliasingCtx 
     | debugLivenessLogs && (Trace.trace 
         ("\n\nlivenessPass -- " ++
             "\nCFG=" ++ (Pretty.ppShow . functionIrCFG $ fnIr) ++
-            "\nBBs=" ++ (Pretty.ppShow . functionIrBlocks $ fnIr)
+            "\nBBs=" ++ (Pretty.ppShow . functionIrBlocks $ fnIr) ++
+            "\naliasingCtx=" ++ (Pretty.ppShow aliasingCtx)
         )
         False) = undefined
-livenessPass fnIr tarjanResult = 
+livenessPass fnIr tarjanResult aliasingCtx = 
     let (_, liveMap) = 
             livenessPassSCCHelper
                 (tarjanResultRootSCC tarjanResult)
                 fnIr
                 tarjanResult
+                aliasingCtx
                 (Set.empty, Map.empty)
     in liveMap
 
 -- constructs the liveness map - i.e., a map from the BB index to
 -- the set of variables that are live-in to the BB for each BB in SCC
-livenessPassSCCHelper :: Int -> FunctionIr -> TarjanResult Int -> (Set.Set Int, LiveMap) -> (Set.Set Int, LiveMap)
-livenessPassSCCHelper sccIndex fnIr tarjanResult (visitedSCCs, liveMap)
+livenessPassSCCHelper :: Int -> FunctionIr -> TarjanResult Int -> AliasingCtx -> (Set.Set Int, LiveMap) -> (Set.Set Int, LiveMap)
+livenessPassSCCHelper sccIndex fnIr tarjanResult aliasingCtx (visitedSCCs, liveMap)
     | debugLivenessLogs && (Trace.trace 
         ("\n\nlivenessPassSCCHelper -- " ++
             "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++
             "\ncurrSCCLiveMap=" ++ (Pretty.ppShow liveMap) ++
-            "\ndag=" ++ (Pretty.ppShow (tarjanResultGraph tarjanResult))
+            "\ndag=" ++ (Pretty.ppShow (tarjanResultGraph tarjanResult)) ++
+            "\naliasingCtx=" ++ (Pretty.ppShow aliasingCtx)
         )
         False) = undefined
-livenessPassSCCHelper sccIndex fnIr tarjanResult (visitedSCCs, liveMap) = 
+livenessPassSCCHelper sccIndex fnIr tarjanResult aliasingCtx (visitedSCCs, liveMap) = 
     let 
         -- collect the successors of the SCC and for each
         -- apply livenessPassSCCHelper to populate the liveMap if the SCC has not been seen yet
@@ -84,7 +88,7 @@ livenessPassSCCHelper sccIndex fnIr tarjanResult (visitedSCCs, liveMap) =
                 (\succSCCIndex (interVisitedSCCs, interLiveMap) ->
                     if Set.member succSCCIndex interVisitedSCCs
                         then (interVisitedSCCs, interLiveMap)
-                        else livenessPassSCCHelper succSCCIndex fnIr tarjanResult (interVisitedSCCs, interLiveMap)
+                        else livenessPassSCCHelper succSCCIndex fnIr tarjanResult aliasingCtx (interVisitedSCCs, interLiveMap)
                 )
                 (Set.insert sccIndex visitedSCCs, liveMap)
                 succSCCIndices
@@ -96,21 +100,22 @@ livenessPassSCCHelper sccIndex fnIr tarjanResult (visitedSCCs, liveMap) =
                 (getBB fnIr)
                 (Set.toList scc)
 
-        finalLiveMap = livenessPassSaturationHelper sccIndex fnIr innerBBs recursedLiveMap
+        finalLiveMap = livenessPassSaturationHelper sccIndex fnIr aliasingCtx innerBBs recursedLiveMap
     in (recursedVisitedSCCs, finalLiveMap)
 
 -- updates live in vars for each basic block and recursively calls itself
 -- until live in vars reach saturation
-livenessPassSaturationHelper :: Int -> FunctionIr -> [BasicBlockIr] -> LiveMap -> LiveMap
-livenessPassSaturationHelper sccIndex fnIr bbs liveMap
+livenessPassSaturationHelper :: Int -> FunctionIr -> AliasingCtx -> [BasicBlockIr] -> LiveMap -> LiveMap
+livenessPassSaturationHelper sccIndex fnIr aliasingCtx bbs liveMap
     | debugLivenessLogs && (Trace.trace 
         ("\n\nlivenessPassSaturationHelper -- " ++
             "\nsccIndex=" ++ (Pretty.ppShow sccIndex) ++ 
             "\nbbs=" ++ (Pretty.ppShow . (map bbIndex) $ bbs) ++
-            "\ncurrSCCLiveMap=" ++ (Pretty.ppShow liveMap)
+            "\ncurrSCCLiveMap=" ++ (Pretty.ppShow liveMap) ++
+            "\naliasingCtx=" ++ (Pretty.ppShow aliasingCtx)
         )
         False) = undefined
-livenessPassSaturationHelper sccIndex fnIr bbs liveMap = 
+livenessPassSaturationHelper sccIndex fnIr aliasingCtx bbs liveMap = 
     let (finalLiveMapUpdated, finalLiveMap) = 
             foldr
                 (\bb (interLiveMapUpdated, interLiveMap) ->
@@ -138,7 +143,7 @@ livenessPassSaturationHelper sccIndex fnIr bbs liveMap =
                             case Map.lookup (bbIndex bb) interLiveMap of
                                 Just l -> l
                                 Nothing -> Set.empty
-                        newLiveInVars = bbLivenessPass liveOutVars fnIr bb
+                        newLiveInVars = bbLivenessPass liveOutVars aliasingCtx fnIr bb
                         newLiveMap = Map.insert (bbIndex bb) newLiveInVars interLiveMap
                         newLiveMapUpdated = interLiveMapUpdated || ((Set.size initLiveInVars) /= (Set.size newLiveInVars))
                     in (newLiveMapUpdated, newLiveMap)
@@ -146,19 +151,20 @@ livenessPassSaturationHelper sccIndex fnIr bbs liveMap =
                 (False, liveMap)
                 bbs
     in if finalLiveMapUpdated
-            then livenessPassSaturationHelper sccIndex fnIr bbs finalLiveMap
+            then livenessPassSaturationHelper sccIndex fnIr aliasingCtx bbs finalLiveMap
             else finalLiveMap
 
-bbLivenessPass :: Set.Set VariableIr -> FunctionIr -> BasicBlockIr -> Set.Set VariableIr
-bbLivenessPass liveVars fnIr bb
+bbLivenessPass :: Set.Set VariableIr -> AliasingCtx -> FunctionIr -> BasicBlockIr -> Set.Set VariableIr
+bbLivenessPass liveVars aliasingCtx fnIr bb
     | debugLivenessLogs && (Trace.trace 
         ("\n\nbbLivenessPass -- " ++
             "\nbbIr=" ++ (Pretty.ppShow bb) ++
-            "\nliveVars=" ++ (Pretty.ppShow liveVars)
+            "\nliveVars=" ++ (Pretty.ppShow liveVars) ++
+            "\naliasingCtx=" ++ (Pretty.ppShow aliasingCtx)
         )
         False) = undefined
-bbLivenessPass liveVars fnIr bb =
-    let updatedCommVars = foldl updateLiveVarsComm liveVars (bbIrCommands bb)
+bbLivenessPass liveVars aliasingCtx fnIr bb = 
+    let updatedCommVars = foldl (updateLiveVarsComm aliasingCtx) liveVars (bbIrCommands bb)
         updatedPhiVars = updateLiveVarsPhi updatedCommVars (bbIrPhiFn bb)
         argVars = 
             if (bbIndex bb) == 0
@@ -202,20 +208,20 @@ getUsedVarsPredMap predMap =
 
 -- COMMAND LIVENESS ANALYSIS
 
-updateLiveVarsComm :: Set.Set VariableIr -> CommandIr -> Set.Set VariableIr
-updateLiveVarsComm liveVars comm = 
+updateLiveVarsComm :: AliasingCtx -> Set.Set VariableIr -> CommandIr -> Set.Set VariableIr
+updateLiveVarsComm aliasingCtx liveVars comm = 
     let 
         -- delete the assigned var
         -- and add all used vars
         liveVarsRemovedAsn = 
-            case (getAssignedVarsCommand comm) of
+            case (getAssignedVarsCommand aliasingCtx comm) of
                 Just var -> Set.delete var liveVars
                 Nothing -> liveVars
-        liveVarsAddedUsed = Set.union liveVarsRemovedAsn (getUsedVarsCommand comm)
+        liveVarsAddedUsed = Set.union liveVarsRemovedAsn (getUsedVarsCommand aliasingCtx comm)
     in liveVarsAddedUsed
 
-getUsedVarsCommand :: CommandIr -> Set.Set VariableIr
-getUsedVarsCommand comm = 
+getUsedVarsCommand :: AliasingCtx -> CommandIr -> Set.Set VariableIr
+getUsedVarsCommand aliasingCtx comm = 
     case comm of
         INIT_IR var -> 
             Set.empty
@@ -227,30 +233,32 @@ getUsedVarsCommand comm =
                 offsetSet = 
                     case memopIrOffset memop of
                         Just offsetPuB ->
-                            getUsedVarsPureBase offsetPuB
+                            getUsedVarsPureBase aliasingCtx offsetPuB
                         Nothing ->
                             Set.empty
-            in Set.union (getUsedVarsPure asnPure) (Set.union asnVarSet offsetSet)
+            in Set.union (getUsedVarsPure aliasingCtx asnPure) (Set.union asnVarSet offsetSet)
         ASN_IMPURE_IR asnVar asnImpure ->
-            getUsedVarsImpure asnImpure
+            getUsedVarsImpure aliasingCtx asnImpure
         GOTO_BB_IR _ ->
             Set.empty
         SPLIT_BB_IR splitPure _ _ ->
-            getUsedVarsPure splitPure
+            getUsedVarsPure aliasingCtx splitPure
         RET_PURE_IR retPure ->
-            getUsedVarsPure retPure
+            getUsedVarsPure aliasingCtx retPure
         RET_IR ->
             Set.empty
         ABORT_IR ->
             Set.empty
 
-getAssignedVarsCommand :: CommandIr -> Maybe VariableIr
-getAssignedVarsCommand comm = 
+getAssignedVarsCommand :: AliasingCtx -> CommandIr -> Maybe VariableIr
+getAssignedVarsCommand aliasingCtx comm = 
     case comm of
         INIT_IR var ->
             Nothing
         ASN_PURE_IR memop asnVar asnPure ->
-            if memopIrIsDeref memop || (Maybe.isJust . memopIrOffset $ memop)
+            if (Set.member asnVar (aliasingCtxStackVars aliasingCtx)) 
+                    || memopIrIsDeref memop
+                    || (Maybe.isJust . memopIrOffset $ memop)
                 then Nothing
                 else Just asnVar
         ASN_IMPURE_IR asnVar asnImpure ->
@@ -266,43 +274,41 @@ getAssignedVarsCommand comm =
         ABORT_IR ->
             Nothing
 
-getUsedVarsPure :: PureIr -> Set.Set VariableIr
-getUsedVarsPure pure =
+getUsedVarsPure :: AliasingCtx -> PureIr -> Set.Set VariableIr
+getUsedVarsPure aliasingCtx pure =
     case pure of
-        PURE_BASE_IR base -> getUsedVarsPureBase base
-        PURE_BINOP_IR (PureBinopIr _ _ base1 base2) -> Set.union (getUsedVarsPureBase base1) (getUsedVarsPureBase base2)
-        PURE_UNOP_IR (PureUnopIr _ _ base) -> getUsedVarsPureBase base
+        PURE_BASE_IR base -> getUsedVarsPureBase aliasingCtx base
+        PURE_BINOP_IR (PureBinopIr _ _ base1 base2) -> Set.union (getUsedVarsPureBase aliasingCtx base1) (getUsedVarsPureBase aliasingCtx base2)
+        PURE_UNOP_IR (PureUnopIr _ _ base) -> getUsedVarsPureBase aliasingCtx base
         PURE_MEMOP_IR var memop ->
             let varSet = 
-                    if excludedStackVar var
+                    if excludedStackVar aliasingCtx var
                         then Set.empty
                         else Set.singleton var
                 offsetSet = 
                     case memopIrOffset memop of
                         Just offsetPuB ->
-                            getUsedVarsPureBase offsetPuB
+                            getUsedVarsPureBase aliasingCtx offsetPuB
                         Nothing ->
                             Set.empty
             in Set.union varSet offsetSet
 
-getUsedVarsImpure :: ImpureIr -> Set.Set VariableIr
-getUsedVarsImpure impure =
+getUsedVarsImpure :: AliasingCtx -> ImpureIr -> Set.Set VariableIr
+getUsedVarsImpure aliasingCtx impure =
     case impure of
-        IMPURE_BINOP_IR (ImpureBinopIr _ _ base1 base2) -> Set.union (getUsedVarsPureBase base1) (getUsedVarsPureBase base2)
-        IMPURE_FNCALL_IR (ImpureFnCallIr _ base _) -> mconcat (map getUsedVarsPureBase base)
+        IMPURE_BINOP_IR (ImpureBinopIr _ _ base1 base2) -> Set.union (getUsedVarsPureBase aliasingCtx base1) (getUsedVarsPureBase aliasingCtx base2)
+        IMPURE_FNCALL_IR (ImpureFnCallIr _ base _) -> mconcat (map (getUsedVarsPureBase aliasingCtx) base)
 
-getUsedVarsPureBase :: PureBaseIr -> Set.Set VariableIr
-getUsedVarsPureBase base =
+getUsedVarsPureBase :: AliasingCtx -> PureBaseIr -> Set.Set VariableIr
+getUsedVarsPureBase aliasingCtx base =
     case base of
         CONST_IR const -> Set.empty
         VAR_IR var -> 
-            if excludedStackVar var
+            if excludedStackVar aliasingCtx var 
                 then Set.empty
                 else Set.singleton var
 
-excludedStackVar :: VariableIr -> Bool
-excludedStackVar var = 
-    case (variableIrType var) of
-        ARRAY_TYPE _ _ -> True
-        STRUCT_TYPE _ -> True
-        _ -> False
+excludedStackVar :: AliasingCtx -> VariableIr -> Bool
+excludedStackVar aliasingCtx var = 
+    Set.member var (aliasingCtxStackVars aliasingCtx)
+

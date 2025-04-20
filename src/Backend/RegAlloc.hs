@@ -11,6 +11,7 @@ import Common.Liveness
 import Common.Graphs
 import Common.Errors
 import Common.Constants
+import Common.Aliasing
 
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -19,12 +20,12 @@ import qualified Data.Set as Set
 import qualified Debug.Trace as Trace
 import qualified Text.Show.Pretty as Pretty
 
-regAllocColoring :: FunctionIr -> TarjanResult Int -> Coloring
-regAllocColoring fnIr tarjanResult =
-    let versionedLiveMap = livenessPass fnIr tarjanResult
-        ifg = constructIFG fnIr versionedLiveMap
+regAllocColoring :: FunctionIr -> TarjanResult Int -> AliasingCtx -> Coloring
+regAllocColoring fnIr tarjanResult aliasingCtx =
+    let versionedLiveMap = livenessPass fnIr tarjanResult aliasingCtx
+        ifg = constructIFG fnIr versionedLiveMap aliasingCtx
         order = simplicialElimOrder ifg
-        stackVars = forceStackPass fnIr
+        stackVars = aliasingCtxStackVars aliasingCtx
         coloring = greedyGraphColoring ifg stackVars order
      in Coloring coloring stackVars
 
@@ -42,14 +43,15 @@ addEdgeToIFG :: (VariableIr, VariableIr) -> IFG -> IFG
 addEdgeToIFG (var1, var2) ifg = (addEdge var1 var2 (addEdge var2 var1 ifg))
 
 -- construct interference graph between versioned variables
-constructIFG :: FunctionIr -> LiveMap -> IFG
-constructIFG fnIr versionedLiveMap
+constructIFG :: FunctionIr -> LiveMap -> AliasingCtx -> IFG
+constructIFG fnIr versionedLiveMap aliasingCtx
     | debugColoringLogs && (Trace.trace 
         ("\n\nconstructIFG -- " ++
-            "\nliveMap=" ++ (Pretty.ppShow versionedLiveMap)
+            "\nliveMap=" ++ (Pretty.ppShow versionedLiveMap) ++
+            "\naliasingCtx=" ++ (Pretty.ppShow aliasingCtx)
         )
         False) = undefined
-constructIFG fnIr versionedLiveMap = 
+constructIFG fnIr versionedLiveMap aliasingCtx = 
     foldl
         (\interIFG bbIndex ->
             let successors = 
@@ -68,21 +70,22 @@ constructIFG fnIr versionedLiveMap =
                         Set.empty
                         successors
                 bb = getBB fnIr bbIndex
-            in constructIFGBasicBlock bb liveOutVars interIFG
+            in constructIFGBasicBlock aliasingCtx bb liveOutVars interIFG
         )
         emptyGraph
         [0..((length . functionIrBlocks $ fnIr) - 1)]
 
-constructIFGBasicBlock :: BasicBlockIr -> Set.Set VariableIr -> IFG -> IFG
-constructIFGBasicBlock bb liveVars ifg 
+constructIFGBasicBlock :: AliasingCtx -> BasicBlockIr -> Set.Set VariableIr -> IFG -> IFG
+constructIFGBasicBlock aliasingCtx bb liveVars ifg 
     | debugColoringLogs && (Trace.trace 
         ("\n\nconstructIFGBasicBlock -- " ++
             "\nbbIr=" ++ (Pretty.ppShow bb) ++
-            "\nliveVars=" ++ (Pretty.ppShow liveVars)
+            "\nliveVars=" ++ (Pretty.ppShow liveVars) ++
+            "\naliasingCtx=" ++ (Pretty.ppShow aliasingCtx)
         )
         False) = undefined
-constructIFGBasicBlock bb liveVars ifg = 
-    let (liveVarsUpdatedComms, ifgUpdatedComms) = foldl constructIFGCommand (liveVars, ifg) (bbIrCommands bb)
+constructIFGBasicBlock aliasingCtx bb liveVars ifg = 
+    let (liveVarsUpdatedComms, ifgUpdatedComms) = foldl (constructIFGCommand aliasingCtx) (liveVars, ifg) (bbIrCommands bb)
         (liveVarsUpdatedPhi, ifgUpdatedPhi) = constructIFGPhi (liveVarsUpdatedComms, ifgUpdatedComms) (bbIrPhiFn bb)
     in ifgUpdatedPhi
 
@@ -110,15 +113,15 @@ constructIFGPhi (liveVars, initIFG) phi =
                 (Map.toList phi)
     in (newLiveVars, ifgUpdatedWithAsn)
 
-constructIFGCommand :: (Set.Set VariableIr, IFG) -> CommandIr -> (Set.Set VariableIr, IFG)
-constructIFGCommand (liveVars, initIFG) comm =
+constructIFGCommand :: AliasingCtx -> (Set.Set VariableIr, IFG) -> CommandIr -> (Set.Set VariableIr, IFG)
+constructIFGCommand aliasingCtx (liveVars, initIFG) comm =
     let 
         -- update live vars by removing assigned var (if any) and inserting all used vars
-        newLiveVars = updateLiveVarsComm liveVars comm
+        newLiveVars = updateLiveVarsComm aliasingCtx liveVars comm
 
         -- update IFG by adding edges between assigned var and all live vars
         ifgUpdatedWithAsn =
-            case (getAssignedVarsCommand comm) of
+            case (getAssignedVarsCommand aliasingCtx comm) of
                 Just asnVar ->
                     foldr
                         ( \liveVar interIFG ->
@@ -217,40 +220,3 @@ greedyGraphColoringHelper baseColor ifg stackVars order initColoring =
                         selectedColor = head remainingColors
                         newColoring = Map.insert var selectedColor initColoring
                     in greedyGraphColoringHelper baseColor ifg stackVars (tail order) newColoring
-
--- REFERENCED VARS PASS
-forceStackPass :: FunctionIr -> Set.Set VariableIr
-forceStackPass fnIr =
-    foldr
-        (\index interVars -> 
-            Set.union interVars (forceStackBBIr $ getBB fnIr index)
-        )
-        Set.empty
-        [0..((length . functionIrBlocks $ fnIr) - 1)]
-
-forceStackBBIr :: BasicBlockIr -> Set.Set VariableIr
-forceStackBBIr bbIr =
-    foldr
-        (\commIr interVars ->
-            case forceStackCommIr commIr of
-                Just var -> Set.insert var interVars
-                Nothing -> interVars
-        )
-        Set.empty
-        (bbIrCommands bbIr)
-
-forceStackCommIr :: CommandIr -> Maybe VariableIr
-forceStackCommIr commIr = 
-    case commIr of
-        -- select all declared non-atomic vars
-        INIT_IR varIr ->
-            case (variableIrType varIr) of
-                ARRAY_TYPE _ _ -> Just varIr
-                STRUCT_TYPE _ -> Just varIr
-                _ -> Nothing
-        -- select all referenced vars
-        ASN_PURE_IR _ _ (PURE_UNOP_IR (PureUnopIr REF_IR _ puB)) ->
-            case puB of
-                VAR_IR var -> Just var
-                _ -> error . compilerError $ ("Created reference unop on non-variable pure base=" ++ (show puB))
-        _ -> Nothing

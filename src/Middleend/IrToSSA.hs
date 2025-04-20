@@ -2,12 +2,13 @@ module Middleend.IrToSSA (
     irToMaximalSSA,
 ) where
 
+import Model.Ir
 import Common.Errors
 import Common.Graphs
 import Common.IrUtils
-import Model.Ir
 import Common.Liveness
 import Common.Constants
+import Common.Aliasing
 
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -23,17 +24,18 @@ import qualified Text.Show.Pretty as Pretty
 -- - (i) the updated FnIr
 -- - (ii) the SCC DAG + metadata constructed as a byproduct
 
-irToMaximalSSA :: FunctionIr -> TarjanResult Int -> FunctionIr
-irToMaximalSSA fnIr tarjanResult
+irToMaximalSSA :: FunctionIr -> TarjanResult Int -> AliasingCtx -> FunctionIr
+irToMaximalSSA fnIr tarjanResult aliasingCtx
     | debugSSALogs && (Trace.trace 
         ("\n\nirToMaximalSSA -- " ++
-            "\nfnIr=" ++ (Pretty.ppShow fnIr)
+            "\nfnIr=" ++ (Pretty.ppShow fnIr) ++
+            "\naliasingCtx=" ++ (Pretty.ppShow aliasingCtx)
         )
         False) = undefined
-irToMaximalSSA fnIr tarjanResult =
-    let bbLiveMap = livenessPass fnIr tarjanResult
+irToMaximalSSA fnIr tarjanResult aliasingCtx =
+    let bbLiveMap = livenessPass fnIr tarjanResult aliasingCtx
         initPhiFnIr = initPhiFn fnIr bbLiveMap
-        versionedFnIr = versionPass initPhiFnIr bbLiveMap
+        versionedFnIr = versionPass initPhiFnIr bbLiveMap aliasingCtx
     in versionedFnIr
 
 -- MAXIMAL SSA PASS ON BB -> updates BB (phi functions and commands) to conform to SSA form by
@@ -83,19 +85,20 @@ initPhiFn fnIr liveMap =
     in addBbsToFunction initPhiBBs fnIr
 
 -- version pass converts variable versions within BBs in loose BFS order
-versionPass :: FunctionIr -> LiveMap -> FunctionIr
-versionPass fnIr bbLiveMap
+versionPass :: FunctionIr -> LiveMap -> AliasingCtx -> FunctionIr
+versionPass fnIr bbLiveMap aliasingCtx
     | debugSSALogs && (Trace.trace 
         ("\n\nversionPass -- " ++
-            "\nbbLiveMap=" ++ (Pretty.ppShow bbLiveMap)
+            "\nbbLiveMap=" ++ (Pretty.ppShow bbLiveMap) ++
+            "\naliasingCtx=" ++ (Pretty.ppShow aliasingCtx)
         )
         False) = undefined
-versionPass fnIr bbLiveMap = 
+versionPass fnIr bbLiveMap aliasingCtx = 
     let (newFnIr, _) = 
             foldl
                 (\(interFnIr, interVersions) index ->
                     let bb = getBB interFnIr index
-                        (updatedBb, newVersions) = bbIrToMaximalSSA bb interVersions
+                        (updatedBb, newVersions) = bbIrToMaximalSSA bb interVersions aliasingCtx
                         currUpdatedFnIr = addBbsToFunction [updatedBb] interFnIr
                         succUpdatedFnIr = bbInjectPhiFn currUpdatedFnIr bbLiveMap newVersions (bbIndex updatedBb)
                     in (succUpdatedFnIr, newVersions)
@@ -104,15 +107,16 @@ versionPass fnIr bbLiveMap =
                 [0..((length . functionIrBlocks $ fnIr) - 1)]
     in newFnIr
 
-bbIrToMaximalSSA :: BasicBlockIr -> VariableIrVersion -> (BasicBlockIr, VariableIrVersion)
-bbIrToMaximalSSA bb versions
+bbIrToMaximalSSA :: BasicBlockIr -> VariableIrVersion -> AliasingCtx -> (BasicBlockIr, VariableIrVersion)
+bbIrToMaximalSSA bb versions aliasingCtx
     | debugSSALogs && (Trace.trace 
         ("\n\nbbIrToMaximalSSA -- " ++
             "\nbbIr=" ++ (Pretty.ppShow bb) ++
-            "\nversions=" ++ (Pretty.ppShow versions)
+            "\nversions=" ++ (Pretty.ppShow versions) ++
+            "\naliasingCtx=" ++ (Pretty.ppShow aliasingCtx)
         )
         False) = undefined
-bbIrToMaximalSSA bb versions = 
+bbIrToMaximalSSA bb versions aliasingCtx = 
     let (newPhiFnIrPairs, phiUpdateVersions) = 
             foldr
                 (\(var, predMap) (interPhiPairs, interVersions) ->
@@ -124,16 +128,16 @@ bbIrToMaximalSSA bb versions =
         (newComms, commsUpdateVersions) = 
             foldr
                 (\comm (interComms, interVersions) ->
-                    let (newComm, newVersions) = commandIrToMaximalSSA comm interVersions
+                    let (newComm, newVersions) = commandIrToMaximalSSA comm interVersions aliasingCtx
                     in (newComm:interComms, newVersions)
                 )
                 ([], phiUpdateVersions)
                 (bbIrCommands bb)
     in (BasicBlockIr (bbIrFnName bb) (bbIndex bb) (Map.fromList newPhiFnIrPairs) newComms, commsUpdateVersions)
 
-commandIrToMaximalSSA :: CommandIr -> VariableIrVersion -> (CommandIr, VariableIrVersion)
-commandIrToMaximalSSA comm versions = 
-    let m_assignedVar = getAssignedVarsCommand comm
+commandIrToMaximalSSA :: CommandIr -> VariableIrVersion -> AliasingCtx -> (CommandIr, VariableIrVersion)
+commandIrToMaximalSSA comm versions aliasingCtx = 
+    let m_assignedVar = getAssignedVarsCommand aliasingCtx comm
         updatedAsnVarVersions = 
             case m_assignedVar of
                 Nothing ->

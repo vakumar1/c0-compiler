@@ -7,6 +7,7 @@ import Frontend.Parser
 import Frontend.AstToElab
 import Frontend.ElabToIr
 
+import Common.Aliasing
 import Middleend.IrToSSA
 import Middleend.SSAMinimization
 
@@ -45,9 +46,10 @@ compiler code =
             map
                 (\fnIr ->
                     let sccDag = tarjansAlgo 0 (functionIrCFG fnIr)
-                        maxSSAIr = irToMaximalSSA fnIr sccDag
+                        aliasingCtx = aliasingAnalysisPass fnIr
+                        maxSSAIr = irToMaximalSSA fnIr sccDag aliasingCtx
                         minSSAIr = irToMinimalSSA maxSSAIr
-                        coloring = regAllocColoring minSSAIr sccDag
+                        coloring = regAllocColoring minSSAIr sccDag aliasingCtx
                     in (minSSAIr, coloring)
                 )
                 ir

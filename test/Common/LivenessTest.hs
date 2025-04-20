@@ -8,6 +8,7 @@ import qualified Data.Set as Set
 
 import Model.Ir
 import Model.Types
+import Common.Aliasing
 import Common.Graphs
 import Common.Liveness
 import Common.Constants
@@ -58,7 +59,7 @@ liveness_test = hspec $ do
                     usedVar = VariableIr "y" 0 INT_TYPE False
                     pure = PURE_BASE_IR (VAR_IR usedVar)
                     cmd = ASN_PURE_IR emptyMemopIr var pure
-                getUsedVarsCommand cmd `shouldBe` Set.fromList [usedVar]
+                getUsedVarsCommand (AliasingCtx Set.empty) cmd `shouldBe` Set.fromList [usedVar]
             
             it "includes dereferenced destination and offset variables in memop" $ do
                 let var = VariableIr "x" 0 (POINTER_TYPE INT_TYPE) False
@@ -67,7 +68,7 @@ liveness_test = hspec $ do
                     memop = MemopIr True (Just (VAR_IR offsetVar)) INT_TYPE
                     pure = PURE_BASE_IR (VAR_IR usedVar)
                     cmd = ASN_PURE_IR memop var pure
-                getUsedVarsCommand cmd `shouldBe` Set.fromList [var, usedVar, offsetVar]
+                getUsedVarsCommand (AliasingCtx Set.empty) cmd `shouldBe` Set.fromList [var, usedVar, offsetVar]
             
             it "extracts used variables from ASN_IMPURE_IR" $ do
                 let var = VariableIr "x" 0 INT_TYPE False
@@ -75,39 +76,45 @@ liveness_test = hspec $ do
                     arg2 = VariableIr "b" 0 INT_TYPE False
                     impure = IMPURE_BINOP_IR (ImpureBinopIr DIV_IR INT_TYPE (VAR_IR arg1) (VAR_IR arg2))
                     cmd = ASN_IMPURE_IR var impure
-                getUsedVarsCommand cmd `shouldBe` Set.fromList [arg1, arg2]
+                getUsedVarsCommand (AliasingCtx Set.empty) cmd `shouldBe` Set.fromList [arg1, arg2]
             
             it "extracts used variables from SPLIT_BB_IR" $ do
                 let var = VariableIr "cond" 0 BOOL_TYPE False
                     pure = PURE_BASE_IR (VAR_IR var)
                     cmd = SPLIT_BB_IR pure 1 2
-                getUsedVarsCommand cmd `shouldBe` Set.singleton var
+                getUsedVarsCommand (AliasingCtx Set.empty) cmd `shouldBe` Set.singleton var
                 
             it "extracts used variables from RET_PURE_IR" $ do
                 let var = VariableIr "ret" 0 INT_TYPE False
                     pure = PURE_BASE_IR (VAR_IR var)
                     cmd = RET_PURE_IR pure
-                getUsedVarsCommand cmd `shouldBe` Set.singleton var
+                getUsedVarsCommand (AliasingCtx Set.empty) cmd `shouldBe` Set.singleton var
                 
+            it "returns empty set for explicitly stack-allocated variables" $ do
+                let var = VariableIr "ret" 0 INT_TYPE False
+                    pure = PURE_BASE_IR (VAR_IR var)
+                    cmd = RET_PURE_IR pure
+                getUsedVarsCommand (AliasingCtx (Set.singleton var)) cmd `shouldBe` Set.empty
+
             it "returns empty set for commands with no used variables" $ do
-                getUsedVarsCommand (INIT_IR (VariableIr "x" 0 INT_TYPE False)) `shouldBe` Set.empty
-                getUsedVarsCommand (GOTO_BB_IR 1) `shouldBe` Set.empty
-                getUsedVarsCommand RET_IR `shouldBe` Set.empty
-                getUsedVarsCommand ABORT_IR `shouldBe` Set.empty
+                getUsedVarsCommand (AliasingCtx Set.empty) (INIT_IR (VariableIr "x" 0 INT_TYPE False)) `shouldBe` Set.empty
+                getUsedVarsCommand (AliasingCtx Set.empty) (GOTO_BB_IR 1) `shouldBe` Set.empty
+                getUsedVarsCommand (AliasingCtx Set.empty) RET_IR `shouldBe` Set.empty
+                getUsedVarsCommand (AliasingCtx Set.empty) ABORT_IR `shouldBe` Set.empty
                 
         describe "getAssignedVarsCommand" $ do
             it "returns assigned variable from ASN_PURE_IR with no dereference" $ do
                 let var = VariableIr "x" 0 INT_TYPE False
                     pure = PURE_BASE_IR (CONST_IR (INT_CONST 42))
                     cmd = ASN_PURE_IR emptyMemopIr var pure
-                getAssignedVarsCommand cmd `shouldBe` Just var
+                getAssignedVarsCommand (AliasingCtx Set.empty) cmd `shouldBe` Just var
                 
             it "returns Nothing for ASN_PURE_IR with dereference" $ do
                 let var = VariableIr "x" 0 (POINTER_TYPE INT_TYPE) False
                     memop = MemopIr True Nothing INT_TYPE
                     pure = PURE_BASE_IR (CONST_IR (INT_CONST 42))
                     cmd = ASN_PURE_IR memop var pure
-                getAssignedVarsCommand cmd `shouldBe` Nothing
+                getAssignedVarsCommand (AliasingCtx Set.empty) cmd `shouldBe` Nothing
                 
             it "returns Nothing for ASN_PURE_IR with offset" $ do
                 let var = VariableIr "x" 0 (POINTER_TYPE INT_TYPE) False
@@ -115,7 +122,14 @@ liveness_test = hspec $ do
                     memop = MemopIr False (Just (VAR_IR offsetVar)) INT_TYPE
                     pure = PURE_BASE_IR (CONST_IR (INT_CONST 42))
                     cmd = ASN_PURE_IR memop var pure
-                getAssignedVarsCommand cmd `shouldBe` Nothing
+                getAssignedVarsCommand (AliasingCtx Set.empty) cmd `shouldBe` Nothing
+
+            it "returns Nothing for explicitly stack-allocated ASN_PURE_IR" $ do
+                let var = VariableIr "x" 0 (POINTER_TYPE INT_TYPE) False
+                    memop = emptyMemopIr
+                    pure = PURE_BASE_IR (CONST_IR (INT_CONST 42))
+                    cmd = ASN_PURE_IR memop var pure
+                getAssignedVarsCommand (AliasingCtx (Set.singleton var)) cmd `shouldBe` Nothing
                 
             it "returns assigned variable from ASN_IMPURE_IR" $ do
                 let var = VariableIr "x" 0 INT_TYPE False
@@ -123,15 +137,15 @@ liveness_test = hspec $ do
                                               (CONST_IR (INT_CONST 10)) 
                                               (CONST_IR (INT_CONST 2)))
                     cmd = ASN_IMPURE_IR var impure
-                getAssignedVarsCommand cmd `shouldBe` Just var
+                getAssignedVarsCommand (AliasingCtx Set.empty) cmd `shouldBe` Just var
                 
             it "returns Nothing for commands with no assignment" $ do
-                getAssignedVarsCommand (INIT_IR (VariableIr "x" 0 INT_TYPE False)) `shouldBe` Nothing
-                getAssignedVarsCommand (GOTO_BB_IR 1) `shouldBe` Nothing
-                getAssignedVarsCommand (SPLIT_BB_IR dummyPureIr 1 2) `shouldBe` Nothing
-                getAssignedVarsCommand (RET_PURE_IR dummyPureIr) `shouldBe` Nothing
-                getAssignedVarsCommand RET_IR `shouldBe` Nothing
-                getAssignedVarsCommand ABORT_IR `shouldBe` Nothing
+                getAssignedVarsCommand (AliasingCtx Set.empty) (INIT_IR (VariableIr "x" 0 INT_TYPE False)) `shouldBe` Nothing
+                getAssignedVarsCommand (AliasingCtx Set.empty) (GOTO_BB_IR 1) `shouldBe` Nothing
+                getAssignedVarsCommand (AliasingCtx Set.empty) (SPLIT_BB_IR dummyPureIr 1 2) `shouldBe` Nothing
+                getAssignedVarsCommand (AliasingCtx Set.empty) (RET_PURE_IR dummyPureIr) `shouldBe` Nothing
+                getAssignedVarsCommand (AliasingCtx Set.empty) RET_IR `shouldBe` Nothing
+                getAssignedVarsCommand (AliasingCtx Set.empty) ABORT_IR `shouldBe` Nothing
         
         describe "updateLiveVarsComm" $ do
             it "adds used vars and removes assigned var" $ do
@@ -140,19 +154,19 @@ liveness_test = hspec $ do
                     otherVar = VariableIr "z" 0 INT_TYPE False
                     pure = PURE_BASE_IR (VAR_IR usedVar)
                     cmd = ASN_PURE_IR emptyMemopIr var pure
-                updateLiveVarsComm (Set.fromList [var, otherVar]) cmd `shouldBe` Set.fromList [usedVar, otherVar]
+                updateLiveVarsComm (AliasingCtx Set.empty) (Set.fromList [var, otherVar]) cmd `shouldBe` Set.fromList [usedVar, otherVar]
             
             it "handles SPLIT_BB_IR correctly" $ do
                 let condVar = VariableIr "cond" 0 BOOL_TYPE False
                     otherVar = VariableIr "other" 0 INT_TYPE False
                     pure = PURE_BASE_IR (VAR_IR condVar)
                     cmd = SPLIT_BB_IR pure 1 2
-                updateLiveVarsComm (Set.fromList [otherVar]) cmd `shouldBe` Set.fromList [condVar, otherVar]
+                updateLiveVarsComm (AliasingCtx Set.empty) (Set.fromList [otherVar]) cmd `shouldBe` Set.fromList [condVar, otherVar]
 
             it "preserves live vars for commands with no effect on liveness" $ do
                 let liveVars = Set.fromList [VariableIr "x" 0 INT_TYPE False]
                     cmd = GOTO_BB_IR 1
-                updateLiveVarsComm liveVars cmd `shouldBe` liveVars
+                updateLiveVarsComm (AliasingCtx Set.empty) liveVars cmd `shouldBe` liveVars
 
     describe "LivenessPass integration" $ do
         it "handles basic function with single block and arguments" $ do
@@ -172,7 +186,7 @@ liveness_test = hspec $ do
 
                 expected = Map.singleton 0 (Set.singleton arg)
             
-            livenessPass fnIr tarjanResult `shouldBe` expected
+            livenessPass fnIr tarjanResult (AliasingCtx Set.empty) `shouldBe` expected
         
         it "handles function with multiple blocks and loops" $ do
             -- Create a simple loop with two blocks
@@ -228,4 +242,4 @@ liveness_test = hspec $ do
                     (3, Set.singleton i_1)
                   ]
             
-            livenessPass fnIr tarjanResult `shouldBe` expected
+            livenessPass fnIr tarjanResult (AliasingCtx Set.empty) `shouldBe` expected

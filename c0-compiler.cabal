@@ -27,6 +27,7 @@ library
   exposed-modules:
       Backend.Codegen
       Backend.RegAlloc
+      Common.Aliasing
       Common.Constants
       Common.Errors
       Common.Graphs
