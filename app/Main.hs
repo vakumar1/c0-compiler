@@ -10,6 +10,7 @@ import Frontend.ElabToIr
 import Common.Aliasing
 import Middleend.IrToSSA
 import Middleend.SSAMinimization
+import Middleend.Peephole.ConstantFolding
 
 import Backend.RegAlloc
 import Backend.Codegen
