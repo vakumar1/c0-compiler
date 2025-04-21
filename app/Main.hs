@@ -50,8 +50,9 @@ compiler code =
                         aliasingCtx = aliasingAnalysisPass fnIr
                         maxSSAIr = irToMaximalSSA fnIr sccDag aliasingCtx
                         minSSAIr = irToMinimalSSA maxSSAIr
-                        coloring = regAllocColoring minSSAIr sccDag aliasingCtx
-                    in (minSSAIr, coloring)
+                        (constantFoldedIr, _) = constantFoldingPass minSSAIr
+                        coloring = regAllocColoring constantFoldedIr sccDag aliasingCtx
+                    in (constantFoldedIr, coloring)
                 )
                 ir
         x86inst = zippedProgIrToX86 structCtx zippedIrColorings

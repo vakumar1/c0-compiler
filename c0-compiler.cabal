@@ -39,6 +39,7 @@ library
       Frontend.Lexer
       Frontend.Parser
       Middleend.IrToSSA
+      Middleend.Peephole.ConstantFolding
       Middleend.SSAMinimization
       Model.Ast
       Model.Elaborated
