@@ -48,11 +48,11 @@ compiler code =
                 (\fnIr ->
                     let sccDag = tarjansAlgo 0 (functionIrCFG fnIr)
                         aliasingCtx = aliasingAnalysisPass fnIr
-                        maxSSAIr = irToMaximalSSA fnIr sccDag aliasingCtx
-                        minSSAIr = irToMinimalSSA maxSSAIr
-                        (constantFoldedIr, _) = constantFoldingPass minSSAIr
-                        coloring = regAllocColoring constantFoldedIr sccDag aliasingCtx
-                    in (constantFoldedIr, coloring)
+                        fnIr' = irToMaximalSSA fnIr sccDag aliasingCtx
+                        fnIr'' = irToMinimalSSA fnIr'
+                        fnIr''' = constantFoldingCycle aliasingCtx fnIr''
+                        coloring = regAllocColoring fnIr''' sccDag aliasingCtx
+                    in (fnIr''', coloring)
                 )
                 ir
         x86inst = zippedProgIrToX86 structCtx zippedIrColorings

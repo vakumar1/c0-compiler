@@ -1,21 +1,30 @@
 module Middleend.Peephole.ConstantFolding (
-    constantFoldingPass
+    constantFoldingCycle,
 )
 where
 
 import Model.Ir
 import Model.Types
+import Common.Aliasing
 import Common.Errors
 import Common.IrProcessor
 
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import qualified Data.Maybe as Maybe
 import qualified Data.Bits as Bits
 
 -- TODO: add NOP command IR and replace all constant-replaced assignments with NOP
--- TODO: add constant replacement pass
 
--- constantFoldingPass :: FunctionIr -> FunctionIr
--- constantFoldingPass fnIr = 
---     fnIrConstantReplacement . fnIrConstantFolding fnIr
+constantFoldingCycle :: AliasingCtx -> FunctionIr -> FunctionIr
+constantFoldingCycle aliasingCtx fnIr = 
+    let (fnIr', foldingMd) = constantFoldingPass fnIr
+        (_, idMd) = constantIdentificationPass aliasingCtx fnIr'
+        (fnIr'', _) = constantReplacementPass (constantIdentificationMetadataConstantVars idMd) fnIr'
+    in
+        if ((not foldingMd) || (Map.null $ constantIdentificationMetadataConstantVars idMd))
+            then fnIr
+            else constantFoldingCycle aliasingCtx fnIr''
 
 -- CONSTANT FOLDING PASS - replace all constant binops/unops with reduced constants
 
@@ -97,6 +106,75 @@ constantFoldingImpureIrProcessor impure md =
 -- - identify all atomic non-referenced constant vars
 -- - replace all instances of atomic non-referenced constant vars with the constant
 
+data ConstantIdentificationMetadata = ConstantIdentificationMetadata
+    { constantIdentificationMetadataConstantVars :: Map.Map VariableIr Const
+    , constantIdentificationMetadataAliasingCtx :: AliasingCtx
+    }
+
+constantIdentificationPass :: AliasingCtx -> FunctionIr -> (FunctionIr, ConstantIdentificationMetadata)
+constantIdentificationPass aliasingCtx fnIr = 
+    let handlers = 
+            IrProcessorHandlers
+                Nothing
+                Nothing
+                (Just constantIdentificationCommandIrProcessor)
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+    in processorPass handlers fnIr (ConstantIdentificationMetadata Map.empty aliasingCtx)
+
+constantIdentificationCommandIrProcessor :: CommandIr -> ConstantIdentificationMetadata -> (CommandIr, ConstantIdentificationMetadata)
+constantIdentificationCommandIrProcessor comm md = 
+    case comm of
+        ASN_PURE_IR memop asnVar asnPure -> 
+            if (Set.member asnVar (aliasingCtxStackVars $ constantIdentificationMetadataAliasingCtx md))
+                || (memopIrIsDeref memop)
+                || (Maybe.isJust $ memopIrOffset memop)
+                then
+                    (comm, md)
+                else
+                    case asnPure of
+                        PURE_BASE_IR (CONST_IR c) ->
+                            (comm,
+                                ConstantIdentificationMetadata
+                                    (Map.insert asnVar c (constantIdentificationMetadataConstantVars md))
+                                    (constantIdentificationMetadataAliasingCtx md))
+                        _ ->
+                            (comm, md)
+        _ ->
+            (comm, md)
+
+data ConstantReplacementMetadata = ConstantReplacementMetadata
+    { constantReplacementMetadataConstantVars :: Map.Map VariableIr Const
+    }
+
+constantReplacementPass :: Map.Map VariableIr Const -> FunctionIr -> (FunctionIr, ConstantReplacementMetadata)
+constantReplacementPass constantVars fnIr = 
+    let handlers = 
+            IrProcessorHandlers
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                (Just constantReplacementPureBaseIrProcessor)
+                Nothing
+    in processorPass handlers fnIr (ConstantReplacementMetadata constantVars)
+
+constantReplacementPureBaseIrProcessor :: PureBaseIr -> ConstantReplacementMetadata -> (PureBaseIr, ConstantReplacementMetadata)
+constantReplacementPureBaseIrProcessor base md = 
+    case base of
+        CONST_IR _ ->
+            (base, md)
+        VAR_IR baseVar -> 
+            case (Map.lookup baseVar (constantReplacementMetadataConstantVars md)) of
+                Just c ->
+                    (CONST_IR c, md)
+                Nothing ->
+                    (base, md)
 
 -- BINOP/UNOP REDUCTION HELPERS
 
@@ -119,11 +197,11 @@ impureBinopReduceHelper cat c1 c2 =
     case cat of
         DIV_IR ->
             case (c1, c2) of
-                (INT_CONST i1, INT_CONST i2) -> Just (INT_CONST (div i1 i2))
+                (INT_CONST i1, INT_CONST i2) -> Just (INT_CONST (quot i1 i2))
                 _ -> Nothing
         MOD_IR ->
             case (c1, c2) of
-                (INT_CONST i1, INT_CONST i2) -> Just (INT_CONST (mod i1 i2))
+                (INT_CONST i1, INT_CONST i2) -> Just (INT_CONST (rem i1 i2))
                 _ -> Nothing
 
 binopReduce :: PureBinopCatIr -> Const -> Const -> Const
