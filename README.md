@@ -1,4 +1,4 @@
-# C0 Compiler
+## C0 Compiler
 
 ![C0](https://c0.cs.cmu.edu/docs/c0-reference.pdf) -> x86 compiler
 
