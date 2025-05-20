@@ -34,10 +34,12 @@ library
       Common.IrProcessor
       Common.IrUtils
       Common.Liveness
+      Common.Neededness
       Frontend.AstToElab
       Frontend.ElabToIr
       Frontend.Lexer
       Frontend.Parser
+      Middleend.DCE
       Middleend.IrToSSA
       Middleend.Peephole.ConstantFolding
       Middleend.SSAMinimization
@@ -97,5 +99,6 @@ test-suite c0-compiler-test
     , c0-compiler
     , containers
     , hspec
+    , pretty-show
     , text
   default-language: Haskell2010

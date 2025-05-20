@@ -74,12 +74,14 @@ data TarjanState a = TarjanState
     , tarjanStateDAGLeaves :: Set.Set Int               -- SCC indexes for DAG leaves
     , tarjanStateSCCs :: Map.Map Int (SCC a)            -- map from index to SCC
     , tarjanStateMapToSCC :: Map.Map a Int              -- map from node value to SCC index
+    , tarjanStateSCCReverseTopOrder :: [Int]            -- list of curr SCCs in reverse topological order
     }
 data TarjanResult a = TarjanResult
     { tarjanResultRootSCC :: Int                        -- root SCC index
     , tarjanResultLeaves :: Set.Set Int                 -- leaf SCC indices
     , tarjanResultGraph :: DirectedGraph Int            -- SCC index DAG
     , tarjanResultMapToSCC :: Map.Map Int (SCC a)       -- map from index to SCC
+    , tarjanResultSCCReverseTopOrder :: [Int]           -- list of SCCs in reverse topological order
     }
 
 tarjansAlgo :: (Ord a, Show a) => a -> DirectedGraph a -> TarjanResult a
@@ -94,6 +96,7 @@ tarjansAlgo initNode graph =
                 Set.empty
                 Map.empty
                 Map.empty
+                []
         finalState = tarjanHelper initNode graph initState
         rootSCC = 
             case Map.lookup initNode (tarjanStateMapToSCC finalState) of
@@ -105,6 +108,7 @@ tarjansAlgo initNode graph =
                 (tarjanStateDAGLeaves finalState)
                 (tarjanStateCurrDAG finalState)
                 (tarjanStateSCCs finalState)
+                (tarjanStateSCCReverseTopOrder finalState)
     in tarjanResult
 
 tarjanHelper :: (Ord a, Show a) => a -> DirectedGraph a -> TarjanState a -> TarjanState a
@@ -178,6 +182,7 @@ tarjanAddNode tarjanNode state =
         (tarjanStateDAGLeaves state)
         (tarjanStateSCCs state)
         (tarjanStateMapToSCC state)
+        (tarjanStateSCCReverseTopOrder state)
 
 tarjanUpdateNode :: Ord a => TarjanNode a -> TarjanState a -> TarjanState a
 tarjanUpdateNode tarjanNode state = 
@@ -190,6 +195,7 @@ tarjanUpdateNode tarjanNode state =
         (tarjanStateDAGLeaves state)
         (tarjanStateSCCs state)
         (tarjanStateMapToSCC state)
+        (tarjanStateSCCReverseTopOrder state)
 
 -- Tarjan State SCC helpers
 
@@ -206,6 +212,7 @@ tarjanAddSCC scc graph state =
         (isLeaf, newDAG) = tarjanInsertSCCToDAG (tarjanStateSCCIndexCtr state) scc graph newMapToSCC (tarjanStateCurrDAG state)
         newLeaves = if isLeaf then Set.insert newSCCIndex (tarjanStateDAGLeaves state) else (tarjanStateDAGLeaves state)
         newSCCs = Map.insert (tarjanStateSCCIndexCtr state) scc (tarjanStateSCCs state)
+        newReverseTopOrder = (tarjanStateSCCReverseTopOrder state) ++ [tarjanStateSCCIndexCtr state]
     in TarjanState
             (tarjanStateNodeIndexCtr state)
             (tarjanStateNodes state)
@@ -215,6 +222,7 @@ tarjanAddSCC scc graph state =
             newLeaves
             newSCCs
             newMapToSCC
+            newReverseTopOrder
 
 tarjanInsertSCCToDAG :: (Ord a, Show a) => Int -> SCC a -> DirectedGraph a -> Map.Map a Int -> DirectedGraph Int -> (Bool, DirectedGraph Int)
 tarjanInsertSCCToDAG sccIndex scc graph nodeMapToSCC dag
@@ -287,7 +295,8 @@ tarjanPopStack state =
                     (tarjanStateCurrDAG state)
                     (tarjanStateDAGLeaves state)
                     (tarjanStateSCCs state)
-                    (tarjanStateMapToSCC state))
+                    (tarjanStateMapToSCC state)
+                    (tarjanStateSCCReverseTopOrder state))
 
 tarjanPushStack :: a -> TarjanState a -> TarjanState a
 tarjanPushStack node state =
@@ -300,6 +309,7 @@ tarjanPushStack node state =
         (tarjanStateDAGLeaves state)
         (tarjanStateSCCs state)
         (tarjanStateMapToSCC state)
+        (tarjanStateSCCReverseTopOrder state)
 
 -- returns a sub-ordering of an SCC
 -- where we repeat an arbitrary ordering of all but one of the elements of the SCC

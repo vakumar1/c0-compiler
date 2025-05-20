@@ -5,6 +5,7 @@ module Common.GraphsTest (
 import Test.Hspec
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.List as List
 
 import Common.Graphs
 
@@ -56,7 +57,15 @@ componentToSCCIndexMap components tarjanResult =
         Map.empty
         (zip [0..] components)
 
-verifyEdges :: Ord a => [Set.Set a] -> [(Int, Int)] -> TarjanResult a -> Bool
+verifyReverseTopOrder :: [Int] -> (Int, Int) -> Bool
+verifyReverseTopOrder actualOrder (src, dest) = 
+    case (List.elemIndex src actualOrder, List.elemIndex dest actualOrder) of
+        (Just i, Just j) | i > j ->
+            True
+        _ ->
+            False
+
+verifyEdges :: Ord a => [Set.Set a] -> [(Int, Int)] -> TarjanResult a -> IO ()
 verifyEdges expectedComponents expectedEdges tarjanResult =
     let remappedComponents = componentToSCCIndexMap expectedComponents tarjanResult
         remappedExpectedEdges = 
@@ -73,7 +82,11 @@ verifyEdges expectedComponents expectedEdges tarjanResult =
             concatMap
                 (\(src, succs) -> map (\dest -> (src, dest)) (Set.toList succs))
                 (Map.toList . graphSuccessors . tarjanResultGraph $ tarjanResult)
-    in Set.fromList remappedExpectedEdges == Set.fromList actualEdges
+        actualOrder = tarjanResultSCCReverseTopOrder tarjanResult
+        validReverseTopOrder = all (verifyReverseTopOrder actualOrder) remappedExpectedEdges
+    in do
+        Set.fromList remappedExpectedEdges `shouldBe` Set.fromList actualEdges
+        validReverseTopOrder `shouldBe` True
 
 graphs_test :: IO ()
 graphs_test = hspec $ do
@@ -102,14 +115,15 @@ graphs_test = hspec $ do
                     result = tarjansAlgo 1 graph
                     components = [Set.singleton 1]
                 verifyComponents components (getAllSCCs result) `shouldBe` True
-                verifyEdges components [] result `shouldBe` True
+                verifyEdges components [] result
+                -- (tarjanResultSCCReverseTopOrder result) `shouldBe` (remappedReverseTopOrder order remappedComponents)
                 
             it "handles a self-loop" $ do
                 let graph = createGraph [1] [(1, 1)]
                     result = tarjansAlgo 1 graph
                     components = [Set.singleton 1]
                 verifyComponents components (getAllSCCs result) `shouldBe` True
-                verifyEdges components [] result `shouldBe` True
+                verifyEdges components [] result
         
         describe "Simple Structures" $ do
             it "handles a simple two-node graph without cycle" $ do
@@ -117,14 +131,14 @@ graphs_test = hspec $ do
                     result = tarjansAlgo 1 graph
                     components = [Set.singleton 1, Set.singleton 2]
                 verifyComponents components (getAllSCCs result) `shouldBe` True
-                verifyEdges components [(0, 1)] result `shouldBe` True
+                verifyEdges components [(0, 1)] result
                 
             it "handles a simple two-node cycle" $ do
                 let graph = createGraph [1, 2] [(1, 2), (2, 1)]
                     result = tarjansAlgo 1 graph
                     components = [Set.fromList [1, 2]]
                 verifyComponents components (getAllSCCs result) `shouldBe` True
-                verifyEdges components [] result `shouldBe` True
+                verifyEdges components [] result
 
         describe "Complex Structures with DAG verification" $ do
             it "handles complex graph with multiple SCCs and verifies DAG structure" $ do
@@ -135,7 +149,7 @@ graphs_test = hspec $ do
                     result = tarjansAlgo 1 graph
                     components = [Set.fromList [1, 2, 3], Set.fromList [4, 5, 6]]
                 verifyComponents components (getAllSCCs result) `shouldBe` True
-                verifyEdges components [(0, 1)] result `shouldBe` True
+                verifyEdges components [(0, 1)] result
                 
             it "handles a chain of SCCs and verifies DAG structure" $ do
                 let graph = createGraph [1, 2, 3, 4, 5, 6] 
@@ -147,7 +161,7 @@ graphs_test = hspec $ do
                     result = tarjansAlgo 1 graph
                     components = [Set.fromList [1, 2], Set.fromList [3, 4], Set.fromList [5, 6]]
                 verifyComponents components (getAllSCCs result) `shouldBe` True
-                verifyEdges components [(0, 1), (1, 2)] result `shouldBe` True
+                verifyEdges components [(0, 1), (1, 2)] result
                     
             it "handles complex DAG of SCCs" $ do
                 let graph = createGraph [1, 2, 3, 4, 5, 6, 7, 8, 9] 
@@ -166,7 +180,7 @@ graphs_test = hspec $ do
                                Set.fromList [7, 9],
                                Set.singleton 8]
                 verifyComponents components (getAllSCCs result) `shouldBe` True
-                verifyEdges components [(0, 1), (1, 2), (2, 3), (2, 4), (4, 3)] result `shouldBe` True
+                verifyEdges components [(0, 1), (1, 2), (2, 3), (2, 4), (4, 3)] result
                 
         describe "Special Cases" $ do
             it "handles the classic example from Tarjan's paper and verifies DAG structure" $ do
@@ -180,14 +194,14 @@ graphs_test = hspec $ do
                                 Set.fromList ['C', 'D', 'H'],
                                 Set.fromList ['F', 'G']]
                 verifyComponents components (getAllSCCs result) `shouldBe` True
-                verifyEdges components [(0, 1), (0, 2), (1, 2)] result `shouldBe` True
+                verifyEdges components [(0, 1), (0, 2), (1, 2)] result
             
             it "handles a graph where the start node isn't part of a cycle" $ do
                 let graph = createGraph [1, 2, 3, 4] [(1, 2), (2, 3), (3, 4), (4, 2)]
                     result = tarjansAlgo 1 graph
                     components = [Set.singleton 1, Set.fromList [2, 3, 4]]
                 verifyComponents components (getAllSCCs result) `shouldBe` True
-                verifyEdges components [(0, 1)] result `shouldBe` True
+                verifyEdges components [(0, 1)] result
 
     describe "innerSCCSubOrdering" $ do
             

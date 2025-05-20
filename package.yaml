@@ -69,3 +69,4 @@ tests:
     - text
     - containers
     - hspec
+    - pretty-show
